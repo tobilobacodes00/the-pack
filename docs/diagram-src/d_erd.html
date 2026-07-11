@@ -1,0 +1,151 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8"/>
+<style>
+  @font-face{font-family:'Poppins';font-weight:400;src:url('fonts/poppins-400.woff2') format('woff2');}
+  @font-face{font-family:'Poppins';font-weight:500;src:url('fonts/poppins-500.woff2') format('woff2');}
+  @font-face{font-family:'Poppins';font-weight:600;src:url('fonts/poppins-600.woff2') format('woff2');}
+  @font-face{font-family:'Poppins';font-weight:700;src:url('fonts/poppins-700.woff2') format('woff2');}
+  :root{--ink:#15171c;--ink2:#5c636e;--ink3:#9aa0aa;--hair:#e4e6ea;}
+  *{margin:0;padding:0;box-sizing:border-box;}
+  html,body{width:1620px;}
+  body{font-family:'Poppins',Arial,sans-serif;background:#fff;color:var(--ink);-webkit-font-smoothing:antialiased;padding:52px 60px 40px;}
+  .kick{font-size:13px;font-weight:700;letter-spacing:5px;text-transform:uppercase;color:var(--ink3);}
+  h1{font-size:40px;font-weight:800;letter-spacing:-1px;margin:10px 0 8px;}
+  .sub{font-size:17px;font-weight:400;color:var(--ink2);line-height:1.5;max-width:960px;}
+  .rule{height:1.6px;background:var(--hair);margin:24px 0 22px;}
+
+  .canvas{position:relative;height:1180px;}
+  svg.wires{position:absolute;inset:0;z-index:0;}
+  .ent{background:#fff;border:1.7px solid var(--ink);border-radius:15px;overflow:hidden;z-index:1;}
+  .ent.abs{position:absolute;}
+  .ent h3{font-size:18px;font-weight:700;padding:12px 17px;border-bottom:1.5px solid var(--hair);letter-spacing:.2px;}
+  .ent.spine{border-width:2.4px;}
+  .ent.spine h3{background:var(--ink);color:#fff;border-bottom-color:var(--ink);}
+  .ent.soft{border-color:var(--ink3);border-style:dashed;}
+  .f{display:flex;justify-content:space-between;align-items:center;gap:12px;padding:6.5px 17px;font-size:13.5px;}
+  .f .fn{font-weight:500;color:var(--ink);}
+  .f .tag{font-size:10px;font-weight:700;letter-spacing:.5px;color:var(--ink3);border:1.2px solid var(--hair);border-radius:6px;padding:1px 7px;white-space:nowrap;}
+  .f .tag.pk{color:var(--ink);border-color:var(--ink);}
+
+  .group{position:absolute;border:1.6px dashed var(--hair);border-radius:18px;z-index:1;padding:26px 22px 22px;}
+  .glab{position:absolute;top:-11px;left:20px;background:#fff;padding:0 11px;font-size:12px;font-weight:700;letter-spacing:1.6px;text-transform:uppercase;color:var(--ink3);}
+  .g2{display:grid;grid-template-columns:1fr 1fr;gap:16px;}
+
+  .clab{position:absolute;z-index:3;background:#fff;padding:3px 11px;font-size:12.5px;font-weight:600;color:var(--ink);
+    border:1.4px solid var(--hair);border-radius:999px;transform:translate(-50%,-50%);white-space:nowrap;}
+  .why{position:absolute;padding:10px 0 10px 18px;border-left:3px solid var(--ink);font-size:15px;color:var(--ink2);line-height:1.5;z-index:1;}
+  .why b{color:var(--ink);font-weight:600;}
+</style></head>
+<body>
+  <div class="kick">The Pack</div>
+  <h1>The data model</h1>
+  <div class="sub">Everything centres on a hunt. The events table is the spine. A few tables live on their own, and one is linked only softly, on purpose.</div>
+  <div class="rule"></div>
+
+  <div class="canvas">
+    <svg class="wires" viewBox="0 0 1500 1180" preserveAspectRatio="none">
+      <!-- projects -> hunts -->
+      <line x1="600" y1="250" x2="600" y2="330" stroke="#15171c" stroke-width="1.8"/>
+      <path d="M593,324 L600,334 L607,324" fill="none" stroke="#15171c" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
+      <!-- hunts -> events (spine, bold) -->
+      <line x1="600" y1="580" x2="600" y2="662" stroke="#15171c" stroke-width="2.6"/>
+      <path d="M592,655 L600,667 L608,655" fill="none" stroke="#15171c" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"/>
+      <!-- hunts -> children group -->
+      <line x1="792" y1="450" x2="998" y2="360" stroke="#15171c" stroke-width="1.8"/>
+      <path d="M986,352 L1000,360 L989,371" fill="none" stroke="#15171c" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
+      <!-- memory -> hunts (soft, dashed) -->
+      <line x1="372" y1="500" x2="406" y2="500" stroke="#9aa0aa" stroke-width="1.8" stroke-dasharray="6 5"/>
+      <path d="M400,494 L410,500 L400,506" fill="none" stroke="#9aa0aa" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
+    </svg>
+
+    <!-- PROJECTS -->
+    <div class="ent abs" style="top:96px;left:420px;width:360px;height:150px;">
+      <h3>projects</h3>
+      <div class="f"><span class="fn">project_id</span><span class="tag pk">PK</span></div>
+      <div class="f"><span class="fn">label</span></div>
+      <div class="f"><span class="fn">created_at</span></div>
+    </div>
+
+    <!-- HUNTS -->
+    <div class="ent abs" style="top:330px;left:410px;width:380px;height:250px;">
+      <h3>hunts &nbsp;<span style="font-weight:400;font-size:12px;color:#9aa0aa;">the hub</span></h3>
+      <div class="f"><span class="fn">hunt_id</span><span class="tag pk">PK</span></div>
+      <div class="f"><span class="fn">project_id</span><span class="tag">FK</span></div>
+      <div class="f"><span class="fn">state</span></div>
+      <div class="f"><span class="fn">strategy</span></div>
+      <div class="f"><span class="fn">boundary_usd</span></div>
+      <div class="f"><span class="fn">created_at</span></div>
+    </div>
+
+    <!-- EVENTS -->
+    <div class="ent abs spine" style="top:662px;left:410px;width:380px;height:250px;">
+      <h3>events &nbsp;<span style="font-weight:400;font-size:12px;color:#c3c8d0;">the spine</span></h3>
+      <div class="f"><span class="fn">hunt_id</span><span class="tag pk">PK · FK</span></div>
+      <div class="f"><span class="fn">seq</span><span class="tag pk">PK</span></div>
+      <div class="f"><span class="fn">type</span></div>
+      <div class="f"><span class="fn">actor</span></div>
+      <div class="f"><span class="fn">payload</span></div>
+      <div class="f"><span class="fn">relayed</span></div>
+    </div>
+
+    <!-- MEMORY -->
+    <div class="ent abs soft" style="top:410px;left:36px;width:336px;height:196px;">
+      <h3>memory</h3>
+      <div class="f"><span class="fn">id</span><span class="tag pk">PK</span></div>
+      <div class="f"><span class="fn">hunt_id</span><span class="tag">soft</span></div>
+      <div class="f"><span class="fn">kind</span></div>
+      <div class="f"><span class="fn">body</span></div>
+    </div>
+
+    <!-- CHILDREN GROUP -->
+    <div class="group" style="top:110px;left:1000px;width:560px;height:500px;">
+      <span class="glab">Children of a hunt · cascade delete</span>
+      <div class="g2">
+        <div class="ent"><h3>artifacts</h3>
+          <div class="f"><span class="fn">artifact_id</span><span class="tag pk">PK</span></div>
+          <div class="f"><span class="fn">hunt_id</span><span class="tag">FK</span></div>
+          <div class="f"><span class="fn">kind</span></div>
+          <div class="f"><span class="fn">content</span></div></div>
+        <div class="ent"><h3>messages</h3>
+          <div class="f"><span class="fn">hunt_id</span><span class="tag pk">PK · FK</span></div>
+          <div class="f"><span class="fn">seq</span><span class="tag pk">PK</span></div>
+          <div class="f"><span class="fn">role</span></div>
+          <div class="f"><span class="fn">content</span></div></div>
+        <div class="ent"><h3>checkpoints</h3>
+          <div class="f"><span class="fn">checkpoint_id</span><span class="tag pk">PK</span></div>
+          <div class="f"><span class="fn">hunt_id</span><span class="tag">FK</span></div>
+          <div class="f"><span class="fn">at_seq</span></div>
+          <div class="f"><span class="fn">state</span></div></div>
+        <div class="ent"><h3>feedback</h3>
+          <div class="f"><span class="fn">feedback_id</span><span class="tag pk">PK</span></div>
+          <div class="f"><span class="fn">hunt_id</span><span class="tag">FK</span></div>
+          <div class="f"><span class="fn">turn_index</span></div>
+          <div class="f"><span class="fn">vote</span></div></div>
+      </div>
+    </div>
+
+    <!-- GLOBAL GROUP -->
+    <div class="group" style="top:660px;left:1000px;width:560px;height:250px;">
+      <span class="glab">Global tables · not tied to any hunt</span>
+      <div class="g2">
+        <div class="ent"><h3>documents</h3>
+          <div class="f"><span class="fn">id</span><span class="tag pk">PK</span></div>
+          <div class="f"><span class="fn">name</span></div>
+          <div class="f"><span class="fn">body</span></div>
+          <div class="f"><span class="fn">chars</span></div></div>
+        <div class="ent"><h3>instincts</h3>
+          <div class="f"><span class="fn">instinct_id</span><span class="tag pk">PK</span></div>
+          <div class="f"><span class="fn">label</span></div>
+          <div class="f"><span class="fn">spec</span></div></div>
+      </div>
+    </div>
+
+    <!-- labels -->
+    <div class="clab" style="left:600px;top:290px;">1 : many &nbsp;·&nbsp; set null</div>
+    <div class="clab" style="left:600px;top:621px;">1 : many &nbsp;·&nbsp; the spine</div>
+    <div class="clab" style="left:895px;top:398px;">1 : many &nbsp;·&nbsp; cascade</div>
+    <div class="clab" style="left:391px;top:474px;">soft link · no FK</div>
+
+    <!-- why -->
+    <div class="why" style="top:960px;left:36px;width:900px;"><b>Why the spine matters.</b> The events key (hunt_id, seq) gives every event one place in line, with no gaps and no duplicates. The database enforces it, so the whole event-sourcing idea can be trusted, not just hoped for.</div>
+  </div>
+</body></html>

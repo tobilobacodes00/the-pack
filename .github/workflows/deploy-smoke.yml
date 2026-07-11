@@ -1,0 +1,34 @@
+name: deploy-smoke
+
+# Guards the production images against the dependency-drift class of bug (a hand-listed Dockerfile
+# once shipped an engine missing python-multipart/pypdf/reportlab/… so uploads + the Forge broke).
+# Builds the real engine image and asserts every runtime dep imports inside it.
+on:
+  push:
+    branches: [main, "setup/**", "feat/**", "fix/**"]
+    paths: ["backend/**", "deploy/engine.Dockerfile", ".github/workflows/deploy-smoke.yml"]
+  pull_request:
+    branches: [main]
+    paths: ["backend/**", "deploy/engine.Dockerfile", ".github/workflows/deploy-smoke.yml"]
+
+jobs:
+  engine-image:
+    name: engine image builds + imports
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build the engine image
+        run: docker build -f deploy/engine.Dockerfile -t pack-engine:ci .
+      - name: Every runtime dep imports inside the image
+        # forge.py imports markdown/docx/openpyxl/PIL/pptx/reportlab at top level; file_parse pulls
+        # pypdf; plus the two that are used lazily elsewhere (multipart, imageio_ffmpeg). If the image
+        # is missing any dep, this ImportErrors — so drift fails CI, not production.
+        run: |
+          docker run --rm pack-engine:ci python -c "
+          import app.main
+          import app.engine.forge, app.tools.file_parse
+          import multipart, imageio_ffmpeg
+          print('engine image: all runtime deps import OK')
+          "
+      - name: pip check (installed deps are consistent)
+        run: docker run --rm pack-engine:ci pip check

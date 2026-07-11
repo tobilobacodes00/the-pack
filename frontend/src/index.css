@@ -1,0 +1,80 @@
+@import "tailwindcss";
+
+@theme {
+  /* Neutrals — the single warm surface stack the whole app uses (was split cool/warm). */
+  --color-canvas: #0f0f0f;
+  --color-surface: #1a1a1a;
+  --color-surface-raised: #272727;
+  --color-border: #404040;
+  --color-border-subtle: #1c1c1c;
+
+  /* Accent + semantic. */
+  --color-accent: #8b5cf6;
+  --color-accent-dim: #6d28d9;
+  --color-warn: #eab308;
+  --color-danger: #ef4444;
+  --color-success: #22c55e;
+
+  /* Text ramp. */
+  --color-text: #fafafa;
+  --color-text-dim: #a3a3a3;
+  --color-text-faint: #6b6b6b;
+  --color-muted: #8a8a8a;
+
+  --font-sans: "Inter", system-ui, sans-serif;
+  --font-mono: "JetBrains Mono", "Fira Code", monospace;
+
+  --radius-sm: 4px;
+  --radius-md: 8px;
+  --radius-lg: 12px;
+  --radius-xl: 16px;
+
+  --animate-star-movement-bottom: star-movement-bottom linear infinite alternate;
+  --animate-star-movement-top: star-movement-top linear infinite alternate;
+
+  @keyframes star-movement-bottom {
+    0% { transform: translate(0%, 0%); opacity: 1; }
+    100% { transform: translate(-100%, 0%); opacity: 0; }
+  }
+
+  @keyframes star-movement-top {
+    0% { transform: translate(0%, 0%); opacity: 1; }
+    100% { transform: translate(100%, 0%); opacity: 0; }
+  }
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html, body, #root {
+  height: 100%;
+  margin: 0;
+  padding: 0;
+  background: var(--color-canvas);
+  color: var(--color-text);
+  font-family: var(--font-sans);
+  -webkit-font-smoothing: antialiased;
+}
+
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: var(--color-border);
+  border-radius: 3px;
+}
+
+/* Reduced-motion hard net: kills scroll parallax before/without hydration and beats framer's
+   continuously-written inline transform. Parallax is decorative, so full suppression is correct. */
+@media (prefers-reduced-motion: reduce) {
+  [data-parallax] {
+    transform: none !important;
+    animation: none !important;
+    transition: none !important;
+  }
+}

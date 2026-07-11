@@ -1,0 +1,203 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"/>
+<style>
+  @font-face{font-family:'Poppins';font-weight:400;src:url('fonts/poppins-400.woff2') format('woff2');}
+  @font-face{font-family:'Poppins';font-weight:500;src:url('fonts/poppins-500.woff2') format('woff2');}
+  @font-face{font-family:'Poppins';font-weight:600;src:url('fonts/poppins-600.woff2') format('woff2');}
+  @font-face{font-family:'Poppins';font-weight:700;src:url('fonts/poppins-700.woff2') format('woff2');}
+  @font-face{font-family:'Poppins';font-weight:800;src:url('fonts/poppins-800.woff2') format('woff2');}
+
+  @page{ size: Letter portrait; margin:0; }
+  *{ margin:0; padding:0; box-sizing:border-box; }
+  html{ -webkit-print-color-adjust:exact; print-color-adjust:exact; }
+  body{ font-family:'Poppins', Arial, sans-serif; color:#333a45; font-size:11pt; line-height:1.72; }
+
+  .page{ position:relative; width:216mm; height:279mm; overflow:hidden; background:#ffffff;
+    background-image:url("data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 816 1056' preserveAspectRatio='none'><polygon points='0,0 250,0 0,105' fill='%2321a3e0'/><polygon points='0,0 165,0 0,70' fill='%230f2c49'/><polygon points='816,0 566,0 816,105' fill='%2321a3e0'/><polygon points='816,0 651,0 816,70' fill='%230f2c49'/><polygon points='0,1056 250,1056 0,951' fill='%2321a3e0'/><polygon points='0,1056 165,1056 0,986' fill='%230f2c49'/><polygon points='816,1056 566,1056 816,951' fill='%2321a3e0'/><polygon points='816,1056 651,1056 816,986' fill='%230f2c49'/></svg>");
+    background-size:100% 100%; background-repeat:no-repeat;
+    break-after:page; page-break-after:always; }
+  .page:last-child{ break-after:auto; page-break-after:auto; }
+  .pad{ position:absolute; inset:0; padding:38mm 26mm 32mm; display:flex; flex-direction:column; }
+
+  .brand{ display:flex; align-items:center; gap:11px; }
+  .mark{ width:38px; height:38px; border-radius:10px; background:#0f2c49; position:relative; flex:none; }
+  .mark:after{ content:""; position:absolute; left:8px; top:9px; width:0; height:0;
+    border-left:11px solid transparent; border-right:11px solid transparent; border-bottom:20px solid #21a3e0; }
+  .brand .wm{ font-weight:800; font-size:15pt; color:#0f2c49; letter-spacing:.3px; line-height:1; }
+  .brand .tl{ font-size:7.7pt; letter-spacing:2px; color:#8a94a3; font-weight:600; text-transform:uppercase; margin-top:2px; }
+
+  .foot{ margin-top:auto; display:flex; justify-content:space-between; align-items:center;
+    font-size:8.5pt; color:#9aa3b0; letter-spacing:.4px; }
+  .foot .pn{ color:#21a3e0; font-weight:700; }
+
+  /* cover */
+  .cover-center{ margin:auto 0; }
+  .cover .kick{ font-size:10pt; letter-spacing:4px; text-transform:uppercase; color:#21a3e0; font-weight:700; }
+  .cover h1{ font-size:47pt; font-weight:800; letter-spacing:-1px; color:#0f2c49; line-height:1.02; margin:10px 0 6px; }
+  .cover .sub{ font-size:17pt; font-weight:500; color:#5b6572; }
+  .cover .bar{ width:88px; height:5px; border-radius:3px; background:#21a3e0; margin:24px 0; }
+  .cover .tag{ font-size:12.5pt; line-height:1.65; color:#4a5462; max-width:150mm; font-weight:400; }
+
+  /* chapter text */
+  .chline{ display:flex; align-items:baseline; gap:14px; }
+  .chno{ font-size:40pt; font-weight:800; color:#e6eef5; line-height:.8; }
+  .chlbl{ font-size:10.5pt; letter-spacing:3px; text-transform:uppercase; color:#21a3e0; font-weight:700; }
+  h2{ font-size:25pt; font-weight:800; color:#0f2c49; letter-spacing:-.5px; line-height:1.08; margin:14px 0 6px; }
+  .dek{ font-size:12.5pt; font-weight:500; color:#21a3e0; margin-bottom:20px; }
+  .prose{ font-size:11pt; }
+  .prose p{ margin-bottom:12px; }
+  .prose b{ color:#0f2c49; font-weight:600; }
+
+  /* figure */
+  figure{ margin:auto 0; text-align:center; }
+  figure img{ max-width:100%; max-height:186mm; width:auto; height:auto; display:block; margin:0 auto;
+    border:1px solid #e7ecf2; border-radius:12px; box-shadow:0 14px 34px -20px rgba(15,44,73,.45); }
+  figcaption{ font-size:9pt; color:#9aa3b0; margin-top:12px; letter-spacing:.3px; }
+
+  .closing h2{ font-size:29pt; }
+  .closing .prose{ font-size:12.5pt; }
+</style></head>
+<body>
+
+  <!-- COVER -->
+  <div class="page">
+    <div class="pad">
+      <div class="brand">
+        <div class="mark"></div>
+        <div><div class="wm">THE PACK</div><div class="tl">Multi-agent research engine</div></div>
+      </div>
+      <div class="cover-center">
+        <div class="kick">Architecture walkthrough</div>
+        <h1>How it works</h1>
+        <div class="sub">The Pack, in plain words.</div>
+        <div class="bar"></div>
+        <div class="tag">A team of AI wolves you can watch work. You give them a job, they plan it,
+        run it, and show you the decisions live. Everything they do becomes an event, and the whole
+        system is built around that one idea.</div>
+      </div>
+      <div class="foot"><span>A build note</span><span>The Pack &nbsp;/&nbsp; how it works</span></div>
+    </div>
+  </div>
+
+  <!-- CH1 -->
+  <div class="page"><div class="pad">
+    <div class="chline"><span class="chno">01</span><span class="chlbl">The big picture</span></div>
+    <h2>You give it a job. You watch the pack work.</h2>
+    <div class="dek">And the screen never lies to you.</div>
+    <div class="prose">
+      <p>Here is the whole thing in one line. You give the Pack a job, a team of AI wolves goes and does it, and you watch them work live.</p>
+      <p>The wolves are not the hard part. The hard part is making sure the screen and the database never disagree. That is the quiet bug that kills systems like this. So I made one rule and built everything else around it. <b>Every single thing that happens becomes an event, and those events are the only truth.</b></p>
+      <p>When you send a command, the engine does the work and writes one event to Postgres. That is it. One write, one source of truth. A relay then pushes that event out to Redis, a small Rust gateway streams it to your browser over a WebSocket, and the browser rebuilds the screen from the events it receives. The browser has no opinion of its own. It is a mirror of the log, nothing more.</p>
+      <p>That is why the picture on the next page is a loop. Commands go in across the top, steps 1 to 3. The write lands in Postgres. Then the same event comes back out along the bottom, steps 4 to 6, and shows up on your screen. Follow the numbers and you have understood the whole system.</p>
+      <p>One more thing I like. The brain is swappable. With no API key the Pack runs on a built in offline model and still works from end to end, which is great for demos and tests. Drop in a real Qwen key and it switches over on its own. Nothing else has to change.</p>
+    </div>
+    <div class="foot"><span>The big picture</span><span class="pn">02</span></div>
+  </div></div>
+
+  <!-- FIG1 -->
+  <div class="page"><div class="pad">
+    <figure><img src="pack-architecture.png" alt="System overview"/>
+      <figcaption>Figure 1. The system, and the loop that holds it together.</figcaption></figure>
+    <div class="foot"><span>The big picture</span><span class="pn">03</span></div>
+  </div></div>
+
+  <!-- CH2 -->
+  <div class="page"><div class="pad">
+    <div class="chline"><span class="chno">02</span><span class="chlbl">The backend</span></div>
+    <h2>One brain, and it does all the writing.</h2>
+    <div class="dek">Everything else in the system just reads.</div>
+    <div class="prose">
+      <p>The engine is a single Python service built on FastAPI, and it owns the two things that matter most. All the logic, and all the writes. I kept it as one unit on purpose. It is easier to reason about, and there is only one place where truth gets created. Read the picture from top to bottom.</p>
+      <p>Commands come in and get a <b>202</b> right away. That is on purpose. A hunt takes time, so I do not make you wait on the HTTP call. I accept the command, start the work, and the real answer reaches you on the event stream. The API never pretends to be finished when it is not.</p>
+      <p>Inside, a <b>Supervisor</b> runs the wolf pack. Alpha leads, Beta plans, Scouts research, Tracker analyses, Sentinel criticises, Howler writes. Before any of them calls the model or the web, that call passes the <b>Boundary</b>, which is a spend gate. Models cost money, so nothing runs without checking the budget first. A hunt cannot quietly drain your wallet.</p>
+      <p>The <b>Emitter</b> is the part that keeps everyone honest. One sequence number per hunt, and every event checked against a fixed schema before it is allowed in. <b>Forge</b> turns the finished work into real files like PDF and DOCX. The tools layer does the searching and reading, and it has a guard so a hunt can never be tricked into reaching something private on our own network.</p>
+      <p>Then the spine. The event is written to Postgres in one transaction. The outbox relay picks it up safely and drops it onto Redis. The Rust gateway streams it out. That gateway is deliberately simple. It only reads, it never writes. It is a fast pipe and nothing more. If it ever gives me trouble I can delete it and let FastAPI serve the stream directly, and nothing upstream would have to change. That is the kind of decision I like. Strong, but easy to throw away.</p>
+    </div>
+    <div class="foot"><span>The backend</span><span class="pn">04</span></div>
+  </div></div>
+
+  <!-- FIG2 -->
+  <div class="page"><div class="pad">
+    <figure><img src="backend.png" alt="Backend detail"/>
+      <figcaption>Figure 2. The engine, layer by layer, down to the read path.</figcaption></figure>
+    <div class="foot"><span>The backend</span><span class="pn">05</span></div>
+  </div></div>
+
+  <!-- CH3 -->
+  <div class="page"><div class="pad">
+    <div class="chline"><span class="chno">03</span><span class="chlbl">The frontend</span></div>
+    <h2>A mirror, not a mind.</h2>
+    <div class="dek">It renders only from events, so it cannot make things up.</div>
+    <div class="prose">
+      <p>The screen is a React app, and it follows the same rule as everything else. It renders only from events. A pure reducer takes the event stream and builds the state of the hunt. No event, no change. That is what makes the live canvas trustworthy. It genuinely cannot show you something the engine did not say.</p>
+      <p>I split state into two clean halves, because they are two different problems. Anything the server owns, like your past hunts, your documents, your spend, is handled by TanStack Query, which knows how to cache and refetch. Anything about the live hunt is handled by the reducer. I do not mix them, and I do not copy data from one into the other.</p>
+      <p>Each hunt also gets its own isolated store. Two hunts can never bleed into each other, and coming back to a hunt shows you exactly where it was, with no flicker and no replay from the start.</p>
+      <p>The code is organised by feature instead of by file type. Door, territory, reward, and so on. A change to one part of the product stays in one folder. And the app talks to the backend through three clear doors. REST for commands, a WebSocket for the live events, and SSE for token by token chat. Three doors, three jobs, no confusion.</p>
+    </div>
+    <div class="foot"><span>The frontend</span><span class="pn">06</span></div>
+  </div></div>
+
+  <!-- FIG3 -->
+  <div class="page"><div class="pad">
+    <figure><img src="frontend.png" alt="Frontend module map"/>
+      <figcaption>Figure 3. The frontend, from entry down to the backend seam.</figcaption></figure>
+    <div class="foot"><span>The frontend</span><span class="pn">07</span></div>
+  </div></div>
+
+  <!-- CH4 -->
+  <div class="page"><div class="pad">
+    <div class="chline"><span class="chno">04</span><span class="chlbl">The data</span></div>
+    <h2>One spine, and everything hangs off it.</h2>
+    <div class="dek">A small key does a surprising amount of work.</div>
+    <div class="prose">
+      <p>This is the shape of the truth. Everything centres on <b>hunts</b>, and the most important table is <b>events</b>, the append only spine.</p>
+      <p>The events table has a composite key, hunt_id and seq together. That one small choice does a lot of work. Every event gets an exact place in line, you cannot get a gap, and you cannot get a duplicate. The database itself enforces it. That is the backstop that lets me trust the whole event sourcing idea instead of just hoping it holds.</p>
+      <p>Around the hunt sit its children. The artifacts it produced, the messages you exchanged, the checkpoints for pausing and resuming, and the feedback you gave. They all cascade. Delete a hunt and they go with it, cleanly. Projects group hunts, but loosely. Delete a project and its hunts survive, just unlinked.</p>
+      <p>Two tables stand on their own, on purpose. Documents, your knowledge base, and instincts, your saved presets, are global, because they are not tied to any single hunt. Memory is a soft link rather than a hard one, because what the pack learns is meant to outlive the hunt that taught it. I thought about what should die with a hunt and what should not, and the schema says it out loud.</p>
+    </div>
+    <div class="foot"><span>The data</span><span class="pn">08</span></div>
+  </div></div>
+
+  <!-- FIG4 -->
+  <div class="page"><div class="pad">
+    <figure><img src="erd.png" alt="Data model"/>
+      <figcaption>Figure 4. The data model. The events table is the spine; everything hangs off hunts.</figcaption></figure>
+    <div class="foot"><span>The data</span><span class="pn">09</span></div>
+  </div></div>
+
+  <!-- CH5 -->
+  <div class="page"><div class="pad">
+    <div class="chline"><span class="chno">05</span><span class="chlbl">One hunt, start to finish</span></div>
+    <h2>Now put time back into the picture.</h2>
+    <div class="dek">Watch a single hunt breathe from the first click.</div>
+    <div class="prose">
+      <p>Let us watch one real hunt from start to finish.</p>
+      <p>You send a request to start a hunt. You get a 202 immediately, and at the same moment you open the WebSocket and start listening. The engine writes the first event, and this is the loop from the overview, that event travels out through the relay, Redis, and the gateway, and lands back on your screen. Steps 5 to 7 then repeat for every event that follows. That is the heartbeat of the whole thing.</p>
+      <p>Beta drafts a plan. You approve it and set your Boundary. The pack runs. Every model and tool call passes that spend gate. As the wolves work they emit events, like spawned, tool used, artifact created, and hunt completed, and each one flows back to you the same way. You are never guessing what is happening. You are watching it happen.</p>
+      <p>There is one path that does not touch the gateway, and that is the chat side channel. When you ask Alpha a question in the middle of a hunt, the answer streams straight back from the engine, word by word. It is a different kind of data. A stream of words, not a log of facts. So it takes a different door. It is a small detail, but it is the kind of thing that separates a system that was designed from one that just grew.</p>
+    </div>
+    <div class="foot"><span>One hunt, start to finish</span><span class="pn">10</span></div>
+  </div></div>
+
+  <!-- FIG5 -->
+  <div class="page"><div class="pad">
+    <figure><img src="sequence.png" alt="Request to event sequence"/>
+      <figcaption>Figure 5. One hunt end to end, including the chat side channel.</figcaption></figure>
+    <div class="foot"><span>One hunt, start to finish</span><span class="pn">11</span></div>
+  </div></div>
+
+  <!-- CLOSING -->
+  <div class="page closing"><div class="pad">
+    <div class="chline"><span class="chno">06</span><span class="chlbl">Last word</span></div>
+    <h2>The whole game, in one idea.</h2>
+    <div class="dek">Everything above rests on a single sentence.</div>
+    <div class="prose">
+      <p>That is the Pack.</p>
+      <p>Take away the wolves and the canvas and the nice words, and one idea is holding the whole thing up. <b>Events are the truth, and everything else is a function of them.</b></p>
+      <p>That is why the screen can be trusted. It is why nothing gets lost. It is why the read side and the write side never fight, and why I could throw the gateway away tomorrow without worrying. Every hard decision in this system gets easy once you accept that one rule.</p>
+      <p>Simple idea, built properly. That is the whole game.</p>
+    </div>
+    <div class="foot"><span>The Pack &nbsp;/&nbsp; how it works</span><span class="pn">12</span></div>
+  </div></div>
+
+</body></html>

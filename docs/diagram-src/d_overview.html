@@ -1,0 +1,76 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8"/>
+<style>
+  @font-face{font-family:'Poppins';font-weight:400;src:url('fonts/poppins-400.woff2') format('woff2');}
+  @font-face{font-family:'Poppins';font-weight:500;src:url('fonts/poppins-500.woff2') format('woff2');}
+  @font-face{font-family:'Poppins';font-weight:600;src:url('fonts/poppins-600.woff2') format('woff2');}
+  @font-face{font-family:'Poppins';font-weight:700;src:url('fonts/poppins-700.woff2') format('woff2');}
+  @font-face{font-family:'Poppins';font-weight:800;src:url('fonts/poppins-800.woff2') format('woff2');}
+  :root{--ink:#15171c;--ink2:#5c636e;--ink3:#9aa0aa;--hair:#e4e6ea;}
+  *{margin:0;padding:0;box-sizing:border-box;}
+  html,body{width:1120px;}
+  body{font-family:'Poppins',Arial,sans-serif;background:#fff;color:var(--ink);-webkit-font-smoothing:antialiased;padding:52px 70px 60px;}
+
+  .kick{font-size:13px;font-weight:700;letter-spacing:5px;text-transform:uppercase;color:var(--ink3);}
+  h1{font-size:40px;font-weight:800;letter-spacing:-1px;margin:10px 0 8px;}
+  .sub{font-size:17px;font-weight:400;color:var(--ink2);line-height:1.5;max-width:760px;}
+  .rule{height:1.6px;background:var(--hair);margin:26px 0 40px;}
+
+  .spine{width:600px;margin:0 auto;}
+  .node{background:#fff;border:1.8px solid var(--ink);border-radius:18px;padding:22px 26px;}
+  .node .t{font-size:23px;font-weight:700;letter-spacing:-.3px;line-height:1.12;}
+  .node .s{font-size:14.5px;font-weight:400;color:var(--ink2);margin-top:7px;line-height:1.4;}
+  .node.fill{background:var(--ink);border-color:var(--ink);}
+  .node.fill .t{color:#fff;} .node.fill .s{color:#c3c8d0;}
+  .node.soft{border-color:var(--hair);}
+  .node.soft .t{font-size:20px;}
+  .tags{display:flex;gap:9px;margin-top:15px;flex-wrap:wrap;}
+  .tag{font-size:12.5px;font-weight:600;color:var(--ink2);border:1.4px solid var(--hair);border-radius:999px;padding:5px 13px;}
+
+  .flow{display:flex;flex-direction:column;align-items:center;margin:7px 0;}
+  .flab{font-size:13.5px;font-weight:600;color:var(--ink);letter-spacing:.2px;}
+  .flow.async .flab{color:var(--ink2);}
+
+  .why{width:600px;margin:11px auto;padding:9px 0 9px 18px;border-left:3px solid var(--ink);
+    font-size:14.5px;color:var(--ink2);line-height:1.5;}
+  .why b{color:var(--ink);font-weight:600;}
+
+  .loopnote{width:600px;margin:16px auto 0;text-align:center;font-size:14px;color:var(--ink3);font-weight:500;}
+</style></head>
+<body>
+  <div class="kick">The Pack</div>
+  <h1>How it all fits together</h1>
+  <div class="sub">You send one command. It becomes one event. That event travels all the way around and draws the screen. Follow the numbers, top to bottom, and back up again.</div>
+  <div class="rule"></div>
+
+  <div class="spine">
+    <div class="node"><div class="t">Browser</div><div class="s">You start here. The screen is a pure function of the event log, nothing more.</div></div>
+    <div class="flow"><span class="flab">1 &nbsp; command &nbsp;·&nbsp; POST /api</span>
+      <svg width="30" height="44"><line x1="15" y1="0" x2="15" y2="32" stroke="#15171c" stroke-width="1.8"/><path d="M8,27 L15,37 L22,27" fill="none" stroke="#15171c" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg></div>
+
+    <div class="node soft"><div class="t">nginx edge</div><div class="s">TLS, auth, one origin. It just passes the request through.</div></div>
+    <div class="flow"><span class="flab">REST</span>
+      <svg width="30" height="44"><line x1="15" y1="0" x2="15" y2="32" stroke="#15171c" stroke-width="1.8"/><path d="M8,27 L15,37 L22,27" fill="none" stroke="#15171c" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg></div>
+
+    <div class="node"><div class="t">Engine &nbsp;·&nbsp; FastAPI</div><div class="s">One brain. It runs the wolf pack, does the thinking, and owns every write. It calls Qwen, or an offline model when there is no key.</div>
+      <div class="tags"><span class="tag">wolf pack</span><span class="tag">spend gate</span><span class="tag">emitter</span></div></div>
+    <div class="why"><b>Commands answer 202 straight away.</b> A hunt takes time, so the real result never comes back in the HTTP response. It arrives on the stream.</div>
+    <div class="flow"><span class="flab">2 &nbsp; one write &nbsp;·&nbsp; one transaction</span>
+      <svg width="30" height="44"><line x1="15" y1="0" x2="15" y2="32" stroke="#15171c" stroke-width="1.8"/><path d="M8,27 L15,37 L22,27" fill="none" stroke="#15171c" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg></div>
+
+    <div class="node fill"><div class="t">PostgreSQL</div><div class="s">The append-only event log. This is the single source of truth.</div></div>
+    <div class="why"><b>This is the only place truth is created.</b> Everything below this line is a copy, streamed out so the screen can catch up.</div>
+    <div class="flow async"><span class="flab">3 &nbsp; outbox relay</span>
+      <svg width="30" height="44"><line x1="15" y1="0" x2="15" y2="32" stroke="#15171c" stroke-width="1.8" stroke-dasharray="7 5"/><path d="M8,27 L15,37 L22,27" fill="none" stroke="#15171c" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg></div>
+
+    <div class="node soft"><div class="t">Redis Streams</div><div class="s">A fast copy of the log, one stream per hunt, built for reading.</div></div>
+    <div class="flow async"><span class="flab">4 &nbsp; fan-out</span>
+      <svg width="30" height="44"><line x1="15" y1="0" x2="15" y2="32" stroke="#15171c" stroke-width="1.8" stroke-dasharray="7 5"/><path d="M8,27 L15,37 L22,27" fill="none" stroke="#15171c" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg></div>
+
+    <div class="node soft"><div class="t">Rust gateway</div><div class="s">Read-only. It tails the stream and pushes events to every watcher.</div></div>
+    <div class="flow async"><span class="flab">5 &nbsp; live events &nbsp;·&nbsp; WSS</span>
+      <svg width="30" height="44"><line x1="15" y1="0" x2="15" y2="32" stroke="#15171c" stroke-width="1.8" stroke-dasharray="7 5"/><path d="M8,27 L15,37 L22,27" fill="none" stroke="#15171c" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg></div>
+
+    <div class="node"><div class="t">Browser &nbsp;<span style="font-weight:400;font-size:15px;color:#9aa0aa;">(the same one)</span></div><div class="s">6 &nbsp; The reducer folds each event into the view. The screen updates. The loop closes.</div></div>
+    <div class="loopnote">Same browser, top and bottom. Commands go down, events come back up, and the screen is only ever a mirror of the log.</div>
+  </div>
+</body></html>

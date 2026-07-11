@@ -1,0 +1,69 @@
+# Pack — production stack (engine + gateway + web/nginx) for one ECS box.
+# Postgres and Redis are MANAGED services (ApsaraDB RDS + Tair) reached via .env.prod —
+# they are NOT containers here.
+#
+#   cd deploy
+#   cp .env.prod.example .env.prod   # then fill in the real values
+#   docker compose -f docker-compose.prod.yml up -d --build
+#
+# Build contexts are the repo root (..) so gateway/ and backend/ are used as-is, untouched.
+
+# Resource limits assume the recommended 4 vCPU / 8 GB ECS box (see DEPLOY.md Part 3) and leave
+# headroom for the host. `deploy.resources.limits` is honored by `docker compose up` (v2).
+services:
+  engine:
+    build:
+      context: ..
+      dockerfile: deploy/engine.Dockerfile
+    env_file: [.env.prod]
+    expose: ["8000"]
+    restart: unless-stopped
+    # Liveness is defined in the Dockerfile HEALTHCHECK (hits /health).
+    deploy:
+      resources:
+        limits: { cpus: "2.0", memory: 2g }
+
+  gateway:
+    build:
+      context: ..
+      dockerfile: deploy/gateway.Dockerfile
+    env_file: [.env.prod] # reads REDIS_URL; ignores the rest
+    environment:
+      GATEWAY_PORT: "8080"
+    expose: ["8080"]
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits: { cpus: "0.5", memory: 256m }
+
+  web:
+    build:
+      context: ..
+      dockerfile: deploy/web.Dockerfile
+      args:
+        VITE_ENGINE_URL: /api
+        # Must match what the app reads (frontend/src/env.ts → VITE_GATEWAY_URL); a mismatched name
+        # silently falls back to ws://localhost:8080 and the live stream never connects in prod.
+        VITE_GATEWAY_URL: /ws
+    # nginx-unprivileged listens on 8080 inside the container; publish it as host :80.
+    ports:
+      - "80:8080"
+      # - "443:8443"   # enable after you add TLS (see DEPLOY.md)
+    # The Basic-auth password file (create it before `up`: htpasswd -c deploy/.htpasswd <user>).
+    # Read-only, and gitignored — never committed.
+    volumes:
+      - ./.htpasswd:/etc/nginx/.htpasswd:ro
+    healthcheck:
+      # busybox wget (bundled in the nginx alpine image) against the unauthenticated /healthz.
+      test: ["CMD", "wget", "-qO-", "http://localhost:8080/healthz"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+    depends_on:
+      engine: { condition: service_healthy }
+      gateway: { condition: service_healthy }
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits: { cpus: "0.5", memory: 128m }

@@ -1,0 +1,199 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"/>
+<style>
+  *{margin:0;padding:0;box-sizing:border-box;}
+  html,body{width:1600px;height:1300px;}
+  body{font-family:-apple-system,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;-webkit-font-smoothing:antialiased;
+    background:linear-gradient(180deg,#ffffff 0%,#fbfcfe 100%);color:#0f172a;}
+  .stage{position:relative;width:1600px;height:1300px;}
+  .head{position:absolute;left:44px;top:30px;}
+  .head h1{font-size:28px;font-weight:800;letter-spacing:-.4px;}
+  .head h1 span{font-weight:500;color:#64748b;}
+  .head p{font-size:13.5px;color:#7b8595;margin-top:5px;}
+
+  svg.wires{position:absolute;inset:0;width:1600px;height:1300px;z-index:1;}
+
+  .ent{position:absolute;z-index:2;background:#fff;border:1px solid #e7e9f0;border-radius:14px;overflow:hidden;
+    box-shadow:0 1px 2px rgba(15,23,42,.05),0 16px 34px -20px rgba(15,23,42,.26);}
+  .ent h2{font-size:14.5px;font-weight:800;letter-spacing:.3px;padding:9px 14px;color:#fff;display:flex;justify-content:space-between;align-items:center;}
+  .ent h2 small{font-size:10px;font-weight:700;letter-spacing:.6px;opacity:.85;text-transform:uppercase;}
+  .fields{padding:6px 0;}
+  .f{display:flex;align-items:center;gap:8px;padding:3.5px 14px;font-size:12.5px;}
+  .f .k{font-weight:600;color:#0f172a;min-width:104px;}
+  .f .ty{color:#94a3b8;font-size:11.5px;flex:1;}
+  .f .b{font-size:9px;font-weight:800;letter-spacing:.4px;padding:1.5px 6px;border-radius:5px;}
+  .pk{background:#fbeed9;color:#92500a;} .fk{background:#e5edff;color:#1d4ed8;} .ck{background:#eafaf3;color:#0f766e;}
+
+  .hub h2{background:#b45309;} .child h2{background:#5b6675;} .side h2{background:#7c4dee;} .stand h2{background:#94a3b8;}
+
+  .rel{position:absolute;z-index:3;transform:translate(-50%,-50%);font-size:11px;font-weight:700;color:#475569;
+    background:#fff;border:1px solid #e2e6ee;border-radius:999px;padding:3px 10px;white-space:nowrap;
+    box-shadow:0 1px 2px rgba(15,23,42,.06);}
+  .rel small{color:#94a3b8;font-weight:600;}
+
+  .legend{position:absolute;z-index:3;left:44px;top:1180px;width:1000px;border:1px solid #e7e9f0;border-radius:14px;
+    background:#fff;padding:12px 18px;box-shadow:0 1px 2px rgba(15,23,42,.05);display:flex;gap:24px;flex-wrap:wrap;align-items:center;}
+  .legend .h{font-size:11px;font-weight:800;letter-spacing:1.1px;color:#94a3b8;text-transform:uppercase;}
+  .legend .i{font-size:12.5px;color:#334155;display:flex;align-items:center;gap:7px;}
+  .legend .b{font-size:9px;font-weight:800;padding:1.5px 6px;border-radius:5px;}
+  .cap{position:absolute;z-index:3;right:48px;top:1196px;width:470px;text-align:right;font-size:12.5px;color:#64748b;line-height:1.5;}
+</style></head>
+<body>
+<div class="stage">
+  <div class="head">
+    <h1>The Pack <span>— Data model (ERD)</span></h1>
+    <p>10 domain tables · Postgres · hub-and-spoke around <b>hunts</b> · the <b>events</b> table is the append-only spine</p>
+  </div>
+
+  <svg class="wires" viewBox="0 0 1600 1300">
+    <!-- projects -> hunts -->
+    <path d="M320,595 H600" fill="none" stroke="#b0b8c4" stroke-width="2"/>
+    <!-- hunts -> children (fan) -->
+    <path d="M910,560 L1180,195" fill="none" stroke="#b0b8c4" stroke-width="2"/>
+    <path d="M910,580 L1180,442" fill="none" stroke="#b0b8c4" stroke-width="2"/>
+    <path d="M910,600 L1180,650" fill="none" stroke="#b0b8c4" stroke-width="2"/>
+    <path d="M910,620 L1180,845" fill="none" stroke="#b0b8c4" stroke-width="2"/>
+    <path d="M910,640 L1180,1040" fill="none" stroke="#b0b8c4" stroke-width="2"/>
+    <!-- hunts -> memory (soft, dashed) -->
+    <path d="M755,760 V830" fill="none" stroke="#c3b3f2" stroke-width="2" stroke-dasharray="6 5"/>
+  </svg>
+
+  <!-- PROJECTS -->
+  <div class="ent side" style="left:70px;top:520px;width:250px;">
+    <h2>projects <small>workspace</small></h2>
+    <div class="fields">
+      <div class="f"><span class="k">project_id</span><span class="ty">text</span><span class="b pk">PK</span></div>
+      <div class="f"><span class="k">label</span><span class="ty">text</span></div>
+      <div class="f"><span class="k">instructions</span><span class="ty">text</span></div>
+      <div class="f"><span class="k">created_at</span><span class="ty">timestamptz</span></div>
+    </div>
+  </div>
+
+  <!-- HUNTS hub -->
+  <div class="ent hub" style="left:600px;top:430px;width:310px;">
+    <h2>hunts <small>aggregate root</small></h2>
+    <div class="fields">
+      <div class="f"><span class="k">hunt_id</span><span class="ty">text</span><span class="b pk">PK</span></div>
+      <div class="f"><span class="k">project_id</span><span class="ty">text</span><span class="b fk">FK</span></div>
+      <div class="f"><span class="k">state</span><span class="ty">text</span></div>
+      <div class="f"><span class="k">strategy</span><span class="ty">text</span></div>
+      <div class="f"><span class="k">boundary_usd</span><span class="ty">double</span></div>
+      <div class="f"><span class="k">share_token</span><span class="ty">text</span></div>
+      <div class="f"><span class="k">archived</span><span class="ty">boolean</span></div>
+      <div class="f"><span class="k">created_at</span><span class="ty">timestamptz</span></div>
+    </div>
+  </div>
+
+  <!-- MEMORY (soft) -->
+  <div class="ent side" style="left:600px;top:830px;width:310px;">
+    <h2>memory <small>soft link · no FK</small></h2>
+    <div class="fields">
+      <div class="f"><span class="k">id</span><span class="ty">bigserial</span><span class="b pk">PK</span></div>
+      <div class="f"><span class="k">hunt_id</span><span class="ty">text · nullable</span></div>
+      <div class="f"><span class="k">kind</span><span class="ty">text</span></div>
+      <div class="f"><span class="k">text</span><span class="ty">text</span></div>
+    </div>
+  </div>
+
+  <!-- DOCUMENTS standalone -->
+  <div class="ent stand" style="left:70px;top:760px;width:250px;">
+    <h2>documents <small>standalone</small></h2>
+    <div class="fields">
+      <div class="f"><span class="k">id</span><span class="ty">bigserial</span><span class="b pk">PK</span></div>
+      <div class="f"><span class="k">name</span><span class="ty">text</span></div>
+      <div class="f"><span class="k">kind · text</span><span class="ty">text</span></div>
+      <div class="f"><span class="k">chars</span><span class="ty">int</span></div>
+    </div>
+  </div>
+
+  <!-- INSTINCTS standalone -->
+  <div class="ent stand" style="left:70px;top:965px;width:250px;">
+    <h2>instincts <small>standalone</small></h2>
+    <div class="fields">
+      <div class="f"><span class="k">instinct_id</span><span class="ty">text</span><span class="b pk">PK</span></div>
+      <div class="f"><span class="k">label</span><span class="ty">text</span></div>
+      <div class="f"><span class="k">spec</span><span class="ty">jsonb</span></div>
+    </div>
+  </div>
+
+  <!-- EVENTS -->
+  <div class="ent child" style="left:1180px;top:70px;width:340px;">
+    <h2>events <small>append-only spine</small></h2>
+    <div class="fields">
+      <div class="f"><span class="k">hunt_id</span><span class="ty">text</span><span class="b pk">PK</span><span class="b fk">FK</span></div>
+      <div class="f"><span class="k">seq</span><span class="ty">integer</span><span class="b pk">PK</span></div>
+      <div class="f"><span class="k">event_id</span><span class="ty">text · ULID</span></div>
+      <div class="f"><span class="k">type</span><span class="ty">text · 34 kinds</span></div>
+      <div class="f"><span class="k">actor</span><span class="ty">text</span></div>
+      <div class="f"><span class="k">payload</span><span class="ty">jsonb</span></div>
+      <div class="f"><span class="k">relayed</span><span class="ty">boolean · outbox</span></div>
+    </div>
+  </div>
+
+  <!-- ARTIFACTS -->
+  <div class="ent child" style="left:1180px;top:350px;width:340px;">
+    <h2>artifacts <small>drafts · final · files</small></h2>
+    <div class="fields">
+      <div class="f"><span class="k">artifact_id</span><span class="ty">text</span><span class="b pk">PK</span></div>
+      <div class="f"><span class="k">hunt_id</span><span class="ty">text</span><span class="b fk">FK</span></div>
+      <div class="f"><span class="k">kind</span><span class="ty">text</span></div>
+      <div class="f"><span class="k">content</span><span class="ty">jsonb</span></div>
+    </div>
+  </div>
+
+  <!-- MESSAGES -->
+  <div class="ent child" style="left:1180px;top:565px;width:340px;">
+    <h2>messages <small>Alpha chat</small></h2>
+    <div class="fields">
+      <div class="f"><span class="k">hunt_id</span><span class="ty">text</span><span class="b pk">PK</span><span class="b fk">FK</span></div>
+      <div class="f"><span class="k">seq</span><span class="ty">integer</span><span class="b pk">PK</span></div>
+      <div class="f"><span class="k">role</span><span class="ty">user · alpha</span></div>
+      <div class="f"><span class="k">content</span><span class="ty">text</span></div>
+    </div>
+  </div>
+
+  <!-- CHECKPOINTS -->
+  <div class="ent child" style="left:1180px;top:765px;width:340px;">
+    <h2>checkpoints <small>halt/resume</small></h2>
+    <div class="fields">
+      <div class="f"><span class="k">checkpoint_id</span><span class="ty">text</span><span class="b pk">PK</span></div>
+      <div class="f"><span class="k">hunt_id</span><span class="ty">text</span><span class="b fk">FK</span></div>
+      <div class="f"><span class="k">at_seq</span><span class="ty">integer</span></div>
+      <div class="f"><span class="k">state</span><span class="ty">jsonb</span></div>
+    </div>
+  </div>
+
+  <!-- FEEDBACK -->
+  <div class="ent child" style="left:1180px;top:955px;width:340px;">
+    <h2>feedback <small>thumb votes</small></h2>
+    <div class="fields">
+      <div class="f"><span class="k">feedback_id</span><span class="ty">text</span><span class="b pk">PK</span></div>
+      <div class="f"><span class="k">hunt_id</span><span class="ty">text</span><span class="b fk">FK</span></div>
+      <div class="f"><span class="k">turn_index</span><span class="ty">int</span></div>
+      <div class="f"><span class="k">vote</span><span class="ty">up · down</span><span class="b ck">CHK</span></div>
+    </div>
+  </div>
+
+  <!-- Relationship labels -->
+  <div class="rel" style="left:460px;top:595px;">1 : N &nbsp;<small>SET NULL</small></div>
+  <div class="rel" style="left:1045px;top:377px;">1 : N &nbsp;<small>CASCADE</small></div>
+  <div class="rel" style="left:1045px;top:511px;">1 : N &nbsp;<small>CASCADE</small></div>
+  <div class="rel" style="left:1045px;top:625px;">1 : N &nbsp;<small>CASCADE</small></div>
+  <div class="rel" style="left:1045px;top:733px;">1 : N &nbsp;<small>CASCADE</small></div>
+  <div class="rel" style="left:1045px;top:840px;">1 : N &nbsp;<small>CASCADE</small></div>
+  <div class="rel" style="left:755px;top:795px;">1 : N &nbsp;<small>no FK</small></div>
+
+  <div class="legend">
+    <span class="h">Keys</span>
+    <span class="i"><span class="b pk">PK</span> primary</span>
+    <span class="i"><span class="b fk">FK</span> foreign</span>
+    <span class="i"><span class="b ck">CHK</span> check</span>
+    <span class="i"><span style="display:inline-block;width:26px;border-top:2px solid #b0b8c4"></span> enforced FK</span>
+    <span class="i"><span style="display:inline-block;width:26px;border-top:2px dashed #c3b3f2"></span> soft link (no FK)</span>
+  </div>
+  <div class="cap">
+    <b>events.(hunt_id, seq)</b> is the composite PK — the gap-free ordering backstop.<br/>
+    <b>documents · instincts</b> are global (no hunt FK). <b>memory.hunt_id</b> is nullable and not cascade-deleted.
+  </div>
+</div>
+</body></html>

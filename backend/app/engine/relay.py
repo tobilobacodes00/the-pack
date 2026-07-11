@@ -1,0 +1,164 @@
+"""The outbox relay — Postgres → Redis, the only writer to the stream (Doc 04 §5).
+
+This is the message-relay half of the transactional outbox. The Emitter writes events to
+Postgres (the source of truth); this relay tails the committed-but-unpublished rows and
+republishes each through the existing `EventBus.append` (unchanged Redis XADD + envelope),
+then marks it relayed.
+
+It wakes two ways:
+  * `LISTEN pack_events` — Postgres delivers a notification on every committed append, so
+    the relay publishes within milliseconds (the "live" path).
+  * a periodic sweep (~1s) — a safety net that catches anything a missed/dropped
+    notification left behind, and drains the backlog on startup.
+
+Delivery is AT-LEAST-ONCE: _drain runs SELECT FOR UPDATE SKIP LOCKED → XADD → mark relayed all
+inside one Postgres transaction. Two relay workers skip each other's locked rows. If the process
+dies before XADD the txn rolls back and the row stays unrelayed for the next pass. If it dies
+after commit the event is both published and marked — no loss. A duplicate publish (XADD ok,
+commit fail) is a no-op because the frontend reducer drops seq <= lastSeq.
+"""
+
+from __future__ import annotations
+
+import asyncio
+import contextlib
+import logging
+
+import asyncpg
+
+from app.bus.redis_stream import EventBus
+from app.config import settings
+from app.db.repo import NOTIFY_CHANNEL, Repo
+
+_LOG = logging.getLogger("pack")
+
+
+class OutboxRelay:
+    def __init__(
+        self,
+        pool: asyncpg.Pool,
+        bus: EventBus,
+        repo: Repo,
+        *,
+        poll_interval: float = 1.0,
+        max_attempts: int | None = None,
+    ) -> None:
+        self._pool = pool
+        self._bus = bus
+        self._repo = repo
+        self._poll_interval = poll_interval
+        self._max_attempts = max_attempts or settings.max_relay_attempts
+        # Publish-failure counts are persisted on the event row (events.relay_attempts), so a poison
+        # event's quarantine decision survives a relay restart — see _drain.
+        self._wake = asyncio.Event()
+        self._task: asyncio.Task | None = None
+        self._listen_conn: asyncpg.Connection | None = None
+        self._listen_lost = False
+
+    async def start(self) -> None:
+        """Acquire a dedicated LISTEN connection and spin up the drain loop."""
+        await self._relisten()
+        self._task = asyncio.create_task(self._run(), name="outbox-relay")
+
+    async def _relisten(self) -> None:
+        """(Re)establish the dedicated LISTEN connection. The periodic sweep covers any gap while
+        the live notification path is down, so a dropped Postgres connection only costs latency."""
+        conn = await self._pool.acquire()
+        await conn.add_listener(NOTIFY_CHANNEL, self._on_notify)
+        conn.add_termination_listener(self._on_listen_lost)
+        self._listen_conn = conn
+        self._listen_lost = False
+
+    def _on_notify(self, *_args: object) -> None:
+        # Fires on the asyncpg event loop; just nudge the loop awake.
+        self._wake.set()
+
+    def _on_listen_lost(self, _conn: object) -> None:
+        # The LISTEN connection dropped — flag a re-listen and wake the loop to do it.
+        self._listen_lost = True
+        self._wake.set()
+
+    async def _run(self) -> None:
+        await self._drain()  # clear any startup backlog first
+        while True:
+            try:
+                await asyncio.wait_for(self._wake.wait(), timeout=self._poll_interval)
+            except TimeoutError:
+                pass  # periodic safety sweep
+            self._wake.clear()
+            if self._listen_lost:  # reconnect the live path; the sweep bridged the outage
+                with contextlib.suppress(Exception):
+                    await self._relisten()
+            try:
+                await self._drain()
+            except Exception:  # noqa: BLE001 - the relay must never die on a transient error
+                # Leave rows unrelayed; the next sweep retries (at-least-once).
+                continue
+
+    async def _drain(self) -> None:
+        """Publish every unrelayed event, in order, until the outbox is empty.
+
+        One Postgres transaction per batch:
+          1. SELECT FOR UPDATE SKIP LOCKED — prevents two relay workers picking the same rows.
+          2. XADD each event to Redis (inside the open transaction).
+          3. Mark the published events relayed and commit — atomically.
+
+        At-least-once: if the process dies before commit the rows stay unrelayed → retry next pass.
+        A duplicate publish (XADD ok, commit fails) is harmless (the reducer drops seq <= lastSeq).
+
+        Poison handling: a single event whose XADD keeps failing is retried up to `max_attempts`
+        (across sweeps), then QUARANTINED to dead_events and marked relayed so it can't wedge the
+        hunt's tail. On a transient failure mid-batch we stop and keep order — the failed event and
+        everything after it stay unrelayed for the next pass.
+        """
+        while True:
+            stalled = False
+            async with self._pool.acquire() as conn:
+                async with conn.transaction():
+                    batch = await self._repo.fetch_unrelayed_locked(conn)
+                    if not batch:
+                        return
+                    relayed = []
+                    for event in batch:
+                        try:
+                            await self._bus.append(event)
+                            relayed.append(event)
+                        except Exception as exc:  # noqa: BLE001 — one bad event must not stall all
+                            # Durable count (survives a relay restart), incremented in this txn.
+                            attempts = await self._repo.bump_relay_attempts(conn, event)
+                            if attempts >= self._max_attempts:
+                                await self._repo.quarantine_event(
+                                    conn, event, attempts=attempts, reason=repr(exc)
+                                )
+                                relayed.append(event)  # marked relayed → tail unblocks (logged gap)
+                                _LOG.warning(
+                                    "quarantined poison event %s seq=%s after %d attempts: %s",
+                                    event.hunt_id,
+                                    event.seq,
+                                    attempts,
+                                    exc,
+                                )
+                                continue
+                            # Transient: stop after committing what published (and the bumped count),
+                            # preserving per-hunt order. Retry the rest on the next sweep (~1s).
+                            stalled = True
+                            break
+                    if relayed:
+                        await self._repo.mark_batch_relayed(conn, relayed)
+            if stalled:
+                return
+
+    async def stop(self) -> None:
+        """Cancel the loop, do one final drain so nothing is stranded, release the conn."""
+        if self._task is not None:
+            self._task.cancel()
+            with contextlib.suppress(asyncio.CancelledError):
+                await self._task
+            self._task = None
+        with contextlib.suppress(Exception):
+            await self._drain()
+        if self._listen_conn is not None:
+            with contextlib.suppress(Exception):
+                await self._listen_conn.remove_listener(NOTIFY_CHANNEL, self._on_notify)
+            await self._pool.release(self._listen_conn)
+            self._listen_conn = None
