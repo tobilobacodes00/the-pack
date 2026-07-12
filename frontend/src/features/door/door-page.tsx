@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { lazy, Suspense, useEffect, useMemo, useState } from 'react'
 import { useLocation, useNavigate } from 'react-router-dom'
 import { AnimatePresence, motion } from 'framer-motion'
 import { ChevronDown } from 'lucide-react'
@@ -6,21 +6,25 @@ import { useDoorLogic } from '../intake/use-intake'
 import { PresetCard, PRESETS } from '../intake/preset-card'
 import { FileDropOverlay } from '../intake/file-drop-overlay'
 import { LeftPanel } from '../territory/left-panel'
-import { GraphCanvas } from '../territory/graph-canvas'
 import { TerritoryFooter, composerVisible } from '../territory/territory-footer'
-import { FormationEditor } from '../territory/formation-editor/formation-editor'
-import { RewardModal } from '../reward/reward-modal'
 import { useReward } from '../reward/use-reward'
 import { useHuntToast } from '../territory/use-hunt-toast'
 import { ChatColumn } from './chat-column'
 import { HuntSidebar } from './hunt-sidebar'
 import { DoorLanding } from './door-landing'
-import { HeroWolf } from './hero-wolf'
 import { useHuntStore } from '@/store/hunt-store'
 import { useHuntStream } from '@/hooks/use-hunt-stream'
 import { useApprovePlan } from '@/api/hunts'
 import { color } from '@/lib/theme'
-import SplashCursor from '@/ui/splash-cursor'
+
+// Territory-only surfaces (and the fluid smoke) load on demand: keeps @xyflow/react and the
+// reward flow out of the landing bundle entirely, so the Door paints with chat+landing code only.
+const GraphCanvas = lazy(() => import('../territory/graph-canvas').then((m) => ({ default: m.GraphCanvas })))
+const FormationEditor = lazy(() =>
+  import('../territory/formation-editor/formation-editor').then((m) => ({ default: m.FormationEditor })),
+)
+const RewardModal = lazy(() => import('../reward/reward-modal').then((m) => ({ default: m.RewardModal })))
+const SplashCursor = lazy(() => import('@/ui/splash-cursor'))
 
 const MORPH = { duration: 0.55, ease: [0.4, 0, 0.2, 1] as const }
 
@@ -46,6 +50,20 @@ export default function DoorPage() {
     return () => window.removeEventListener('scroll', onScroll)
   }, [phase])
   useHuntStream(huntId)
+
+  // Smoke is a cursor effect — only mount it where a real cursor exists. Touch devices skip
+  // the full-screen fluid sim entirely (their scroll stays butter).
+  const finePointer = useMemo(() => window.matchMedia('(pointer: fine)').matches, [])
+
+  // Quietly warm the territory chunks once the landing has settled, so the intake→territory
+  // morph never waits on the network even though the landing didn't pay for them up front.
+  useEffect(() => {
+    const t = window.setTimeout(() => {
+      void import('../territory/graph-canvas')
+      void import('../reward/reward-modal')
+    }, 3500)
+    return () => window.clearTimeout(t)
+  }, [])
 
   // Fresh door session: clear any hunt state left over from a prior visit (the store
   // is a global singleton and survives SPA nav back to '/'), so the canvas that opens
@@ -91,9 +109,13 @@ export default function DoorPage() {
       onDragLeave={onDragLeave}
       onDrop={onDrop}
     >
-      {!isTerritory && <HeroWolf />}
-      {/* Fluid smoke rides the cursor across the ENTIRE landing (hero + every section below). */}
-      {!isTerritory && (
+      {/* The wolf (hero emblem → pack → big lone wolf) lives entirely in DoorLanding's PackReveal
+          now — one continuous fixed element across the whole scroll, so there's no separate hero
+          wolf to hand off from. */}
+      {/* Fluid smoke rides the cursor across the ENTIRE landing (hero + every section below).
+          Desktop-only (needs a cursor) and lazy — it never blocks the landing's first paint. */}
+      {!isTerritory && finePointer && (
+        <Suspense fallback={null}>
         <SplashCursor
           SIM_RESOLUTION={96}
           DYE_RESOLUTION={720}
@@ -109,6 +131,7 @@ export default function DoorPage() {
           RAINBOW_MODE={false}
           COLOR="#6b6b6b"
         />
+        </Suspense>
       )}
 
       {/* HERO — always exactly one viewport; the landing (intake only) scrolls in below it. */}
@@ -166,7 +189,9 @@ export default function DoorPage() {
               transition={MORPH}
               className="absolute inset-0 z-0 flex"
             >
-              <GraphCanvas huntState={huntState} />
+              <Suspense fallback={null}>
+                <GraphCanvas huntState={huntState} />
+              </Suspense>
             </motion.div>
           )}
         </AnimatePresence>
@@ -242,11 +267,13 @@ export default function DoorPage() {
         {/* Edit Formations — full-canvas editor overlay, over the roster + chat. */}
         {editing && canEdit && (
           <div style={{ position: 'absolute', inset: 0, zIndex: 40 }}>
-            <FormationEditor
-              plan={huntState.plan}
-              onSave={(edits) => { applyLocalEdits(edits); setEditing(false) }}
-              onCancel={() => setEditing(false)}
-            />
+            <Suspense fallback={null}>
+              <FormationEditor
+                plan={huntState.plan}
+                onSave={(edits) => { applyLocalEdits(edits); setEditing(false) }}
+                onCancel={() => setEditing(false)}
+              />
+            </Suspense>
           </div>
         )}
       </div>
@@ -272,7 +299,11 @@ export default function DoorPage() {
 
       {!isTerritory && <DoorLanding door={door} />}
 
-      {huntId && <RewardModal huntId={huntId} open={reward.open} onClose={reward.close} />}
+      {huntId && (
+        <Suspense fallback={null}>
+          <RewardModal huntId={huntId} open={reward.open} onClose={reward.close} />
+        </Suspense>
+      )}
       {isDragging && <FileDropOverlay />}
     </div>
   )
