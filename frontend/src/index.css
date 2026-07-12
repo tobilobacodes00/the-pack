@@ -47,6 +47,13 @@
   box-sizing: border-box;
 }
 
+/* Below-the-fold landing sections skip layout & paint entirely until scrolled near —
+   the browser renders a placeholder box (~estimated height) instead of the real content. */
+.cv-auto {
+  content-visibility: auto;
+  contain-intrinsic-size: auto 800px;
+}
+
 html, body, #root {
   height: 100%;
   margin: 0;

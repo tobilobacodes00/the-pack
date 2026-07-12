@@ -12,6 +12,19 @@ const config: UserConfig & { test?: Record<string, unknown> } = {
   plugins: [react(), tailwindcss()],
   resolve: { alias: { '@': resolve(__dirname, './src') } },
   server: { port: 5173 },
+  build: {
+    // Stable vendor chunks: an app-code change no longer busts the whole vendor cache, and
+    // @xyflow/react ships only with the lazy territory chunk (never on the landing path).
+    rollupOptions: {
+      output: {
+        manualChunks: {
+          'vendor-react': ['react', 'react-dom', 'react-router-dom'],
+          'vendor-motion': ['framer-motion'],
+          'vendor-flow': ['@xyflow/react'],
+        },
+      },
+    },
+  },
   test: {
     globals: true,
     environment: 'jsdom',
