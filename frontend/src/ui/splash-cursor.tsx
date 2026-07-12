@@ -1247,7 +1247,9 @@ export default function SplashCursor({
       clickSplat(pointer);
       wake();
     };
-    window.addEventListener('mousedown', onMouseDown);
+    // All listeners are passive — none call preventDefault, and non-passive touch
+    // listeners on window force the browser to wait on JS before every scroll frame.
+    window.addEventListener('mousedown', onMouseDown, { passive: true });
 
     function handleFirstMouseMove(e: MouseEvent) {
       const pointer = pointers[0];
@@ -1258,7 +1260,7 @@ export default function SplashCursor({
       wake();
       document.body.removeEventListener('mousemove', handleFirstMouseMove);
     }
-    document.body.addEventListener('mousemove', handleFirstMouseMove);
+    document.body.addEventListener('mousemove', handleFirstMouseMove, { passive: true });
 
     const onMouseMove = (e: MouseEvent) => {
       const pointer = pointers[0];
@@ -1268,7 +1270,7 @@ export default function SplashCursor({
       updatePointerMoveData(pointer, posX, posY, color);
       wake();
     };
-    window.addEventListener('mousemove', onMouseMove);
+    window.addEventListener('mousemove', onMouseMove, { passive: true });
 
     function handleFirstTouchStart(e: TouchEvent) {
       const touches = e.targetTouches;
@@ -1281,7 +1283,7 @@ export default function SplashCursor({
       wake();
       document.body.removeEventListener('touchstart', handleFirstTouchStart);
     }
-    document.body.addEventListener('touchstart', handleFirstTouchStart);
+    document.body.addEventListener('touchstart', handleFirstTouchStart, { passive: true });
 
     const onTouchStart = (e: TouchEvent) => {
       const touches = e.targetTouches;
@@ -1293,7 +1295,7 @@ export default function SplashCursor({
       }
       wake();
     };
-    window.addEventListener('touchstart', onTouchStart, false);
+    window.addEventListener('touchstart', onTouchStart, { passive: true });
 
     const onTouchMove = (e: TouchEvent) => {
       const touches = e.targetTouches;
@@ -1305,7 +1307,7 @@ export default function SplashCursor({
       }
       wake();
     };
-    window.addEventListener('touchmove', onTouchMove, false);
+    window.addEventListener('touchmove', onTouchMove, { passive: true });
 
     const onTouchEnd = (e: TouchEvent) => {
       const touches = e.changedTouches;
@@ -1314,7 +1316,7 @@ export default function SplashCursor({
         updatePointerUpData(pointer);
       }
     };
-    window.addEventListener('touchend', onTouchEnd);
+    window.addEventListener('touchend', onTouchEnd, { passive: true });
 
     // Teardown. Without this, every remount (door -> territory -> door, StrictMode dev
     // double-mount) stacked another window-level listener set AND another forever-running
