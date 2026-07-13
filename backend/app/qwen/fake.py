@@ -46,7 +46,7 @@ def _offline_result(intent: str, task: str) -> tuple[str, dict | None]:
     free-text intents (draft, chat) and a schema-shaped object for the structured ones."""
     if intent == "plan":
         summary = f"A parallel research plan on {task}: range on three angles, merge, draft."
-        parsed = {
+        parsed: dict[str, object] = {
             "summary": summary,
             "team": [{"role": "scout", "count": 3}],
             "queries": [
@@ -55,8 +55,8 @@ def _offline_result(intent: str, task: str) -> tuple[str, dict | None]:
                 f"{task} — risks, context, and outlook",
             ],
             "assumptions": [f"scope: {task}", "recent sources", "briefing format"],
-            "est_cost": 0.6,
-            "est_time": 210,
+            # No est_cost/est_time — Beta no longer estimates; the engine derives them per depth.
+            "depth": "standard",
         }
         return summary, parsed
     if intent == "search":
@@ -94,6 +94,10 @@ def _offline_result(intent: str, task: str) -> tuple[str, dict | None]:
             ]
         }
         return "Two gaps remain; sending the pack back in.", parsed
+    if intent == "distill":
+        # The Elder's end-of-hunt lesson — a typed, reusable line woven from the task (offline).
+        lesson = f"On {task}, primary sources beat aggregators — start there next time."
+        return lesson, {"kind": "what-worked", "lesson": lesson}
     if intent == "standoff_challenge":
         return f"That claim on {task} leans on a single source — it needs a second to stand.", None
     if intent == "standoff_defend":

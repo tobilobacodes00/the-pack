@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import asyncio
 
-from app.engine.strategies.base import Engine, Strategy
+from app.engine.strategies.base import Engine, Strategy, drop_empty, keep_findings
 
 
 class CritiqueStrategy(Strategy):
@@ -24,11 +24,14 @@ class CritiqueStrategy(Strategy):
         results = await asyncio.gather(
             *(engine.scout(w, q) for w, q in zip(ids, queries, strict=False))
         )
-        findings = [f for f in results if f]
+        findings = drop_empty(results)
 
-        merged = await engine.merge(findings)
+        merged = await engine.merge(keep_findings(findings))
 
-        # The critique core: Sentinel challenges the weakest claim, then the pack corrects.
+        # The critique core: Sentinel challenges the weakest claim in a grounded standoff, then the
+        # verdict is ENFORCED — apply_critique deterministically drops the flagged claims so a claim
+        # Sentinel couldn't stand up never reaches the brief (the old re-merge ran on identical
+        # findings and changed nothing — the verify stage was theatre).
         verdict = await engine.critique(merged)
         if not verdict.ok and verdict.issues:
             issue = verdict.issues[0]
@@ -36,9 +39,10 @@ class CritiqueStrategy(Strategy):
                 challenger="sentinel",
                 defendant="tracker",
                 claim_ref=merged.output_ref or f"art_{engine.task[:8]}_merge",
-                rationale=issue.get("problem", "A claim needs a stronger source."),
+                rationale=issue.get("problem") or "A claim needs a stronger source.",
+                evidence=engine.standoff_evidence(merged, issue),
             )
-            merged = await engine.merge(findings, step_id="s2b")
+        merged = await engine.apply_critique(merged, verdict)
 
         decision = None
         if merged.conflict:

@@ -19,6 +19,7 @@ import pytest
 from jsonschema import Draft202012Validator
 
 from app.engine.core import Emitter
+from app.engine.roster import build_team
 from app.engine.search_query import broaden
 from app.engine.supervisor import Supervisor
 from app.events.models import load_event_schema
@@ -105,6 +106,28 @@ async def test_offline_orchestrate_runs_clean() -> None:
     assert not any(e.type == "hold_opened" for e in events)
 
 
+async def test_offline_totals_time_s_is_measured_not_the_plan_estimate() -> None:
+    """The counter fix: hunt_completed.totals.time_s is the REAL measured wall-clock runtime, not the
+    plan's est_time guess (FakeQwen's is 210s). An offline hunt runs in well under a second, so the
+    measured value is a small non-negative float — proving it's timed, not the hardcoded estimate."""
+    events = await _run("orchestrate")
+    totals = next(e for e in events if e.type == "hunt_completed").payload["totals"]
+    time_s = totals["time_s"]
+
+    assert isinstance(time_s, (int, float))
+    assert time_s >= 0.0, "measured runtime is never negative"
+    # The est_time estimate is 210s; the whole offline hunt finishes in a fraction of a second, so a
+    # measured clock is unambiguously far below it (and far below any plausible real hunt estimate).
+    assert time_s < 60.0, f"time_s={time_s} looks like the plan estimate, not a measured runtime"
+    # It's anchored at plan_approved (running start), so it excludes the approval gate but covers the
+    # work — for an offline hunt that's a real, tiny, positive elapsed once we ran any awaits.
+    plan_approved = next(e for e in events if e.type == "plan_approved")
+    completed = next(e for e in events if e.type == "hunt_completed")
+    assert completed.seq > plan_approved.seq, (
+        "the pack did real work between approval and completion"
+    )
+
+
 async def test_offline_deep_dive_does_a_second_round() -> None:
     events = await _run("deep_dive")
     _assert_invariants(events)
@@ -159,10 +182,12 @@ async def test_offline_per_wolf_budget_relieves_a_scout(monkeypatch: pytest.Monk
         assert not list(validator.iter_errors(e.model_dump()))
 
 
-async def test_offline_doctor_heals_faults_and_clones() -> None:
-    """v2: a fault dispatches the Doctor to heal it; a second concurrent fault clones the Doctor."""
+async def test_offline_warden_heals_faults_and_clones() -> None:
+    """v3: the STANDING Warden (adopted, not re-spawned) heals the first fault; a second concurrent
+    fault spawns ONE overflow clone. The heal rides the frozen `doctor_*` event types with the
+    Warden's id in `doctor_id`."""
     repo = FakeRepo()
-    hunt_id = "hunt_doctor"
+    hunt_id = "hunt_warden"
     emitter = Emitter(hunt_id, repo)
     sup = Supervisor(
         hunt_id,
@@ -174,18 +199,49 @@ async def test_offline_doctor_heals_faults_and_clones() -> None:
         raw_input="a topic",
         strategy="orchestrate",
     )
-    await sup._stray_event("scout-1", "timeout", None)
-    await sup._stray_event("scout-2", "repeat_fail", None)  # a second fault → the Doctor clones
+    # A real hunt spawns the standing roster (which now includes the ×1 Warden) before any fault.
+    sup._team = build_team({})
+    await sup._spawn_roster()
+    assert "warden" in sup._wolves, "the Warden is a standing member spawned at hunt start"
+    roster_warden_spawns = sum(
+        1
+        for e in repo.all_events(hunt_id)
+        if e.type == "wolf_spawned" and e.payload["role"] == "warden"
+    )
+    assert roster_warden_spawns == 1, "exactly one standing Warden at start"
+
+    await sup._stray_event(
+        "scout-1", "timeout", None
+    )  # adopts the standing 'warden' — no new spawn
+    await sup._stray_event("scout-2", "repeat_fail", None)  # a 2nd concurrent fault → one clone
     events = repo.all_events(hunt_id)
     types = [e.type for e in events]
 
     assert types.count("doctor_dispatched") == 2
     assert types.count("doctor_healed") == 2
+    # The standing Warden (spawned by the roster) is ADOPTED for the first heal — no extra spawn — and
+    # exactly ONE overflow clone (warden-2) is spawned for the second concurrent fault.
     spawns = [e.payload for e in events if e.type == "wolf_spawned"]
-    doctors = [p for p in spawns if p["role"] == "doctor"]
-    assert len(doctors) == 2, "the Doctor clones itself for the second fault"
-    assert any(d.get("parent_wolf_id") for d in doctors), "the clone records its parent Doctor"
-    # the Stray path still fires alongside the Doctor, and every event is schema-valid.
+    wardens = [p for p in spawns if p["role"] == "warden"]
+    assert len(wardens) == 2, "the standing Warden + one overflow clone"
+    assert {w["wolf_id"] for w in wardens} == {"warden", "warden-2"}
+    clone = next(w for w in wardens if w["wolf_id"] == "warden-2")
+    assert clone.get("parent_wolf_id") == "warden", (
+        "the clone records its parent (the standing Warden)"
+    )
+    # the two heals are attributed to the standing 'warden' and the clone 'warden-2'.
+    healers = {e.payload["doctor_id"] for e in events if e.type == "doctor_dispatched"}
+    assert healers == {"warden", "warden-2"}
+    assert not any(p["role"] == "doctor" for p in spawns), (
+        "the Doctor is retired — nothing spawns it"
+    )
+    # the dispatch/heal are attributed to the Warden (actor + doctor_id both start 'warden').
+    for e in events:
+        if e.type in ("doctor_dispatched", "doctor_healed"):
+            assert e.actor.startswith("warden"), f"{e.type} should be attributed to the Warden"
+            assert e.payload["doctor_id"].startswith("warden")
+            assert e.payload["target_wolf_id"] in ("scout-1", "scout-2")
+    # the Stray path still fires alongside the Warden, and every event is schema-valid.
     assert types.count("stray_detected") == 2 and types.count("stray_recovered") == 2
     validator = Draft202012Validator(load_event_schema())
     for e in events:
@@ -202,6 +258,27 @@ async def test_memory_recall_and_remember_roundtrip() -> None:
     note = await recall(repo, "a finance topic")  # topic-relevant → recalled
     assert "Prefer primary sources" in note
     assert await recall(repo, "medieval poetry") == ""  # unrelated topic → not recalled
+
+
+async def test_memory_typed_lessons_recall_as_guidance() -> None:
+    """v2 (deepened): lessons are TYPED. A preference is a standing rule (surfaces even with no topic
+    overlap); topic-bound kinds surface only on a matching topic; recall groups them as guidance."""
+    from app.tools.memory import recall, remember
+
+    repo = FakeRepo()
+    await remember(repo, "h1", "The Packmaster wants a tight brief, not a long one.", "preference")
+    await remember(repo, "h2", "Vendor docs beat news for API pricing questions.", "what-worked")
+    await remember(repo, "h3", "The 2026 BNPL figure is 40M users.", "topic-insight")
+
+    # Unrelated topic: only the standing preference carries; the topic-bound lessons stay out.
+    note = await recall(repo, "medieval poetry")
+    assert "tight brief" in note and "What the Packmaster prefers" in note
+    assert "Vendor docs" not in note and "BNPL" not in note
+
+    # A matching topic pulls the topic-bound lesson in too, grouped under its kind header.
+    on_topic = await recall(repo, "the BNPL market in 2026")
+    assert "BNPL" in on_topic and "already knows about this" in on_topic
+    assert "tight brief" in on_topic  # the preference still leads
 
 
 async def test_offline_elder_recalls_and_remembers() -> None:
@@ -226,9 +303,19 @@ async def test_offline_elder_recalls_and_remembers() -> None:
     events = repo.all_events(hunt_id)
 
     assert any(e.type == "wolf_spawned" and e.payload["role"] == "elder" for e in events)
-    elder = next(e for e in events if e.type == "step_started" and e.payload["wolf_id"] == "elder")
-    assert "Recalled" in elder.payload["summary"], "the seeded memory reached the Elder's recall"
-    assert len(repo.memory) == 2 and any("BNPL" in m["text"] for m in repo.memory)
+    elder_steps = [
+        e for e in events if e.type == "step_started" and e.payload["wolf_id"] == "elder"
+    ]
+    # The Elder's node lights at BOTH ends: recall at the start, distilling a lesson at the end.
+    assert len(elder_steps) == 2, "the Elder appears for recall AND for the end-of-hunt distill"
+    assert "Recalled" in elder_steps[0].payload["summary"], "the seeded memory reached recall"
+    assert "lesson" in elder_steps[1].payload["summary"].lower()
+
+    # The Elder wrote a NEW, TYPED lesson (a real distill call, not the old flat template).
+    assert len(repo.memory) == 2, "the seeded lesson plus one freshly distilled lesson"
+    fresh = repo.memory[-1]
+    assert fresh["kind"] in ("preference", "what-worked", "what-failed", "topic-insight")
+    assert fresh["text"] and "strategy," not in fresh["text"], "a real lesson, not the old template"
 
 
 async def test_offline_no_sources_is_honest(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -271,8 +358,8 @@ async def test_offline_no_sources_is_honest(monkeypatch: pytest.MonkeyPatch) -> 
 
 
 async def test_memory_recall_is_topic_scoped(monkeypatch: pytest.MonkeyPatch) -> None:
-    """v4.1 + review M2: a takeaway is recalled into a RELATED next hunt, but NOT into an unrelated
-    one (global recency would pollute every hunt with irrelevant lessons)."""
+    """v4.1 + review M2: the Elder's distilled lesson is recalled into a RELATED next hunt, but NOT
+    into an unrelated one (global recency would pollute every hunt with irrelevant lessons)."""
 
     def _run(hunt_id: str, topic: str, repo: FakeRepo) -> Supervisor:
         commands: asyncio.Queue = asyncio.Queue()
@@ -292,7 +379,9 @@ async def test_memory_recall_is_topic_scoped(monkeypatch: pytest.MonkeyPatch) ->
     await asyncio.wait_for(
         _run("hunt_m1", "the solid-state battery market", repo).run(), timeout=15
     )
-    assert any(m["kind"] == "takeaway" for m in repo.memory)  # a takeaway was stored
+    # A real, typed lesson was distilled and stored (offline → a `what-worked` lesson naming the topic).
+    assert repo.memory and repo.memory[-1]["kind"] != "takeaway"
+    assert "solid-state battery" in repo.memory[-1]["text"]
 
     related = _run("hunt_m2", "solid-state battery supplier costs", repo)
     await asyncio.wait_for(related.run(), timeout=15)
@@ -576,3 +665,341 @@ async def test_offline_topic_awareness(strategy: str) -> None:
         "BNPL" in e.payload["args_summary"] or "Nigeria" in e.payload["args_summary"]
         for e in tool_calls
     )
+
+
+# --- v3: adaptive depth -----------------------------------------------------------------
+
+
+def _bare_sup(repo: FakeRepo, hunt_id: str, strategy: str | None = "orchestrate") -> Supervisor:
+    return Supervisor(
+        hunt_id,
+        Emitter(hunt_id, repo),
+        repo,
+        QwenClient(),
+        asyncio.Queue(),
+        source="typed",
+        raw_input="the BNPL market in Nigeria",
+        strategy=strategy,
+    )
+
+
+async def test_normalize_plan_defaults_depth_standard() -> None:
+    """A plan with no depth (and an out-of-enum one) normalizes to 'standard' — never an ungated
+    string, which would make the frontend z.enum drop the whole plan_proposed event."""
+    sup = _bare_sup(FakeRepo(), "hunt_depth_default")
+    assert sup._normalize_plan({})["depth"] == "standard"
+    assert sup._normalize_plan({"depth": "DEEP"})["depth"] == "deep"  # case-insensitive
+    assert sup._normalize_plan({"depth": "huge"})["depth"] == "standard"  # clamped
+    assert sup.depth == "standard"  # property reads self._plan
+
+
+async def test_offline_hunt_carries_depth_on_plan_proposed() -> None:
+    """FakeQwen proposes 'standard'; it lands on plan_proposed and drives self.depth."""
+    events = await _run("orchestrate")
+    plan_ev = next(e for e in events if e.type == "plan_proposed")
+    assert plan_ev.payload["depth"] == "standard"
+
+
+async def test_deep_depth_auto_upgrades_to_deep_dive(monkeypatch: pytest.MonkeyPatch) -> None:
+    """A 'deep' plan with no explicit strategy upgrades orchestrate → deep_dive (a 2nd scout round)."""
+    from app.qwen import fake as fake_mod
+
+    orig = fake_mod._offline_result
+
+    def deep_plan(intent, task):
+        text, parsed = orig(intent, task)
+        if intent == "plan" and parsed is not None:
+            parsed = {**parsed, "depth": "deep"}
+        return text, parsed
+
+    monkeypatch.setattr(fake_mod, "_offline_result", deep_plan)
+
+    repo = FakeRepo()
+    hunt_id = "hunt_deep"
+    sup = _bare_sup(repo, hunt_id, strategy=None)  # no explicit strategy → eligible to upgrade
+    await sup._propose_plan()
+    assert sup.depth == "deep"
+    assert sup._plan["strategy"] == "deep_dive"
+    assert sup._strategy.name == "deep_dive"
+
+
+async def test_explicit_strategy_beats_deep_upgrade(monkeypatch: pytest.MonkeyPatch) -> None:
+    """An explicitly-chosen strategy is never overridden by a 'deep' plan."""
+    from app.qwen import fake as fake_mod
+
+    orig = fake_mod._offline_result
+
+    def deep_plan(intent, task):
+        text, parsed = orig(intent, task)
+        if intent == "plan" and parsed is not None:
+            parsed = {**parsed, "depth": "deep"}
+        return text, parsed
+
+    monkeypatch.setattr(fake_mod, "_offline_result", deep_plan)
+    sup = _bare_sup(FakeRepo(), "hunt_deep_explicit", strategy="orchestrate")
+    await sup._propose_plan()
+    assert sup.depth == "deep"
+    assert sup._strategy.name == "orchestrate"  # explicit choice wins
+
+
+async def test_approve_applies_user_depth_override() -> None:
+    """The user's depth choice on the plan card reaches self._plan before the pack runs; None keeps
+    Beta's; an out-of-enum value is ignored."""
+    sup = _bare_sup(FakeRepo(), "hunt_override", strategy=None)
+    await sup._propose_plan()  # seeds a 'standard' plan
+    await sup._approve({"mode": "on_signal", "boundary_usd": 1.0, "depth": "deep"})
+    assert sup.depth == "deep"
+    # the override doesn't just scale targets — it re-drives the strategy to the deep second round
+    assert sup._strategy.name == "deep_dive"
+    assert sup._plan["strategy"] == "deep_dive"
+    # the approval emits the applied depth (so resume can restore it)
+    appr = next(e for e in sup._repo.all_events(sup._hunt_id) if e.type == "plan_approved")
+    assert appr.payload["depth"] == "deep"
+
+
+async def test_approve_depth_none_keeps_proposed_and_bad_is_ignored() -> None:
+    sup = _bare_sup(FakeRepo(), "hunt_override_none")
+    await sup._propose_plan()
+    await sup._approve({"mode": "on_signal", "boundary_usd": 1.0})  # no depth
+    assert sup.depth == "standard"
+    sup2 = _bare_sup(FakeRepo(), "hunt_override_bad")
+    await sup2._propose_plan()
+    await sup2._approve({"mode": "on_signal", "boundary_usd": 1.0, "depth": "huge"})
+    assert sup2.depth == "standard"  # bad override ignored
+
+
+async def test_depth_and_strategy_survive_rehydrate(monkeypatch: pytest.MonkeyPatch) -> None:
+    """A resumed hunt restores its depth AND its (possibly upgraded) strategy — not the __init__
+    default. This is the resume bug the plan folds in."""
+    from app.qwen import fake as fake_mod
+
+    orig = fake_mod._offline_result
+
+    def deep_plan(intent, task):
+        text, parsed = orig(intent, task)
+        if intent == "plan" and parsed is not None:
+            parsed = {**parsed, "depth": "deep"}
+        return text, parsed
+
+    monkeypatch.setattr(fake_mod, "_offline_result", deep_plan)
+
+    repo = FakeRepo()
+    hunt_id = "hunt_resume_depth"
+    sup = _bare_sup(repo, hunt_id, strategy=None)
+    await sup._propose_plan()  # emits plan_proposed with depth=deep, strategy=deep_dive
+    await sup._approve({"mode": "on_signal", "boundary_usd": 1.0})  # emits plan_approved
+
+    # A fresh Supervisor (new process) rehydrates from the event log — default orchestrate/standard.
+    fresh = _bare_sup(repo, hunt_id, strategy=None)
+    assert fresh.depth == "standard" and fresh._strategy.name == "orchestrate"  # pre-rehydrate
+    await fresh._rehydrate_from_events()
+    assert fresh.depth == "deep", "depth restored from the plan"
+    assert fresh._strategy.name == "deep_dive", "the upgraded strategy is re-resolved, not reverted"
+
+
+async def test_offline_hunt_reports_real_measured_time() -> None:
+    """hunt_completed.totals.time_s is MEASURED wall clock (monotonic), not the plan's est_time guess.
+    The offline run does real awaits between approve and complete, so it's strictly positive and small."""
+    events = await _run("orchestrate")
+    done = next(e for e in events if e.type == "hunt_completed")
+    time_s = done.payload["totals"]["time_s"]
+    assert time_s > 0.0, "measured, not a frozen 0.0 fallback"
+    assert time_s < 60.0, (
+        "a sub-second offline run can't take a minute — proves it's not est_time(210)"
+    )
+
+
+# --- Beta planning quality: query dedup/fill, honest assumptions/estimates, depth floor ----------
+
+
+def _deep_offline(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Monkeypatch FakeQwen's plan to report depth='deep' (everything else unchanged)."""
+    from app.qwen import fake as fake_mod
+
+    orig = fake_mod._offline_result
+
+    def deep_plan(intent, task):
+        text, parsed = orig(intent, task)
+        if intent == "plan" and parsed is not None:
+            parsed = {**parsed, "depth": "deep"}
+        return text, parsed
+
+    monkeypatch.setattr(fake_mod, "_offline_result", deep_plan)
+
+
+async def test_normalize_plan_dedups_duplicate_queries() -> None:
+    """Two identical Beta queries collapse to one and the freed scout slot is backfilled with a
+    distinct facet — n scouts always range n DISTINCT angles (dups no longer shrink coverage)."""
+    sup = _bare_sup(FakeRepo(), "hunt_dedup")
+    plan = sup._normalize_plan(
+        {
+            "team": [{"role": "scout", "count": 3}],
+            "queries": ["EV batteries", "EV batteries", "grid"],
+        }
+    )
+    qs = plan["queries"]
+    assert len(qs) == 3
+    assert len({q.casefold() for q in qs}) == 3, "no duplicate angle survives"
+    assert "grid" in qs and any(q.casefold() == "ev batteries" for q in qs)
+
+
+async def test_normalize_plan_fills_short_query_list_with_distinct_facets() -> None:
+    """One Beta query for a 3-scout team → 3 distinct queries; the fills are real facet angles that
+    differ from the Beta query and from each other."""
+    sup = _bare_sup(FakeRepo(), "hunt_fill")
+    plan = sup._normalize_plan({"team": [{"role": "scout", "count": 3}], "queries": ["one angle"]})
+    qs = plan["queries"]
+    assert len(qs) == 3 and len({q.casefold() for q in qs}) == 3
+    assert qs[0] == "one angle"
+    assert all("angle N" not in q for q in qs), "no old '{task} — angle N' placeholder"
+
+
+async def test_normalize_plan_empty_assumptions_stay_empty() -> None:
+    """No assumptions from Beta → an empty array, NOT the old non-editable boilerplate triple."""
+    sup = _bare_sup(FakeRepo(), "hunt_assume")
+    assert sup._normalize_plan({})["assumptions"] == []
+    assert sup._normalize_plan({"assumptions": []})["assumptions"] == []
+    assert sup._normalize_plan({"assumptions": ["assuming a small team"]})["assumptions"] == [
+        "assuming a small team"
+    ]
+
+
+async def test_normalize_plan_est_always_depth_derived() -> None:
+    """Estimates are ALWAYS derived per depth — a bogus/negative Beta number never wins."""
+    sup = _bare_sup(FakeRepo(), "hunt_est")
+    std = sup._normalize_plan({"depth": "standard", "est_cost": 0, "est_time": -5})
+    assert std["est_cost"] == 0.7 and std["est_time"] == 220
+    deep = sup._normalize_plan({"depth": "deep", "est_cost": 999.0, "est_time": 999})
+    assert deep["est_cost"] == 1.4 and deep["est_time"] == 340
+
+
+async def test_normalize_plan_carries_summary() -> None:
+    """Beta's summary lands on the payload; an empty plan carries an empty summary so a fallback is
+    distinguishable from a real plan in the event log."""
+    sup = _bare_sup(FakeRepo(), "hunt_summary")
+    assert sup._normalize_plan({"summary": "the real plan"})["summary"] == "the real plan"
+    assert sup._normalize_plan({})["summary"] == ""
+
+
+async def test_normalize_plan_depth_floor_from_scout_count() -> None:
+    """A team of ≥4 scouts is not a fact-check → floor brief→standard. deep stays deep; a small
+    brief stays brief. The floor never forces `deep` (that would spend a second round on a heuristic)."""
+    sup = _bare_sup(FakeRepo(), "hunt_floor")
+    assert (
+        sup._normalize_plan({"team": [{"role": "scout", "count": 5}], "depth": "brief"})["depth"]
+        == "standard"
+    )
+    assert (
+        sup._normalize_plan({"team": [{"role": "scout", "count": 5}], "depth": "deep"})["depth"]
+        == "deep"
+    )
+    assert (
+        sup._normalize_plan({"team": [{"role": "scout", "count": 2}], "depth": "brief"})["depth"]
+        == "brief"
+    )
+
+
+async def test_normalize_plan_depth_floor_reads_seeded_scout_count() -> None:
+    """The floor keys off the EFFECTIVE team — an Instinct seed of 5 scouts floors a brief plan to
+    standard even though Beta proposed a small team."""
+    sup = Supervisor(
+        "hunt_floor_seed",
+        Emitter("hunt_floor_seed", FakeRepo()),
+        FakeRepo(),
+        QwenClient(),
+        asyncio.Queue(),
+        source="typed",
+        raw_input="a broad comparison",
+        strategy="orchestrate",
+        seed_team=[{"role": "scout", "count": 5}],
+    )
+    plan = sup._normalize_plan({"team": [{"role": "scout", "count": 1}], "depth": "brief"})
+    assert plan["depth"] == "standard"
+
+
+async def test_apply_edits_dedups_and_fills_queries() -> None:
+    """User-edited queries get the same dedup-and-fill as _normalize_plan; editing ONLY assumptions
+    leaves queries untouched and emits no spurious query diff."""
+    sup = _bare_sup(FakeRepo(), "hunt_edits")
+    await sup._propose_plan()  # 3 scouts, 3 queries
+    original = list(sup._plan["queries"])
+    # edit queries: a dup + a short list → deduped and filled to 3 distinct
+    await sup._apply_edits({"queries": ["dup", "dup"]})
+    edited = sup._plan["queries"]
+    assert len(edited) == 3 and len({q.casefold() for q in edited}) == 3
+    # editing only assumptions must not rewrite queries
+    await sup._apply_edits({"assumptions": ["assuming X"]})
+    assert sup._plan["queries"] == edited, "queries untouched when only assumptions edited"
+    assert sup._plan["assumptions"] == ["assuming X"]
+    assert original  # sanity: there were queries to begin with
+
+
+async def test_approve_depth_override_redrives_strategy() -> None:
+    """Bumping depth to 'deep' at approval re-drives orchestrate → deep_dive AND re-stamps the plan's
+    strategy (so a resumed hunt restores it) — not just the merge/draft scaling."""
+    sup = _bare_sup(FakeRepo(), "hunt_redrive", strategy=None)
+    await sup._propose_plan()  # standard / orchestrate
+    assert sup._strategy.name == "orchestrate"
+    await sup._approve({"mode": "on_signal", "boundary_usd": 1.0, "depth": "deep"})
+    assert sup.depth == "deep"
+    assert sup._strategy.name == "deep_dive", (
+        "the strategy actually re-drives, not just the targets"
+    )
+    assert sup._plan["strategy"] == "deep_dive", "the plan stamp is corrected for resume"
+
+
+async def test_approve_depth_downgrade_reverts_auto_upgrade(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Downgrading a deep (auto-upgraded) hunt back to standard reverts deep_dive → orchestrate — but
+    an EXPLICIT strategy is never reverted."""
+    _deep_offline(monkeypatch)
+    sup = _bare_sup(FakeRepo(), "hunt_revert", strategy=None)  # auto-upgrade eligible
+    await sup._propose_plan()
+    assert sup._strategy.name == "deep_dive"
+    await sup._approve({"mode": "on_signal", "boundary_usd": 1.0, "depth": "standard"})
+    assert sup._strategy.name == "orchestrate", "auto-upgrade reverted on downgrade"
+
+    # an explicitly-chosen deep_dive is NOT reverted by a downgrade
+    sup2 = _bare_sup(FakeRepo(), "hunt_revert_explicit", strategy="deep_dive")
+    await sup2._propose_plan()
+    await sup2._approve({"mode": "on_signal", "boundary_usd": 1.0, "depth": "standard"})
+    assert sup2._strategy.name == "deep_dive", "explicit strategy survives a downgrade"
+
+
+async def test_propose_plan_logs_on_empty_beta_plan(
+    monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
+) -> None:
+    """A Beta call that returns nothing structured logs a warning and still produces a usable fallback
+    plan (distinct facet queries, standard depth) — a silent planner failure is not allowed."""
+    from app.qwen import fake as fake_mod
+
+    orig = fake_mod._offline_result
+
+    def empty_plan(intent, task):
+        text, parsed = orig(intent, task)
+        return (text, None) if intent == "plan" else (text, parsed)
+
+    monkeypatch.setattr(fake_mod, "_offline_result", empty_plan)
+    sup = _bare_sup(FakeRepo(), "hunt_empty")
+    with caplog.at_level("WARNING"):
+        await sup._propose_plan()
+    assert any("facet fallback" in r.message for r in caplog.records), "empty plan is logged"
+    qs = sup._plan["queries"]
+    assert len(qs) == 3 and len({q.casefold() for q in qs}) == 3, "usable fallback plan"
+    assert sup._plan["depth"] == "standard"
+
+
+async def test_plan_proposed_emits_beta_ready_beat() -> None:
+    """After the plan lands, a 'Plan ready' wolf_progress beat settles Beta's node — on the in-enum
+    'thinking' phase so it passes the frozen schema (a '' phase would sink the whole stream)."""
+    sup = _bare_sup(FakeRepo(), "hunt_ready_beat")
+    await sup._propose_plan()
+    beats = [
+        e
+        for e in sup._repo.all_events(sup._hunt_id)
+        if e.type == "wolf_progress" and e.payload["wolf_id"] == "beta"
+    ]
+    ready = [e for e in beats if "Plan ready" in e.payload["text"]]
+    assert ready, "a settle beat is emitted when the plan lands"
+    assert ready[-1].payload["phase"] == "thinking", "in-enum phase (not '' / 'ready')"
