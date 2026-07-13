@@ -10,6 +10,7 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
+import pytest
 from fastapi.testclient import TestClient
 
 from app.dependencies import get_background, get_client, get_registry, get_repo
@@ -23,15 +24,25 @@ from ._fakes import FakeRepo
 _POSTMAN = Path(__file__).resolve().parents[2] / "docs" / "postman" / "Pack.postman_collection.json"
 
 
-def _client() -> TestClient:
+@pytest.fixture(autouse=True)
+def _clear_overrides():
+    """`_client()` installs global FastAPI dependency overrides on the shared `app`; without teardown
+    they LEAK into every later test that touches `app`, so the suite fails order-dependently (a real
+    bug this fixture kills at the root). Clear after each test so every test starts from a clean app."""
+    yield
+    app.dependency_overrides.clear()
+
+
+def _client() -> tuple[TestClient, FakeRepo]:
+    """A TestClient wired to a fresh FakeRepo, returned so a test can seed the repo. The state deps are
+    stubbed so Depends() resolution never hits app.state (FastAPI resolves Depends before body
+    validation, so these must not crash). Overrides are torn down by the autouse `_clear_overrides`."""
     fake = FakeRepo()
     app.dependency_overrides[get_repo] = lambda: fake
-    # Stub the remaining state deps so Depends() resolution never hits app.state in tests.
-    # (FastAPI resolves Depends before body validation, so these must not crash.)
     app.dependency_overrides[get_registry] = lambda: None
     app.dependency_overrides[get_client] = lambda: None
     app.dependency_overrides[get_background] = lambda: set()
-    return TestClient(app)
+    return TestClient(app), fake
 
 
 def test_postman_collection_matches_openapi_routes() -> None:
@@ -67,7 +78,7 @@ def test_downloadable_allowlist_matches_forge_renderers() -> None:
 
 
 def test_documents_crud_roundtrip() -> None:
-    client = _client()
+    client, _ = _client()
     files = {"file": ("notes.txt", b"solid state battery notes", "text/plain")}
     r = client.post("/documents", files=files)
     assert r.status_code == 202
@@ -86,14 +97,14 @@ def test_upload_over_cap_is_rejected_413(monkeypatch) -> None:
     from app.config import settings
 
     monkeypatch.setattr(settings, "max_upload_mb", 0)  # cap = 0 → any non-empty upload is too large
-    client = _client()
+    client, _ = _client()
     r = client.post("/documents", files={"file": ("big.txt", b"x" * 2048, "text/plain")})
     assert r.status_code == 413
 
 
 def test_bad_request_bodies_are_422() -> None:
     # B5: invalid enums/shapes are rejected at the door, before reaching the engine.
-    client = _client()
+    client, _ = _client()
     assert client.post("/hunts", json={"input": "x", "strategy": "bogus"}).status_code == 422
     assert client.post("/hunts", json={"input": "x", "source": "carrier-pigeon"}).status_code == 422
     assert (
@@ -108,7 +119,7 @@ def test_bad_request_bodies_are_422() -> None:
 
 def test_instinct_full_crud() -> None:
     # A1: save -> get -> patch -> delete, with 404s on a missing one.
-    client = _client()
+    client, _ = _client()
     body = {"label": "Deep Research", "spec": {"strategy": "deep_dive"}}
     sid = client.post("/instincts", json=body).json()["instinct_id"]
     assert client.get(f"/instincts/{sid}").json()["label"] == "Deep Research"
@@ -122,7 +133,7 @@ def test_instinct_full_crud() -> None:
 
 def test_feedback_is_readable() -> None:
     # A2: votes were write-only; now they read back with tallies.
-    client = _client()
+    client, _ = _client()
     client.post("/hunts/h1/feedback", json={"turn_index": 0, "vote": "up"})
     client.post("/hunts/h1/feedback", json={"turn_index": 2, "vote": "down"})
     fb = client.get("/hunts/h1/feedback").json()
@@ -131,7 +142,7 @@ def test_feedback_is_readable() -> None:
 
 def test_single_get_document_and_project() -> None:
     # A4: CRUD symmetry — single-resource reads.
-    client = _client()
+    client, _ = _client()
     up = client.post("/documents", files={"file": ("n.txt", b"hello pack", "text/plain")})
     doc_id = up.json()["id"]
     got = client.get(f"/documents/{doc_id}").json()
@@ -144,17 +155,34 @@ def test_single_get_document_and_project() -> None:
 
 
 def test_documents_rejects_empty_text() -> None:
-    client = _client()
+    client, _ = _client()
     r = client.post("/documents", files={"file": ("blank.txt", b"   ", "text/plain")})
     assert r.status_code == 400
 
 
 def test_memory_and_spend_and_clear_endpoints() -> None:
-    client = _client()
+    client, fake = _client()
+
     assert client.get("/memory").json()["memory"] == []
+
+    # A typed lesson the Elder distilled surfaces WITH its kind (so the UI can label/group it); an
+    # unknown/legacy kind is coerced to "takeaway" rather than leaking a bad value.
+    import asyncio
+
+    asyncio.run(fake.save_memory("h1", "what-worked", "Primary sources beat aggregators."))
+    asyncio.run(fake.save_memory("h2", "bogus-kind", "Older untyped note."))
+    listed = client.get("/memory").json()["memory"]
+    assert listed[0] == {
+        "text": "Older untyped note.",
+        "kind": "takeaway",
+        "hunt_id": "h2",
+    }
+    assert listed[1]["kind"] == "what-worked" and "Primary sources" in listed[1]["text"]
+
     spend = client.get("/spend").json()
     assert spend["total_usd"] == 0 and spend["hunts"] == []
     assert client.delete("/memory").json()["cleared"] is True
+    assert client.get("/memory").json()["memory"] == []  # cleared
     assert client.delete("/documents").json()["cleared"] is True
 
 

@@ -17,6 +17,7 @@ from pydantic import BaseModel, ConfigDict, Field
 Strategy = Literal["orchestrate", "deep_dive", "critique"]
 Source = Literal["typed", "spoken", "dropped"]
 Mode = Literal["wild", "on_signal", "on_command"]
+Depth = Literal["brief", "standard", "deep"]
 InputKind = Literal["text", "pdf", "csv", "md", "url", "image", "audio", "video"]
 
 _MAX_TASK = 10_000
@@ -39,6 +40,9 @@ class ApprovePlan(BaseModel):
     mode: Mode
     boundary_usd: float = Field(..., ge=0, le=1000, description="Dollar Boundary.")
     edits: dict | None = None
+    depth: Depth | None = Field(
+        None, description="v3: user override of the brief's depth; None keeps Beta's."
+    )
 
 
 class ResolveHold(BaseModel):
@@ -89,6 +93,7 @@ class AddInput(BaseModel):
 class RehearseBody(BaseModel):
     team: list[dict] | None = None
     strategy: str | None = None
+    depth: Depth | None = None
 
 
 class FeedbackBody(BaseModel):
@@ -360,6 +365,9 @@ class DocumentDeleteResponse(BaseModel):
 
 class MemoryItem(BaseModel):
     text: str
+    # The lesson type the Elder assigned — what-worked / what-failed / preference / topic-insight,
+    # or the legacy "takeaway" for older/untyped rows — so the UI can group and label what it shows.
+    kind: str = "takeaway"
     hunt_id: str | None = None
 
 

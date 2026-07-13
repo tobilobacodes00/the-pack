@@ -8,17 +8,22 @@ from fastapi.responses import JSONResponse
 from app.db.repo import Repo
 from app.dependencies import get_repo
 from app.schemas import ClearedResponse, MemoryResponse, SpendResponse
+from app.tools.memory import normalize_kind
 
 router = APIRouter(tags=["memory"])
 
 
 @router.get("/memory", response_model=MemoryResponse)
 async def get_memory(repo: Repo = Depends(get_repo)) -> dict:
-    """What the pack remembers across hunts (the Elder's takeaways), most recent first."""
+    """What the pack learned across hunts (the Elder's typed lessons), most recent first."""
     rows = await repo.recent_memory(10)
     return {
         "memory": [
-            {"text": str(r.get("text") or ""), "hunt_id": r.get("hunt_id")}
+            {
+                "text": str(r.get("text") or ""),
+                "kind": normalize_kind(r.get("kind")),
+                "hunt_id": r.get("hunt_id"),
+            }
             for r in rows
             if str(r.get("text") or "").strip()
         ]
