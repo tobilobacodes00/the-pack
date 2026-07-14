@@ -108,6 +108,20 @@ export function PackCanvas({
     const pulse = (x: number) => (x <= 0 || x >= 1 ? 0 : Math.sin(Math.PI * x))
     const rand = (a: number, b: number) => a + Math.random() * (b - a)
 
+    // Click TRICKS — clicking a wolf makes it DO something (the pack is alive, not décor). Each trick
+    // is a short choreography over the pose uniforms the shader already drives (yaw/pitch/roll/jaw/
+    // blink/glow/scale/offset); `dur` is its length in seconds. Picked at random per click, avoiding an
+    // immediate repeat so the same move rarely fires twice in a row.
+    const TRICKS = ['wag', 'nod', 'roll', 'pounce', 'howl', 'wink', 'perk', 'spark'] as const
+    type Trick = (typeof TRICKS)[number]
+    const TRICK_DUR: Record<Trick, number> = {
+      wag: 0.6, nod: 0.55, roll: 0.8, pounce: 0.6, howl: 1.1, wink: 0.4, perk: 0.55, spark: 0.9,
+    }
+    const pickTrick = (avoid?: Trick): Trick => {
+      const pool = TRICKS.filter((t) => t !== avoid)
+      return pool[Math.floor(Math.random() * pool.length)]
+    }
+
     // Draw back-to-front (Alpha, highest z, drawn last so it paints over the pack when collided).
     const order = [...PACK_SLOTS].sort((a, b) => a.z - b.z)
     // Per-instance idle timing so the pack doesn't blink/twitch in unison.
@@ -121,6 +135,10 @@ export function PackCanvas({
       earLStart: -10,
       nextEarR: rand(3, 8),
       earRStart: -10,
+      // Live screen position (clip space) + radius, refreshed each frame so the click hit-test knows
+      // where this wolf actually is; and the active trick + when it started (-10 = none).
+      hitX: 0, hitY: 0, hitR: 0, drawn: false,
+      trick: 'wag' as Trick, trickStart: -10, lastTrick: undefined as Trick | undefined,
     }))
 
     const mouse = { cx: 0, cy: 0, sx: 0, sy: 0 }
@@ -129,6 +147,40 @@ export function PackCanvas({
       mouse.cy = -((e.clientY / window.innerHeight) * 2 - 1)
     }
     window.addEventListener('pointermove', onMove, { passive: true })
+
+    // Click a wolf → it does a random trick. Hit-test in clip space against each wolf's live position
+    // (aspect-corrected on x, since clip space is square but the canvas isn't), nearest-first, and only
+    // if the click actually lands on a drawn wolf — clicks on empty canvas do nothing (and never block
+    // the page's own scroll/links). We read positions the frame loop stamps onto each anim.
+    const onPointerDown = (e: PointerEvent) => {
+      const rect = canvas.getBoundingClientRect()
+      if (e.clientX < rect.left || e.clientX > rect.right || e.clientY < rect.top || e.clientY > rect.bottom) {
+        return
+      }
+      const cx = ((e.clientX - rect.left) / rect.width) * 2 - 1
+      const cy = -(((e.clientY - rect.top) / rect.height) * 2 - 1)
+      const aspect = rect.width / Math.max(rect.height, 1)
+      let hit: (typeof anim)[number] | null = null
+      let bestD = Infinity
+      for (const a of anim) {
+        if (!a.drawn || a.hitR <= 0) continue
+        const dx = (cx - a.hitX) * aspect // widen x so the circle isn't squashed on a wide canvas
+        const dy = cy - a.hitY
+        const d = dx * dx + dy * dy
+        if (d < a.hitR * a.hitR && d < bestD) {
+          bestD = d
+          hit = a
+        }
+      }
+      if (hit) {
+        const now = performance.now() / 1000
+        hit.trick = pickTrick(hit.lastTrick)
+        hit.lastTrick = hit.trick
+        hit.trickStart = now
+      }
+    }
+    // pointerdown (not click) so it fires before any scroll gesture; passive so it never blocks scroll.
+    window.addEventListener('pointerdown', onPointerDown, { passive: true })
 
     const resize = () => {
       const w = Math.max(container.offsetWidth, 1)
@@ -210,6 +262,7 @@ export function PackCanvas({
       gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT)
 
       for (const a of anim) {
+        a.drawn = false // stale until proven drawn this frame (so a culled wolf isn't clickable)
         // Alpha is the lone wolf (full presence). The rest emerge from centre as the pack fans out.
         const alpha = a.isAlpha ? presence : presence * spread
         if (alpha < 0.02) continue
@@ -234,21 +287,77 @@ export function PackCanvas({
         // Each wolf turns toward the cursor (relative to its own spot) + a slow idle sway. Alpha
         // follows even as the lone hero wolf (spread 0); the rest only once they've fanned out.
         const follow = a.isAlpha ? 1 : spread
-        const yaw = (mouse.sx - ox) * 0.34 * follow + Math.sin(s * 0.5 + a.phase) * 0.06
-        const pitch = -mouse.sy * 0.16 * follow + Math.sin(s * 0.4 + a.phase) * 0.04
-        const breath = 1 + 0.008 * Math.sin(s * 2.1 + a.phase)
-        const glow = (0.5 + 0.14 * Math.sin(s * 2.3 + a.phase)) * (1 - 0.85 * blink)
+        let yaw = (mouse.sx - ox) * 0.34 * follow + Math.sin(s * 0.5 + a.phase) * 0.06
+        let pitch = -mouse.sy * 0.16 * follow + Math.sin(s * 0.4 + a.phase) * 0.04
+        let roll = 0
+        let breath = 1 + 0.008 * Math.sin(s * 2.1 + a.phase)
+        let jaw = 0
+        let glow = (0.5 + 0.14 * Math.sin(s * 2.3 + a.phase)) * (1 - 0.85 * blink)
+        let tblink = blink
+        let tEarL = earL
+        let tEarR = earR
+        let hop = 0
 
-        gl.uniform2f(U.offset, ox, oy)
+        // Active click trick: layer a short choreography over the base pose. `t` is 0→1 across the
+        // trick's duration; `e` is a soft ease-out envelope so it starts snappy and settles.
+        const dur = TRICK_DUR[a.trick]
+        const t = (s - a.trickStart) / dur
+        if (t >= 0 && t < 1) {
+          const e = Math.sin(Math.PI * t) // rise-and-fall envelope (0 at ends, 1 mid)
+          switch (a.trick) {
+            case 'wag': // playful tail-wag read as a quick head waggle
+              yaw += Math.sin(t * Math.PI * 6) * 0.5 * e
+              break
+            case 'nod': // eager yes-nod
+              pitch += Math.sin(t * Math.PI * 4) * 0.4 * e
+              break
+            case 'roll': // barrel-roll / roll over — a full turn
+              roll += t * Math.PI * 2
+              break
+            case 'pounce': // hops up and lands
+              hop += Math.sin(t * Math.PI) * 0.08
+              breath += Math.sin(t * Math.PI) * 0.12
+              break
+            case 'howl': // head tips back, jaw opens, eyes blaze
+              pitch -= 0.35 * e
+              jaw = Math.sin(Math.min(t * 1.6, 1) * Math.PI) * 0.34
+              glow = Math.min(glow + e * 0.9, 1.3)
+              breath += e * 0.05
+              break
+            case 'wink': { // one cheeky blink
+              const w = Math.sin(Math.min(t * 2, 1) * Math.PI)
+              tblink = Math.max(tblink, w)
+              break
+            }
+            case 'perk': // both ears shoot up + a little bounce
+              tEarL = Math.max(tEarL, e)
+              tEarR = Math.max(tEarR, e)
+              hop += Math.sin(t * Math.PI) * 0.03
+              break
+            case 'spark': // eyes flash bright — an excited shimmer + tiny shimmy
+              glow = Math.min(glow + e * 1.1, 1.4)
+              yaw += Math.sin(t * Math.PI * 8) * 0.12 * e
+              break
+          }
+        }
+
+        // Stamp this wolf's live position + a click radius (a touch bigger than the coin) for the
+        // hit-test, and mark it as drawn this frame.
+        a.hitX = ox
+        a.hitY = oy + hop
+        a.hitR = sc * 1.15
+        a.drawn = true
+
+        gl.uniform2f(U.offset, ox, oy + hop)
         gl.uniform1f(U.scale, sc)
         gl.uniform1f(U.yaw, yaw)
         gl.uniform1f(U.pitch, pitch)
-        gl.uniform1f(U.roll, 0)
+        gl.uniform1f(U.roll, roll)
         gl.uniform1f(U.pulse, breath)
-        gl.uniform1f(U.blink, blink)
-        gl.uniform1f(U.earL, earL)
-        gl.uniform1f(U.earR, earR)
-        gl.uniform1f(U.jaw, 0)
+        gl.uniform1f(U.blink, tblink)
+        gl.uniform1f(U.earL, tEarL)
+        gl.uniform1f(U.earR, tEarR)
+        gl.uniform1f(U.jaw, jaw)
         gl.uniform1f(U.glow, glow)
         gl.uniform1f(U.alpha, alpha)
 
@@ -262,6 +371,7 @@ export function PackCanvas({
       looping = false
       cancelAnimationFrame(raf)
       window.removeEventListener('pointermove', onMove)
+      window.removeEventListener('pointerdown', onPointerDown)
       window.removeEventListener('resize', resize)
       if (ro) ro.disconnect()
       io?.disconnect()
