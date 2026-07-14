@@ -170,6 +170,40 @@ dropped.
 
 ## E. Sequenced roadmap
 
+> **STATUS (updated 2026-07-14): all phases executed.** A live-code audit ran first (Section F below)
+> and reshaped the plan — several items were already done or not applicable, and one real bug the study
+> missed was found (the `-p no:randomly` gate was never committed). What shipped, in commit order:
+>
+> - **Batch A** `c45f046` — model-call `latency_ms`, the `on_payload` seam, AST invariant guards
+>   (`scripts/check_architecture.py`, in CI), and the consistent `randomly` test-order gate.
+> - **Batch B** `9c86dc9` — admission/draining gate on shutdown, RFC-9110 Retry-After honoring,
+>   exact-value secret-redaction registry, lenient-JSON dedup.
+> - **Batch C** `850a49d` — content-injection scanner + fail-closed pre-fetch URL gate
+>   (`content_guard.py`), replay-incident fixture convention (`fixtures/incidents/`).
+> - **Batch D** `0a18e2c` — NOT_ENOUGH_INFO anti-fabrication prompts, `pack doctor` health sweep, QA
+>   scoreboard (`docs/QA_SCOREBOARD.md`), `AGENTS.md`, mypy+eslint+arch-guard pre-commit hooks.
+> - **Batch E** `6c071bf` — the live-key QA harness (`tests/live/`, gated, `backend-live.yml`) and the
+>   opt-in `deep_scout` bounded tool-loop (`deep_scout.py`, `deep_scout_enabled` default **off**).
+>
+> **Already done before this pass (confirmed by audit, not redone):** per-hunt breaker (#26), typed
+> error taxonomy (#27), cache-boundary reorder (#16) + token-usage/`cached_tokens` (#85-87), graceful
+> shutdown (#24), mid-hunt steering (#52), Boundary running-meter (#50 mechanism), OS process
+> supervision (#23, Docker restart policy), IP-pinning SSRF (#3).
+>
+> **Not applicable as architected:** sticky-terminal conflict resolution (#28 — reroute is cosmetic,
+> `asyncio.wait_for` already cancels the task, so no late-result race exists).
+>
+> **Deferred as documented triggers (decided 2026-07-14, not built):** provider-adapter Protocol (#79),
+> session-key namespacing (#53), event-hook bus (#75), cron re-hunts — each is YAGNI until its trigger
+> fires. **Read-side event validation (#36)** is a cross-repo concern (the Rust gateway is the real
+> consumer) and stays flagged there.
+>
+> **The two remaining live-key proofs** (need a real Qwen key, harness is built): flip
+> `qwen_prompt_cache_enabled` on only after `tests/live` shows `cached_tokens > 0` in this reordered
+> shape; prove `deep_scout` on the harness before enabling `deep_scout_enabled`.
+>
+> The original phase plan is preserved below for reference.
+
 **Phase 0 — today, independent of everything else**
 SSRF CGNAT + Alibaba metadata fix (#1-2, one PR) + the in-code limitation comment (#8).
 
