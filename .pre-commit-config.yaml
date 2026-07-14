@@ -1,4 +1,6 @@
-# Pre-commit: formatting, lint, and a SECRET SCAN before anything is committed (Doc 05 §03).
+# Pre-commit: formatting, lint, type + architecture gates, and a SECRET SCAN before anything is
+# committed (Doc 05 §03). What runs here is the fast subset meant to catch issues BEFORE they reach
+# CI; CI (.github/workflows/) remains the full gate (adds pytest, pip-audit, pnpm test, cargo check).
 # Install once:  pip install pre-commit && pre-commit install
 # Run on demand: pre-commit run --all-files
 
@@ -38,9 +40,37 @@ repos:
       - id: prettier
         files: ^frontend/.*\.(ts|tsx|css|json|md)$
 
-  # Rust (gateway): cargo fmt check.
+  # Local hooks that call the project's OWN tools (via uv / pnpm), so the hook can never pin a
+  # different version than CI does. These mirror CI's static gates so a broken type/lint is caught at
+  # commit time, not after a push (CI still re-runs them + the full test suites as the authority).
   - repo: local
     hooks:
+      # Backend static type gate — same `mypy app` CI runs (backend.yml).
+      - id: mypy-backend
+        name: mypy (backend)
+        entry: bash -c 'cd backend && uv run mypy app'
+        language: system
+        files: ^backend/.*\.py$
+        pass_filenames: false
+
+      # Backend architecture-invariant guard — the AST tripwire (LLM funnel + SSRF blocklist).
+      - id: arch-guard
+        name: architecture invariants (backend)
+        entry: bash -c 'cd backend && uv run python scripts/check_architecture.py'
+        language: system
+        files: ^backend/.*\.py$
+        pass_filenames: false
+
+      # Frontend lint — same `eslint .` CI runs (frontend.yml); previously only prettier (format) ran
+      # pre-commit, so a lint error slipped through to CI.
+      - id: eslint-frontend
+        name: eslint (frontend)
+        entry: bash -c 'cd frontend && pnpm -s lint'
+        language: system
+        files: ^frontend/.*\.(ts|tsx)$
+        pass_filenames: false
+
+      # Rust (gateway): cargo fmt check.
       - id: cargo-fmt
         name: cargo fmt (gateway)
         entry: bash -c 'cd gateway && cargo fmt --check'
