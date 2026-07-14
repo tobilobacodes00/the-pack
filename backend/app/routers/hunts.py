@@ -32,6 +32,7 @@ from app.dependencies import (
     _accepted,
     get_background,
     get_client,
+    get_draining,
     get_hunt_slots,
     get_registry,
     get_repo,
@@ -100,11 +101,18 @@ async def create_hunt(
     registry: HuntRegistry = Depends(get_registry),
     client: QwenClient = Depends(get_client),
     slots: asyncio.Semaphore | None = Depends(get_hunt_slots),
+    draining: bool = Depends(get_draining),
 ) -> JSONResponse:
     """Open a hunt. Returns 202 with the new hunt_id; the Supervisor starts planning at once.
 
     Watch `hunt_created` → `plan_proposed` arrive on the stream, then POST `/plan/approve`.
     """
+    # Admission gate: once shutdown has begun, refuse new work with 503 so a hunt isn't spawned into a
+    # process whose pool/registry is being torn down (a load balancer retries the 503 elsewhere).
+    if draining:
+        return JSONResponse(
+            status_code=503, content={"detail": "pack is shutting down — try again shortly"}
+        )
     # Concurrency gate: reject rather than spawn an unbounded background task under load. No await
     # between locked() and acquire(), so the check-then-acquire can't race (single-threaded loop).
     if slots is not None:
@@ -773,12 +781,21 @@ async def _act_on_intent(
     client: QwenClient,
     registry: HuntRegistry,
     slots: asyncio.Semaphore | None,
+    draining: bool = False,
 ) -> dict:
     """Carry out what the router decided, INTERPRETED THROUGH the live hunt state. Returns
     {action, hunt_id?, reply_hint} — reply_hint is a short truthful line Alpha weaves into its reply so
     the Packmaster knows what just happened. Falls back to a plain answer on anything it can't do."""
     r = route["route"]
     _header, bucket = await hunt_state_header(repo, hunt_id)
+    # Steering a live hunt (add_input) stays allowed during drain — that hunt is already in-flight and
+    # will drain normally. Only SPAWNING a NEW follow-up hunt is refused below (same 503 posture as
+    # create_hunt), phrased as a graceful chat answer rather than an HTTP error since this is the chat path.
+    _draining_answer = {
+        "action": "answer",
+        "hunt_id": None,
+        "reply_hint": "The pack's winding down for a moment — ask me again shortly and I'll launch that.",
+    }
 
     # A hunt still running: a "do more" request STEERS the live hunt instead of spawning a duplicate
     # or being ignored (Cursor's addFollowup pattern), routed through the existing add_input command.
@@ -805,6 +822,8 @@ async def _act_on_intent(
 
     # A request that needs NEW research → a scoped follow-up hunt that extends this brief.
     if r in ("new_subhunt", "new_hunt"):
+        if draining:
+            return _draining_answer
         if slots is not None and slots.locked():
             return {
                 "action": "answer",
@@ -859,6 +878,8 @@ async def _act_on_intent(
     # relaunches (a fresh hunt with the same task) instead of only offering to. If they asked to adjust
     # the focus ("retry but narrow to React"), the message rides along so the re-run is steered.
     if r == "retry":
+        if draining:
+            return _draining_answer
         if slots is not None and slots.locked():
             return {
                 "action": "answer",
@@ -954,6 +975,7 @@ async def ask_alpha(
     client: QwenClient = Depends(get_client),
     registry: HuntRegistry = Depends(get_registry),
     slots: asyncio.Semaphore | None = Depends(get_hunt_slots),
+    draining: bool = Depends(get_draining),
 ) -> JSONResponse:
     """The ONE Alpha side-chat, now a smart dispatcher: it classifies each message against the live
     hunt state and either answers, refines the brief in place, steers a running hunt, or launches a
@@ -973,7 +995,9 @@ async def ask_alpha(
         and not route["requires_clarification"]
     ):
         try:
-            outcome = await _act_on_intent(route, hunt_id, message, repo, client, registry, slots)
+            outcome = await _act_on_intent(
+                route, hunt_id, message, repo, client, registry, slots, draining
+            )
         except (RateLimitError, APIStatusError):
             raise
         except Exception:  # noqa: BLE001 — a failed action degrades to a plain answer, never a 500
@@ -1004,6 +1028,7 @@ async def ask_stream(
     client: QwenClient = Depends(get_client),
     registry: HuntRegistry = Depends(get_registry),
     slots: asyncio.Semaphore | None = Depends(get_hunt_slots),
+    draining: bool = Depends(get_draining),
 ) -> StreamingResponse:
     """SSE variant of the smart dispatcher: classify the message against live hunt state, take the
     action (refine / steer / follow-up hunt), THEN stream Alpha's reply and emit the action + any new
@@ -1021,7 +1046,9 @@ async def ask_stream(
         and not route["requires_clarification"]
     ):
         try:
-            outcome = await _act_on_intent(route, hunt_id, message, repo, client, registry, slots)
+            outcome = await _act_on_intent(
+                route, hunt_id, message, repo, client, registry, slots, draining
+            )
         except Exception:  # noqa: BLE001 — degrade to a plain answer, never break the stream
             outcome = {"action": "answer", "hunt_id": None, "reply_hint": ""}
 

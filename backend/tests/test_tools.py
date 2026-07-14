@@ -59,6 +59,40 @@ def test_redact_pii_catches_jwt_and_aws_key() -> None:
     assert aws_key not in out
 
 
+def test_redact_scrubs_an_exact_configured_secret_the_regex_would_miss(monkeypatch) -> None:
+    """A real configured secret that does NOT match any shape heuristic (short, contains a '!') must
+    still be scrubbed verbatim because its exact value is known at startup — this is the identity-based
+    layer the regex-only redactor couldn't cover."""
+    from app.tools import redact
+
+    # 12 chars, embedded punctuation → fails _TOKEN's [A-Za-z0-9_-]{32,} and the sk-/AKIA/JWT shapes.
+    odd_secret = "sh0rt!key#42x"
+    monkeypatch.setattr("app.config.settings.session_secret", odd_secret, raising=False)
+    redact.refresh_secret_registry()
+    try:
+        out = redact.redact_text(f"boom: connecting with {odd_secret} failed")
+        assert odd_secret not in out
+        assert "[secret]" in out
+    finally:
+        redact.refresh_secret_registry()  # don't leak the monkeypatched registry into other tests
+
+
+def test_redact_ignores_placeholder_and_too_short_secrets(monkeypatch) -> None:
+    """The default 'change-me-in-prod' session secret and any sub-8-char value must NOT be registered
+    — masking those would redact ordinary text (and the very warnings telling you to change it)."""
+    from app.tools import redact
+
+    monkeypatch.setattr("app.config.settings.session_secret", "change-me-in-prod", raising=False)
+    monkeypatch.setattr("app.config.settings.api_auth_token", "abc", raising=False)  # too short
+    redact.refresh_secret_registry()
+    try:
+        out = redact.redact_text("the session_secret is still change-me-in-prod and token abc")
+        assert "change-me-in-prod" in out  # placeholder left visible on purpose
+        assert "abc" in out
+    finally:
+        redact.refresh_secret_registry()
+
+
 def test_logging_redacts_secrets_in_every_log_line() -> None:
     # The JSON formatter is the ONE choke point every logging.getLogger("pack") call passes through —
     # redaction here covers every call site, not just the /tracks export.

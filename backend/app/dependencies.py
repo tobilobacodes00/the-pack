@@ -54,6 +54,13 @@ def get_hunt_slots(request: Request) -> asyncio.Semaphore | None:
     return getattr(request.app.state, "hunt_slots", None)
 
 
+def get_draining(request: Request) -> bool:
+    """True once the app has begun graceful shutdown — new-hunt routes return 503 instead of spawning
+    into a process whose pool/registry is being torn down. Defaults to False when app.state hasn't
+    been populated (tests driving the ASGI app without a real lifespan) so admission stays open there."""
+    return getattr(request.app.state, "draining", False)
+
+
 # ---------------------------------------------------------------------------
 # Shared utilities used by multiple routers
 # ---------------------------------------------------------------------------

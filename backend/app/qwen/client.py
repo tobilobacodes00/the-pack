@@ -24,6 +24,8 @@ import json
 import random
 import time
 from collections.abc import AsyncIterator, Awaitable, Callable
+from datetime import UTC, datetime
+from email.utils import parsedate_to_datetime
 
 from openai import (
     APIConnectionError,
@@ -63,10 +65,15 @@ OnDelta = Callable[[str], Awaitable[None]]
 OnPayload = Callable[[dict], "dict | None"]
 
 
-def _loads_lenient(text: str) -> dict | None:
+def _loads_lenient(text: str, require: Callable[[dict], bool] | None = None) -> dict | None:
     """Parse a model's structured-output JSON, tolerating the two things models do that strict
     json.loads rejects: real newlines/control chars inside string values (strict=False), and a
-    stray ```fence or prose around the object. Returns None only if there's no usable object."""
+    stray ```fence or prose around the object. Returns None only if there's no usable object.
+
+    `require`, if given, is an extra acceptance predicate on the parsed dict — the first candidate
+    that both parses AND satisfies it wins (a candidate that parses but fails the predicate is skipped,
+    not returned). This is the ONE lenient-model-output parser; `app.core.intake.parse_intake` reuses
+    it with `require=lambda o: "ready" in o` rather than reimplementing the same fence/brace loop."""
     if not text:
         return None
     stripped = text.strip()
@@ -78,7 +85,7 @@ def _loads_lenient(text: str) -> dict | None:
     for candidate in candidates:
         try:
             obj = json.loads(candidate, strict=False)
-            if isinstance(obj, dict):
+            if isinstance(obj, dict) and (require is None or require(obj)):
                 return obj
         except json.JSONDecodeError:
             continue
@@ -92,6 +99,32 @@ def _cached_tokens(usage: object) -> int:
     details = getattr(usage, "prompt_tokens_details", None)
     cached = getattr(details, "cached_tokens", None) if details is not None else None
     return cached if isinstance(cached, int) else 0
+
+
+def _retry_after_seconds(exc: BaseException) -> float | None:
+    """Parse a `Retry-After` header off a provider error, per RFC 9110 §10.2.3 — either a delay in
+    seconds ("30") or an HTTP-date ("Wed, 21 Oct 2026 07:28:00 GMT"). Returns the delay in seconds
+    (clamped ≥0), or None when there's no honorable hint (no response, absent/unparsable header). A
+    429/503 that names its own cooldown should be honored rather than guessed at with blind backoff."""
+    response = getattr(exc, "response", None)
+    headers = getattr(response, "headers", None)
+    if headers is None:
+        return None
+    raw = headers.get("retry-after")
+    if not raw:
+        return None
+    raw = raw.strip()
+    if raw.isdigit():  # delay-seconds form
+        return float(raw)
+    try:  # HTTP-date form → seconds from now
+        when = parsedate_to_datetime(raw)
+    except (TypeError, ValueError):
+        return None
+    if when is None:
+        return None
+    if when.tzinfo is None:  # an HTTP-date is GMT; treat a naive parse as UTC
+        when = when.replace(tzinfo=UTC)
+    return max(0.0, (when - datetime.now(UTC)).total_seconds())
 
 
 class CircuitOpenError(RuntimeError):
@@ -233,6 +266,15 @@ class QwenClient:
                     # endpoint right when it's already struggling.
                     backoff = settings.qwen_backoff_base_s * (2**attempt)
                     backoff += random.uniform(0, settings.qwen_backoff_base_s)
+                    # If the provider named its own cooldown (429/503 Retry-After), never retry SOONER
+                    # than it asked — honor the larger of the server hint and our computed backoff, so
+                    # a "wait 30s" isn't undercut by a sub-second exponential step (which just earns
+                    # another 429). Add a little jitter on top so honoring wolves still don't sync up.
+                    retry_after = _retry_after_seconds(exc)
+                    if retry_after is not None:
+                        backoff = max(
+                            backoff, retry_after + random.uniform(0, settings.qwen_backoff_base_s)
+                        )
                     await asyncio.sleep(backoff)
                 continue
         assert last_exc is not None

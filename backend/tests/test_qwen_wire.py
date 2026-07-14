@@ -9,9 +9,11 @@ circuit breaker, and request-size preflight ever actually run. respx mocks the h
 from __future__ import annotations
 
 import json
+from datetime import UTC, datetime, timedelta
 
 import httpx
 import pytest
+from openai import RateLimitError
 
 from app.qwen.client import CircuitOpenError, QwenClient
 from app.qwen.types import CallSpec
@@ -184,6 +186,90 @@ async def test_transient_error_retries_then_succeeds(monkeypatch, respx_mock):
     # Jittered: base * 2**attempt <= observed < base * 2**attempt + base
     assert 0.1 <= sleep_calls[0] < 0.2
     assert 0.2 <= sleep_calls[1] < 0.3
+
+
+@pytest.mark.respx(base_url=_BASE_URL)
+async def test_retry_after_seconds_header_is_honored_over_a_shorter_backoff(
+    monkeypatch, respx_mock
+):
+    """A 429 that says `Retry-After: 5` must NOT be retried in ~0.1s by the exponential step — honor
+    the server's named cooldown (else we just earn another 429). The slept delay must be >= 5s."""
+    sleep_calls: list[float] = []
+    client = _client(
+        monkeypatch, sleep_calls=sleep_calls, qwen_max_retries=1, qwen_backoff_base_s=0.1
+    )
+    ratelimited = httpx.Response(429, headers={"retry-after": "5"}, json={"error": "slow down"})
+    route = respx_mock.post("/chat/completions").mock(
+        side_effect=[ratelimited, httpx.Response(200, json=_chat_completion("ok"))]
+    )
+
+    result = await client.complete(_spec())
+
+    assert result.text == "ok"
+    assert route.call_count == 2
+    assert len(sleep_calls) == 1
+    assert sleep_calls[0] >= 5.0  # honored the header, not the ~0.1-0.2s exponential step
+
+
+@pytest.mark.respx(base_url=_BASE_URL)
+async def test_retry_after_http_date_form_is_parsed(monkeypatch):
+    """RFC 9110 allows Retry-After as an HTTP-date, not only delay-seconds — the parser must handle
+    a future date, returning a positive delay (unit-level, no network)."""
+    from email.utils import format_datetime
+
+    from app.qwen.client import _retry_after_seconds
+
+    future = datetime.now(UTC) + timedelta(seconds=42)
+    exc = RateLimitError(
+        message="rate limited",
+        response=httpx.Response(
+            429,
+            headers={"retry-after": format_datetime(future, usegmt=True)},
+            request=httpx.Request("POST", _BASE_URL),
+        ),
+        body=None,
+    )
+
+    delay = _retry_after_seconds(exc)
+
+    assert delay is not None
+    assert 30 <= delay <= 42  # ~42s out, allowing for clock/parse slack
+
+
+def test_loads_lenient_require_predicate_skips_a_parsing_but_wrong_object() -> None:
+    """`_loads_lenient` is the ONE lenient parser; `parse_intake` reuses it with a `require` predicate
+    instead of duplicating the fence/brace loop. A candidate that PARSES but fails the predicate must
+    be skipped (return None), not returned — proving the predicate actually gates acceptance."""
+    from app.qwen.client import _loads_lenient
+
+    # Parses fine as a dict, but has no "ready" key → the intake predicate rejects it.
+    assert _loads_lenient('{"reply": "hi"}', require=lambda o: "ready" in o) is None
+    # Same text, predicate satisfied → returned.
+    got = _loads_lenient('{"ready": true, "task": "x"}', require=lambda o: "ready" in o)
+    assert got == {"ready": True, "task": "x"}
+    # No predicate → any dict is accepted (the client's own structured-output path).
+    assert _loads_lenient('{"anything": 1}') == {"anything": 1}
+
+
+def test_retry_after_absent_or_unparsable_returns_none() -> None:
+    """No response, no header, or garbage → None (fall back to plain jittered backoff), never raise."""
+    from app.qwen.client import _retry_after_seconds
+
+    assert _retry_after_seconds(RuntimeError("no response attr")) is None
+    no_header = RateLimitError(
+        message="x",
+        response=httpx.Response(429, request=httpx.Request("POST", _BASE_URL)),
+        body=None,
+    )
+    assert _retry_after_seconds(no_header) is None
+    garbage = RateLimitError(
+        message="x",
+        response=httpx.Response(
+            429, headers={"retry-after": "soon-ish"}, request=httpx.Request("POST", _BASE_URL)
+        ),
+        body=None,
+    )
+    assert _retry_after_seconds(garbage) is None
 
 
 @pytest.mark.respx(base_url=_BASE_URL)

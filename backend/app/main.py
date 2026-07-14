@@ -101,12 +101,19 @@ async def lifespan(app: FastAPI):
         if settings.max_concurrent_hunts > 0
         else None
     )
+    # Admission flag: once shutdown begins we stop ACCEPTING new hunts (503) so a hunt isn't spawned
+    # into a process whose DB pool / registry is about to be torn down. In-flight hunts still drain
+    # via _graceful_shutdown; only new work is refused. Read through the get_draining dependency.
+    app.state.draining = False
 
     await recover_stranded_hunts(app, repo)
 
     try:
         yield
     finally:
+        # Refuse new hunts BEFORE draining subsystems — a request mid-flight during teardown gets a
+        # clean 503, not a hunt half-spawned against a closing pool.
+        app.state.draining = True
         await _graceful_shutdown(registry, app.state.background, relay, bus, pool)
 
 

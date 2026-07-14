@@ -162,18 +162,14 @@ def last_user(messages: list[dict]) -> str:
 
 def parse_intake(text: str) -> dict | None:
     """Pull intake JSON out of the model reply, tolerating a stray fence or prose around it.
-    Returns None if there's no usable object — callers MUST NOT launch on None."""
-    if text.startswith("```"):
-        text = text.strip("`").split("\n", 1)[-1]
-    for candidate in (text, text[text.find("{") : text.rfind("}") + 1] if "{" in text else ""):
-        try:
-            # strict=False: models routinely put real newlines inside string values.
-            obj = json.loads(candidate, strict=False)
-            if isinstance(obj, dict) and "ready" in obj:
-                return obj
-        except json.JSONDecodeError:
-            continue
-    return None
+    Returns None if there's no usable object — callers MUST NOT launch on None.
+
+    Reuses the ONE lenient-model-output parser (`_loads_lenient`) with the intake-specific requirement
+    that the object carry a `ready` key, instead of reimplementing the same fence/brace-extraction loop
+    — a fix to the leniency heuristic now lands in one place, not two that silently drift."""
+    from app.qwen.client import _loads_lenient
+
+    return _loads_lenient(text, require=lambda obj: "ready" in obj)
 
 
 def strip_trailing_question(reply: str) -> str:
