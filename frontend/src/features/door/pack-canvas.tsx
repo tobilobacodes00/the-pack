@@ -289,7 +289,7 @@ export function PackCanvas({
         const follow = a.isAlpha ? 1 : spread
         let yaw = (mouse.sx - ox) * 0.34 * follow + Math.sin(s * 0.5 + a.phase) * 0.06
         let pitch = -mouse.sy * 0.16 * follow + Math.sin(s * 0.4 + a.phase) * 0.04
-        let roll = 0
+        const roll = 0
         let breath = 1 + 0.008 * Math.sin(s * 2.1 + a.phase)
         let jaw = 0
         let glow = (0.5 + 0.14 * Math.sin(s * 2.3 + a.phase)) * (1 - 0.85 * blink)

@@ -1,9 +1,10 @@
-import { useMemo, useRef, useEffect } from 'react'
+import { useMemo, useRef, useEffect, useState, useCallback } from 'react'
 import { Loader2 } from 'lucide-react'
 import { ReactFlow } from '@xyflow/react'
 import type { Node, Edge, ReactFlowInstance } from '@xyflow/react'
 import { AgentNode } from './agent-node'
 import type { AgentNodeData, AgentTone } from './agent-node'
+import { WolfInspector } from './wolf-inspector'
 import { ROLE_COLOR } from './roles'
 import { wolfIds, planRoleList } from './formation-editor/formation-model'
 import type { HuntState, WolfState } from '@/events/schema'
@@ -46,6 +47,7 @@ export function buildGraph(
   roles: string[],
   wolves?: Record<string, WolfState>,
   healers?: Record<string, string>,
+  selection?: { selectedId?: string | null; onSelect?: (wolfId: string) => void },
 ): {
   nodes: Node<AgentNodeData>[]
   edges: Edge[]
@@ -109,7 +111,10 @@ export function buildGraph(
       id,
       type: 'agentNode',
       position,
-      data: { role, wolfId: id, tone: wolfTone(wolves?.[id]), live: wolves?.[id] },
+      data: {
+        role, wolfId: id, tone: wolfTone(wolves?.[id]), live: wolves?.[id],
+        selected: selection?.selectedId === id, onSelect: selection?.onSelect,
+      },
       selectable: false,
       draggable: false,
       ...(TRANSIENT_HEALER_ROLES.has(role) ? { className: 'warden-roam' } : {}),
@@ -168,7 +173,10 @@ export function buildGraph(
         id: wid,
         type: 'agentNode',
         position: p,
-        data: { role: w.role, wolfId: wid, tone: wolfTone(w), live: w },
+        data: {
+          role: w.role, wolfId: wid, tone: wolfTone(w), live: w,
+          selected: selection?.selectedId === wid, onSelect: selection?.onSelect,
+        },
         selectable: false,
         draggable: false,
         className: 'warden-roam',
@@ -191,11 +199,23 @@ export function GraphCanvas({ huntState }: GraphCanvasProps) {
   const healers = huntState.healers
   const forming = huntState.status === 'planning'
 
-  // Recompute when the roster changes, any wolf's live state changes (colours the spine), or a heal
-  // starts/ends (adds/moves/clears a roaming Warden node).
+  // The wolf the user clicked to inspect. Cleared when its node leaves the roster.
+  const [selectedId, setSelectedId] = useState<string | null>(null)
+  const onSelect = useCallback(
+    (id: string) => setSelectedId((cur) => (cur === id ? null : id)),
+    [],
+  )
+  const selected = selectedId ? wolves[selectedId] : undefined
+  // If a selected wolf vanishes (shouldn't happen mid-hunt, but be safe), drop the selection.
+  useEffect(() => {
+    if (selectedId && !wolves[selectedId]) setSelectedId(null)
+  }, [selectedId, wolves])
+
+  // Recompute when the roster changes, any wolf's live state changes (colours the spine), a heal
+  // starts/ends (adds/moves/clears a roaming Warden node), or the selection changes (halo).
   const { nodes, edges } = useMemo(
-    () => buildGraph(roles, wolves, healers),
-    [roles, wolves, healers],
+    () => buildGraph(roles, wolves, healers, { selectedId, onSelect }),
+    [roles, wolves, healers, selectedId, onSelect],
   )
 
   const wrapRef = useRef<HTMLDivElement>(null)
@@ -225,6 +245,41 @@ export function GraphCanvas({ huntState }: GraphCanvasProps) {
         .react-flow__node.warden-roam { transition: transform 900ms cubic-bezier(0.22, 1, 0.36, 1); }
         @keyframes warden-appear { from { opacity: 0 } to { opacity: 1 } }
         .react-flow__node.warden-roam { animation: warden-appear 300ms ease-out; }
+
+        /* Refined, clearly-alive motion (see AskUserQuestion "Refined & subtle"): */
+        /* an active wolf gently breathes so it reads as working, not just coloured. */
+        @keyframes node-breathe {
+          0%, 100% { transform: scale(1); }
+          50% { transform: scale(1.045); }
+        }
+        .node-breathe { animation: node-breathe 2.4s ease-in-out infinite; transform-origin: center; }
+
+        /* a wolf that just finished settles with a single soft flash, then rests calm. */
+        @keyframes node-done-settle {
+          0% { transform: scale(1); filter: brightness(1); }
+          35% { transform: scale(1.12); filter: brightness(1.35); }
+          100% { transform: scale(1); filter: brightness(1); }
+        }
+        .node-done-settle { animation: node-done-settle 650ms cubic-bezier(0.22, 1, 0.36, 1); transform-origin: center; }
+
+        /* the done check badge pops in once. */
+        @keyframes glyph-done-pop {
+          from { transform: scale(0); opacity: 0; }
+          to { transform: scale(1); opacity: 1; }
+        }
+        .glyph-done-pop { animation: glyph-done-pop 450ms cubic-bezier(0.34, 1.56, 0.64, 1) 150ms both; }
+
+        /* the selected wolf's halo breathes softly so the inspected node stays obvious. */
+        @keyframes node-selected {
+          0%, 100% { opacity: 0.55; }
+          50% { opacity: 1; }
+        }
+        .node-selected-halo { animation: node-selected 2s ease-in-out infinite; }
+
+        @media (prefers-reduced-motion: reduce) {
+          .node-breathe, .node-done-settle, .glyph-done-pop, .node-selected-halo,
+          .react-flow__node.warden-roam { animation: none !important; }
+        }
       `}</style>
       {/* Gentle breathing while Alpha forms the pack, so the canvas doesn't read as dead. */}
       <div className={forming ? 'animate-pulse' : undefined} style={{ width: '100%', height: '100%' }}>
@@ -245,8 +300,15 @@ export function GraphCanvas({ huntState }: GraphCanvasProps) {
           nodesDraggable={false}
           proOptions={{ hideAttribution: true }}
           colorMode="light"
+          onPaneClick={() => setSelectedId(null)}
         />
       </div>
+
+      {/* The clicked wolf's live detail — activity, phase timeline, what it just produced, and stats.
+          Floats over the canvas (top-right of the graph area, clear of the roster/chat overlays). */}
+      {selected && (
+        <WolfInspector wolf={selected} onClose={() => setSelectedId(null)} />
+      )}
 
       {forming && (
         <div

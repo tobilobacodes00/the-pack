@@ -80,6 +80,44 @@ function apply(state: HuntState, ...events: ReturnType<typeof ev>[]): HuntState 
 // and agrees with boundary_warning (which sets the same absolute field). plan_approved anchors the
 // live clock via the server ts.
 
+// --- Per-wolf enrichment (drives the canvas wolf-inspector) -------------------------------
+describe('wolf enrichment: phase trail + last tool + latency', () => {
+  it('builds a phase trail, collapsing consecutive repeats, and records the last tool/latency', () => {
+    seq = 0
+    let s = apply(initialHuntState, spawn('scout-1', 'scout'))
+    s = apply(s, ev('tool_called', 'scout-1', { wolf_id: 'scout-1', tool: 'web_search', args_summary: 'ev market' }))
+    s = apply(s, ev('tool_result', 'scout-1', { wolf_id: 'scout-1', tool: 'web_search', ok: true, latency_ms: 820 }))
+    s = apply(s, ev('wolf_progress', 'scout-1', { wolf_id: 'scout-1', phase: 'reading', text: 'reading the top page' }))
+    // a repeat of the current phase must NOT add a second trail entry
+    s = apply(s, ev('wolf_progress', 'scout-1', { wolf_id: 'scout-1', phase: 'reading', text: 'still reading' }))
+    s = apply(s, ev('wolf_progress', 'scout-1', { wolf_id: 'scout-1', phase: 'thinking', text: 'now summarizing' }))
+
+    const w = s.wolves['scout-1']
+    expect(w.phaseHistory).toEqual(['web_search', 'reading', 'thinking'])
+    expect(w.phase).toBe('thinking')
+    expect(w.last_text).toBe('now summarizing')
+    expect(w.lastTool).toEqual({ tool: 'web_search', ok: true, latency_ms: 820 })
+    expect(w.toolCalls).toBe(1)
+  })
+
+  it('records model-call latency from tokens_spent', () => {
+    seq = 0
+    let s = apply(initialHuntState, spawn('tracker', 'tracker'))
+    s = apply(s, ev('tokens_spent', 'tracker', { wolf_id: 'tracker', model: 'm', in_tokens: 5, out_tokens: 2, cost_usd: 0.02, cumulative_usd: 0.02, latency_ms: 1900 }))
+    expect(s.wolves['tracker'].lastLatencyMs).toBe(1900)
+  })
+
+  it('spawns a wolf with empty enrichment fields (never undefined)', () => {
+    seq = 0
+    const s = apply(initialHuntState, spawn('howler', 'howler'))
+    const w = s.wolves['howler']
+    expect(w.phaseHistory).toEqual([])
+    expect(w.lastTool).toBeNull()
+    expect(w.lastLatencyMs).toBeNull()
+    expect(w.toolCalls).toBe(0)
+  })
+})
+
 describe('spend counter: tokens_spent is authoritative + idempotent', () => {
   it('sets spent_usd from cumulative_usd, not the additive sum of cost_usd', () => {
     seq = 0
