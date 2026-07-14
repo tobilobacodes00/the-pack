@@ -16,6 +16,8 @@ import datetime as _dt
 import json
 import logging
 
+from app.tools.redact import redact_text
+
 request_id_var: contextvars.ContextVar[str] = contextvars.ContextVar("request_id", default="-")
 
 
@@ -27,15 +29,19 @@ class RequestIdFilter(logging.Filter):
 
 class JsonFormatter(logging.Formatter):
     def format(self, record: logging.LogRecord) -> str:
+        # Every log line passes through here — a hunt's exception messages and scraped page content can
+        # carry emails/tokens/secrets, and this was previously the ONLY choke point that DIDN'T redact
+        # (redact_event covered only the /tracks export copy, never the live process log). Redacting here
+        # covers every current and future logging.getLogger("pack") call site with no per-call-site change.
         payload = {
             "ts": _dt.datetime.fromtimestamp(record.created, _dt.UTC).isoformat(),
             "level": record.levelname,
             "logger": record.name,
             "request_id": getattr(record, "request_id", "-"),
-            "msg": record.getMessage(),
+            "msg": redact_text(record.getMessage()),
         }
         if record.exc_info:
-            payload["exc"] = self.formatException(record.exc_info)
+            payload["exc"] = redact_text(self.formatException(record.exc_info))
         return json.dumps(payload, ensure_ascii=False)
 
 

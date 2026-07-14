@@ -15,7 +15,10 @@ from app.tools.providers.base import _get_text
         "http://127.0.0.1/admin",
         "http://10.0.0.1/",
         "http://192.168.1.1/",
-        "http://169.254.169.254/latest/meta-data/",  # cloud metadata
+        "http://169.254.169.254/latest/meta-data/",  # cloud metadata (AWS/GCP, link-local)
+        "http://100.100.100.200/latest/meta-data/",  # Alibaba Cloud ECS metadata (CGNAT, 100.64.0.0/10)
+        "http://100.64.0.1/",  # CGNAT range, not just the Alibaba metadata literal
+        "http://100.127.255.254/",  # CGNAT range, top of the block
         "ftp://example.com/file",  # non-http scheme
         "file:///etc/passwd",
         "http://[::1]/",  # IPv6 loopback
@@ -29,6 +32,12 @@ async def test_rejects_unsafe_urls(url):
 async def test_allows_public_ip_and_returns_it():
     ips = await assert_public_url("http://8.8.8.8/")  # public — no raise
     assert ips == ["8.8.8.8"]
+
+
+@pytest.mark.parametrize("ip", ["100.63.255.255", "100.128.0.0"])  # just outside the CGNAT block
+async def test_allows_ips_bordering_the_cgnat_block(ip):
+    ips = await assert_public_url(f"http://{ip}/")  # public — no raise
+    assert ips == [ip]
 
 
 def _patch_client(monkeypatch, module, transport: httpx.MockTransport) -> None:

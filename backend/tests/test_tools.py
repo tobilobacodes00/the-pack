@@ -48,6 +48,42 @@ def test_redact_event_masks_payload_only() -> None:
     assert "bob@acme.io" not in out["payload"]["raw_input"]
 
 
+def test_redact_pii_catches_jwt_and_aws_key() -> None:
+    # A short JWT (each dot-separated segment under the old 32-char floor) and an AWS access key id
+    # (20 chars, also under the old floor) both slipped through the original token regex.
+    jwt = "eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiIxMjM0NTY3ODkwIn0.dQw4w9WgXcQ"
+    aws_key = "AKIAABCDEFGHIJKLMNOP"  # AKIA + 16 chars = 20-char AWS access key id
+    raw = f"Authorization: Bearer {jwt} and {aws_key}"
+    out = redact_text(raw)
+    assert jwt not in out
+    assert aws_key not in out
+
+
+def test_logging_redacts_secrets_in_every_log_line() -> None:
+    # The JSON formatter is the ONE choke point every logging.getLogger("pack") call passes through —
+    # redaction here covers every call site, not just the /tracks export.
+    import io
+    import logging
+
+    from app.core.logging import JsonFormatter
+
+    stream = io.StringIO()
+    handler = logging.StreamHandler(stream)
+    handler.setFormatter(JsonFormatter())
+    logger = logging.getLogger("pack.test_redact_logging")
+    logger.handlers.clear()
+    logger.addHandler(handler)
+    logger.propagate = False
+    logger.setLevel(logging.INFO)
+
+    logger.warning("scout failed for user jane.doe@example.com: sk-abc123def456ghi789jkl012mno")
+
+    out = stream.getvalue()
+    assert "jane.doe@example.com" not in out
+    assert "sk-abc123def456ghi789jkl012mno" not in out
+    assert "[email]" in out and "[token]" in out
+
+
 async def test_fake_transcriber_is_deterministic() -> None:
     t = FakeTranscriber()
     r1 = await t.transcribe(b"x" * 32_000)

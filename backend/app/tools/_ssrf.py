@@ -21,6 +21,12 @@ import httpx
 
 _REDIRECTS = (301, 302, 303, 307, 308)
 
+# Carrier-grade NAT (RFC 6598) — Python's ipaddress stdlib does NOT classify 100.64.0.0/10 as
+# private/reserved, but cloud providers squat their instance-metadata service in it. Alibaba Cloud's
+# ECS metadata endpoint (100.100.100.200 — Pack's own deploy target) lives here; AWS/GCP's classic
+# 169.254.169.254 is link-local and already caught below. Block the whole range explicitly.
+_CGNAT = ipaddress.ip_network("100.64.0.0/10")
+
 
 def _is_blocked(ip: ipaddress.IPv4Address | ipaddress.IPv6Address) -> bool:
     return (
@@ -30,6 +36,7 @@ def _is_blocked(ip: ipaddress.IPv4Address | ipaddress.IPv6Address) -> bool:
         or ip.is_reserved
         or ip.is_multicast
         or ip.is_unspecified
+        or (isinstance(ip, ipaddress.IPv4Address) and ip in _CGNAT)
     )
 
 
