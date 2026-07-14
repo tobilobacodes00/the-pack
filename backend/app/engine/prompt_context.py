@@ -9,6 +9,7 @@ keeps thin wrappers that pass its state in, so the Engine-primitive call sites a
 from __future__ import annotations
 
 import math
+from datetime import UTC, datetime
 
 from app.config import settings
 from app.engine.strategies import Conflict, Finding, Merged
@@ -16,6 +17,28 @@ from app.engine.wolves import Wolf
 from app.prompts import load_prompt
 from app.qwen.context_budget import fit_context
 from app.tools.providers.base import canonical_url
+
+
+def temporal_grounding(now: datetime | None = None) -> str:
+    """A short 'what is today' block prepended to EVERY wolf's system prompt.
+
+    Without it the model reasons from a frozen training cutoff — it can't tell what "latest",
+    "recent", "current", or "since January" mean, treats stale pages as fresh, and mis-sizes a
+    query's time window. Grounding it in the real clock makes the pack temporally aware: scouts
+    add the right year to a search, Tracker/Sentinel can flag a source as out of date, and the
+    brief speaks in the present. `now` is injectable for deterministic tests.
+    """
+    now = (now or datetime.now(UTC)).astimezone()
+    return (
+        "Today is "
+        f"{now.strftime('%A, %d %B %Y')} (current year: {now.year}; "
+        f"local time {now.strftime('%H:%M %Z')}). "
+        "Reason from THIS date, not your training cutoff: your internal knowledge may be out of "
+        "date, so trust the dated web sources you are given over your prior assumptions. When a "
+        'request says "latest", "recent", "current", or "this year", anchor it to the date above, '
+        "and prefer the most recently published sources. Note when a source is old relative to today."
+    )
+
 
 # v3: adaptive depth — the merge/draft targets and material-slice scaling all key off one enum
 # (brief|standard|deep) so the brief is comprehensive when the task needs it and tight when it
@@ -184,7 +207,9 @@ def messages(
     context is the user message. `instruction_override`, when given, replaces the static
     INTENT_INSTRUCTIONS text for this dispatch (used to pass depth-scaled merge/draft wording while
     keeping intent='merge'/'draft' for FakeQwen dispatch + pricing)."""
-    system = load_prompt(wolf.role).body
+    # Prepend the real date so no wolf reasons from a frozen training cutoff (a scout adds the right
+    # year to a search, Tracker/Sentinel can call a source stale, the brief speaks in the present).
+    system = f"{temporal_grounding()}\n\n{load_prompt(wolf.role).body}"
     user = f"Task: {raw_input or 'Research the topic and produce a briefing.'}\n\n"
     user += (
         instruction_override

@@ -12,6 +12,17 @@ import re
 
 from fastapi import Request
 
+from app.engine.prompt_context import temporal_grounding
+
+
+def dated(system_prompt: str) -> str:
+    """Prepend the real current date to a system prompt, evaluated at CALL time (never frozen at
+    import). Alpha-in-chat and the ask/refine flows go through their own prompts, not build_messages,
+    so they need this too — otherwise Alpha can't answer "what happened this week" or judge whether a
+    fact is current."""
+    return f"{temporal_grounding()}\n\n{system_prompt}"
+
+
 # ---------------------------------------------------------------------------
 # Alpha's intake gate — clarify until there is a real, actionable task
 # ---------------------------------------------------------------------------

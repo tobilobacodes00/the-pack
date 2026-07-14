@@ -8,7 +8,7 @@ from __future__ import annotations
 from app.engine.core import Emitter
 from app.engine.forge import MIME, forge
 from app.engine.ids import new_artifact_id
-from app.engine.prompt_context import coerce_source_ids
+from app.engine.prompt_context import coerce_source_ids, temporal_grounding
 from app.engine.strategies.base import DRAFT_SCHEMA
 from app.qwen.client import QwenClient
 from app.qwen.types import CallSpec
@@ -71,7 +71,7 @@ async def refine_brief(repo, client: QwenClient, hunt_id: str, instruction: str)
             intent="draft",
             response_schema=DRAFT_SCHEMA,
             messages=[
-                {"role": "system", "content": _REFINE_SYSTEM},
+                {"role": "system", "content": f"{temporal_grounding()}\n\n{_REFINE_SYSTEM}"},
                 {"role": "user", "content": user},
             ],
         )

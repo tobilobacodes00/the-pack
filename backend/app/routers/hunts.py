@@ -16,6 +16,7 @@ from app.core.intake import (
     ALPHA_CHAT,
     ALPHA_INTAKE,
     cancel_task,
+    dated,
     last_user,
     looks_like_task,
     parse_intake,
@@ -525,7 +526,7 @@ async def intake(
                 wolf_id="alpha",
                 tier="plus",
                 intent="intake",
-                messages=[{"role": "system", "content": ALPHA_INTAKE}, *msgs],
+                messages=[{"role": "system", "content": dated(ALPHA_INTAKE)}, *msgs],
             )
         )
     except RateLimitError as exc:
@@ -591,7 +592,7 @@ async def intake_stream(
                     tier="plus",
                     intent="intake",
                     force_stream=True,
-                    messages=[{"role": "system", "content": ALPHA_INTAKE}, *msgs],
+                    messages=[{"role": "system", "content": dated(ALPHA_INTAKE)}, *msgs],
                 ),
                 on_delta=_on_delta,
             )
@@ -668,7 +669,7 @@ async def _ask_system(repo: Repo, hunt_id: str) -> str:
             + "\n\nGround your answers in these findings. If the question goes beyond them, say so "
             "plainly and suggest what the pack could hunt next."
         )
-    return system
+    return dated(system)  # so a follow-up like "is that still current?" is anchored to today
 
 
 @router.post("/hunts/{hunt_id}/ask", response_model=AskReply)

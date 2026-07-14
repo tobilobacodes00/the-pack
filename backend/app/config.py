@@ -110,12 +110,25 @@ class Settings(BaseSettings):
     search_api_key: str = ""  # Tavily (the primary web-search vendor)
     search_max_results: int = 8
     search_cache_ttl_s: float = 3600.0  # reuse identical searches/URL reads within the window
+    # Which upstreams actually run, comma-separated by provider name (see app/tools/providers/*).
+    # DEFAULT: DuckDuckGo only — it's free, keyless, and the live audit showed it's the one general
+    # web engine that reliably returns hits fast (~5s/scout) once it isn't fighting a dozen dead/slow
+    # providers for the event loop. Every other upstream measured either 403'd on its key, moved/500'd,
+    # or returned 0 hits at 9-19s and just starved the good ones. Re-enable any by name here (e.g.
+    # "duckduckgo,tavily,exa") once its key/endpoint is confirmed working. Empty ⇒ all keyed/keyless
+    # providers whose key is present (the old fan-out-everything behaviour).
+    search_providers_enabled: str = "duckduckgo"
     # Fan-out timing: return at the SOFT deadline once we have any ground, extend to the hard
-    # BUDGET only when still empty, and let CONCURRENCY parallel scouts hit one upstream at once
-    # (sized so a full pack doesn't pile up to zero hits). Tunable per environment via .env.
-    search_soft_s: float = 2.5
-    search_budget_s: float = 7.0
-    search_provider_concurrency: int = 6
+    # BUDGET only when still short, and let CONCURRENCY parallel scouts hit one upstream at once.
+    # Sized to the MEASURED latency of DuckDuckGo (the sole default engine): ~5-6s per scout under a
+    # full parallel pack for a first attempt, so the SOFT window clears that and a good first hit
+    # returns promptly. The BUDGET is wider to cover DDG's own de-throttle path (pre-jitter up to
+    # ~2.5s + request + one backed-off retry) without the fan-out guillotining a scout mid-retry —
+    # that premature cutoff to 0 hits was the "dead ends" bug. Concurrency is generous so a 5-scout
+    # pack never serialises on the one engine. Tighten these only if you re-enable faster upstreams.
+    search_soft_s: float = 12.0
+    search_budget_s: float = 20.0
+    search_provider_concurrency: int = 12
     # Soft domain-diversity nudge in the cross-provider rank (a 2nd+ hit from the same host is pushed
     # down, never dropped; only kicks in with ≥3 distinct hosts so a single-source topic isn't hurt).
     search_domain_diversity: bool = True

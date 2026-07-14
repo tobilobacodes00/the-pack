@@ -161,8 +161,12 @@ class MultiProvider:
                     if cur is None or h.score > cur.score:
                         best[key] = h
 
-        # Phase 1 — gather whatever the FAST providers return within the soft window (never longer
-        # than the hard budget, so a patched/tiny budget still bounds the whole fan-out).
+        # Phase 1 — gather whatever returns within the soft window (never longer than the hard budget,
+        # so a patched/tiny budget still bounds the whole fan-out). The soft window is sized in config
+        # to clear the enabled providers' measured latency (DuckDuckGo answers well inside it), so a
+        # first attempt gets its real ground HERE — that sizing, not a Phase-2 change, is what fixed
+        # the "dead ends" timeout. Once we hold ANY ground we return promptly and never block on a
+        # hung upstream (the pileup that used to starve parallel scouts to zero).
         soft = min(_SEARCH_SOFT_S, _SEARCH_BUDGET_S)
         done, pending = await asyncio.wait(set(tasks), timeout=soft)
         collect(done)
@@ -235,32 +239,44 @@ def make_search_provider() -> SearchProvider:
     if not s.qwen_api_key:  # offline/demo: FakeQwen brain + deterministic Canned search
         return CannedProvider()
 
-    # Keyless general web search + free page reader — the free research path.
-    subs: list[SubProvider] = [DuckDuckGoSearch()]
+    # Every upstream we CAN build (keyless ones always constructible; keyed ones only when their key
+    # is present). This is the full menu — `search_providers_enabled` decides which actually run.
+    candidates: list[SubProvider] = [DuckDuckGoSearch(), OpenAlexSearch(s.openalex_mailto)]
+    candidates.append(HackerNewsSearch())
+    candidates.append(WikidataSearch())
+    candidates.append(DBpediaSearch())
     if s.search_api_key:
-        subs.append(TavilySearch(s.search_api_key))
+        candidates.append(TavilySearch(s.search_api_key))
     if s.exa_api_key:
-        subs.append(ExaSearch(s.exa_api_key))
+        candidates.append(ExaSearch(s.exa_api_key))
     if s.serpapi_api_key:
-        subs.append(SerpApiSearch(s.serpapi_api_key))
+        candidates.append(SerpApiSearch(s.serpapi_api_key))
     if s.youcom_api_key:
-        subs.append(YouSearch(s.youcom_api_key))
+        candidates.append(YouSearch(s.youcom_api_key))
     if s.newsapi_key:
-        subs.append(NewsApiSearch(s.newsapi_key))
+        candidates.append(NewsApiSearch(s.newsapi_key))
     if s.gnews_api_key:
-        subs.append(GNewsSearch(s.gnews_api_key))
+        candidates.append(GNewsSearch(s.gnews_api_key))
     if s.newsdata_api_key:
-        subs.append(NewsDataSearch(s.newsdata_api_key))
-    subs.append(OpenAlexSearch(s.openalex_mailto))  # keyless
+        candidates.append(NewsDataSearch(s.newsdata_api_key))
     if s.core_api_key:
-        subs.append(CoreSearch(s.core_api_key))
+        candidates.append(CoreSearch(s.core_api_key))
     if s.github_token:
-        subs.append(GitHubSearch(s.github_token))
-    subs.append(HackerNewsSearch())  # keyless
-    subs.append(WikidataSearch())  # keyless
+        candidates.append(GitHubSearch(s.github_token))
     if s.google_kg_api_key:
-        subs.append(GoogleKgSearch(s.google_kg_api_key))
-    subs.append(DBpediaSearch())  # keyless
+        candidates.append(GoogleKgSearch(s.google_kg_api_key))
+
+    # Allow-list filter: keep only the enabled providers, in the order they're named. An empty setting
+    # means "run everything constructible" (the legacy fan-out). Default is DuckDuckGo only — the one
+    # engine the live audit proved reliable and fast; the rest 403'd, moved, or timed out to 0 hits.
+    enabled = [n.strip().lower() for n in s.search_providers_enabled.split(",") if n.strip()]
+    if enabled:
+        by_name = {c.name.lower(): c for c in candidates}
+        subs: list[SubProvider] = [by_name[n] for n in enabled if n in by_name]
+        if not subs:  # misconfigured to nothing real → fall back to DuckDuckGo so the pack can hunt
+            subs = [DuckDuckGoSearch()]
+    else:
+        subs = candidates
 
     # Deep-read chain (first to return text wins). Jina Reader leads — it renders JS + clean-extracts
     # and its free tier works KEYLESS, so most pages read for free; a key just lifts its rate limit.

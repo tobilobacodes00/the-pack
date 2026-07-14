@@ -38,17 +38,33 @@ class DuckDuckGoSearch:
     _URL = "https://html.duckduckgo.com/html/"
 
     async def search(self, query: str, *, max_results: int) -> list[SearchHit]:
-        # Each call is its own client with a rotated UA + a little jitter, so parallel scouts don't
-        # hit DuckDuckGo as one identical burst (which is what trips its throttle).
-        await asyncio.sleep(random.uniform(0.0, 0.6))
-        try:
-            async with httpx.AsyncClient(
-                timeout=8.0, follow_redirects=True, headers={"User-Agent": random_ua()}
-            ) as client:
-                resp = await client.post(self._URL, data={"q": query, "kl": "us-en"})
-                resp.raise_for_status()
-                body = resp.text
-        except Exception:  # noqa: BLE001 — one dead upstream must never sink the search
+        # DuckDuckGo is now the pack's ONLY web engine, so a 5-scout pack all posting at once is
+        # exactly the synchronized burst that trips DDG's per-IP throttle (it returns an empty/blocked
+        # page, which surfaced as scouts "hitting dead ends"). Defend on three axes so scouts never
+        # rate-limit each other:
+        #   1. rotated User-Agent per call — each scout looks like a different client;
+        #   2. a wide random pre-jitter — spreads a simultaneous pack across ~2.5s so the requests
+        #      arrive staggered, not as one identical wall of traffic;
+        #   3. one bounded retry with a longer backoff if the first attempt comes back empty (a
+        #      transient throttle usually clears on the second, offset try).
+        await asyncio.sleep(random.uniform(0.0, 2.5))
+        body = ""
+        for attempt in range(2):
+            try:
+                async with httpx.AsyncClient(
+                    timeout=9.0, follow_redirects=True, headers={"User-Agent": random_ua()}
+                ) as client:
+                    resp = await client.post(self._URL, data={"q": query, "kl": "us-en"})
+                    resp.raise_for_status()
+                    body = resp.text
+                if _ANCHOR_RE.search(body):
+                    break  # got real results — stop
+                body = ""  # empty/blocked page: fall through to the backoff retry
+            except Exception:  # noqa: BLE001 — one dead upstream must never sink the search
+                body = ""
+            if attempt == 0:
+                await asyncio.sleep(random.uniform(1.0, 2.5))  # backoff before the one retry
+        if not body:
             return []
         anchors = _ANCHOR_RE.findall(body)
         snippets = _SNIPPET_RE.findall(body)
