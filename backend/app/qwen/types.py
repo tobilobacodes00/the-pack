@@ -40,3 +40,6 @@ class CompletionResult:
     parsed: dict | None = None
     retry_count: int = 0  # transient-error retries this call needed before it succeeded
     cached_tokens: int = 0  # of in_tokens, how many DashScope served from its prompt cache
+    latency_ms: int = (
+        0  # wall-clock of the model call itself (the create()/stream), 0 if not measured
+    )

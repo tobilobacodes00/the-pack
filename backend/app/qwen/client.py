@@ -57,6 +57,11 @@ def is_transient_provider_error(exc: BaseException) -> bool:
 # emit throttled `wolf_progress` beats to the canvas. None => no streaming observation.
 OnDelta = Callable[[str], Awaitable[None]]
 
+# A single synchronous seam over the outgoing wire payload, run right before `create(**payload)`.
+# Given the assembled kwargs dict, it may return a replacement dict (to mutate the request) or None
+# (to leave it unchanged). One hook, not a chain — kept deliberately minimal. None => no interception.
+OnPayload = Callable[[dict], "dict | None"]
+
 
 def _loads_lenient(text: str) -> dict | None:
     """Parse a model's structured-output JSON, tolerating the two things models do that strict
@@ -128,9 +133,13 @@ class _Breaker:
 
 
 class QwenClient:
-    def __init__(self) -> None:
+    def __init__(self, on_payload: OnPayload | None = None) -> None:
         self.offline = not settings.qwen_api_key
         self._fake = FakeQwen()
+        # Optional wire-payload interceptor (see OnPayload) — the ONE seam over the request dict for
+        # both the streaming and non-streaming paths. Left None by default; a caller can supply one
+        # (e.g. request logging, header/param injection) without editing the two create() call sites.
+        self._on_payload = on_payload
         # One breaker PER HUNT, not one shared breaker on the client singleton. The client is
         # constructed once at app startup (main.py) and shared by every concurrent hunt; a single
         # process-global breaker meant one hunt's 5 consecutive transient failures (its own bad luck,
@@ -238,6 +247,36 @@ class QwenClient:
             return None
         return {"type": "json_object"}
 
+    def _build_payload(
+        self,
+        model: str,
+        spec: CallSpec,
+        extra_body: dict,
+        response_format: dict | None,
+        *,
+        stream: bool,
+    ) -> dict:
+        """Assemble the exact kwargs handed to `chat.completions.create` — the ONE place both the
+        non-streaming (`_once`) and streaming (`_stream`) paths build their wire payload, so any
+        cross-cutting concern (a payload observer/mutator, request logging, header injection) has a
+        single seam instead of two divergent inline call sites. `on_payload`, if configured, runs on
+        the assembled dict right before it's unpacked into `create(**payload)` and may return a new
+        dict to send instead (pure dict-in/dict-out; a hook returning None leaves the payload as-is)."""
+        payload: dict = {
+            "model": model,
+            "messages": spec.messages or [],
+            "extra_body": extra_body or None,
+            "response_format": response_format,
+        }
+        if stream:
+            payload["stream"] = True
+            payload["stream_options"] = {"include_usage": True}
+        if self._on_payload is not None:
+            mutated = self._on_payload(payload)
+            if mutated is not None:
+                payload = mutated
+        return payload
+
     async def _once(
         self,
         model: str,
@@ -246,18 +285,18 @@ class QwenClient:
         response_format: dict | None,
         on_delta: OnDelta | None = None,
     ) -> CompletionResult:
-        resp = await self._client.chat.completions.create(  # type: ignore[union-attr,call-overload]
-            model=model,
-            messages=spec.messages or [],
-            extra_body=extra_body or None,
-            response_format=response_format,
-        )
+        payload = self._build_payload(model, spec, extra_body, response_format, stream=False)
+        started = time.perf_counter()
+        resp = await self._client.chat.completions.create(**payload)  # type: ignore[union-attr,call-overload]
+        latency_ms = int((time.perf_counter() - started) * 1000)
         text = resp.choices[0].message.content or ""
         if on_delta and text:  # non-streamed call still surfaces one progress beat
             await on_delta(text)
         usage = resp.usage
         cached = _cached_tokens(usage)
-        return self._account(spec, model, text, usage.prompt_tokens, usage.completion_tokens, cached)
+        return self._account(
+            spec, model, text, usage.prompt_tokens, usage.completion_tokens, cached, latency_ms
+        )
 
     async def _stream(
         self,
@@ -269,14 +308,9 @@ class QwenClient:
     ) -> CompletionResult:
         chunks: list[str] = []
         in_tokens = out_tokens = cached_tokens = 0
-        stream: AsyncIterator = await self._client.chat.completions.create(  # type: ignore[union-attr,call-overload]
-            model=model,
-            messages=spec.messages or [],
-            stream=True,
-            stream_options={"include_usage": True},
-            extra_body=extra_body or None,
-            response_format=response_format,
-        )
+        payload = self._build_payload(model, spec, extra_body, response_format, stream=True)
+        started = time.perf_counter()
+        stream: AsyncIterator = await self._client.chat.completions.create(**payload)  # type: ignore[union-attr,call-overload]
         async for chunk in stream:
             if chunk.choices and chunk.choices[0].delta.content:
                 delta = chunk.choices[0].delta.content
@@ -287,7 +321,12 @@ class QwenClient:
                 in_tokens = chunk.usage.prompt_tokens
                 out_tokens = chunk.usage.completion_tokens
                 cached_tokens = _cached_tokens(chunk.usage)
-        return self._account(spec, model, "".join(chunks), in_tokens, out_tokens, cached_tokens)
+        latency_ms = int(
+            (time.perf_counter() - started) * 1000
+        )  # wall-clock incl. full stream drain
+        return self._account(
+            spec, model, "".join(chunks), in_tokens, out_tokens, cached_tokens, latency_ms
+        )
 
     def _account(
         self,
@@ -297,6 +336,7 @@ class QwenClient:
         in_tokens: int,
         out_tokens: int,
         cached_tokens: int = 0,
+        latency_ms: int = 0,
     ) -> CompletionResult:
         parsed: dict | None = None
         if spec.response_schema is not None:
@@ -310,4 +350,5 @@ class QwenClient:
             cost_usd=pricing.cost(spec.tier, in_tokens, out_tokens),
             parsed=parsed,
             cached_tokens=cached_tokens,
+            latency_ms=latency_ms,
         )

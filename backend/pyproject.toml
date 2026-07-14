@@ -31,6 +31,12 @@ dependencies = [
 dev = [
     "pytest>=8.2",
     "pytest-asyncio>=0.23",
+    # Randomizes test order every run so a shared-state leak between tests surfaces instead of hiding
+    # behind a lucky file order. It WAS installed only in the local .venv (absent here), so local runs
+    # were randomized while CI wasn't — an inconsistency that let an order-dependent leak pass CI. Now
+    # declared so CI randomizes too; the suite is order-independent today (the Elder/Warden sweep fixed
+    # the historical leaks), and CI pins --randomly-seed=0 for a reproducible order (see backend.yml).
+    "pytest-randomly>=3.15",
     "ruff==0.15.20",  # pinned == the pre-commit rev (.pre-commit-config.yaml) so hook and CI can't drift
     "respx>=0.21",
     "mypy>=1.11",

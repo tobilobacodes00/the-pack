@@ -288,3 +288,96 @@ async def test_missing_cached_tokens_field_defaults_to_zero_not_a_crash(monkeypa
     result = await client.complete(_spec())
 
     assert result.cached_tokens == 0
+
+
+@pytest.mark.respx(base_url=_BASE_URL)
+async def test_latency_ms_is_measured_on_the_non_streaming_path(monkeypatch, respx_mock):
+    """The model call gets wall-clock timing the same way a tool call does (tool_result.latency_ms).
+    We can't assert an exact ms, but it must be a non-negative int the Supervisor can put on
+    tokens_spent — proving the create() call is actually bracketed by a perf_counter."""
+    client = _client(monkeypatch)
+    respx_mock.post("/chat/completions").mock(
+        return_value=httpx.Response(200, json=_chat_completion("ok"))
+    )
+
+    result = await client.complete(_spec())
+
+    assert isinstance(result.latency_ms, int)
+    assert result.latency_ms >= 0
+
+
+@pytest.mark.respx(base_url=_BASE_URL)
+async def test_latency_ms_is_measured_on_the_streaming_path(monkeypatch, respx_mock):
+    """Thinking-mode wolves stream — the streaming path must time the full drain too, not leave
+    latency at 0 while only the non-streaming path is instrumented."""
+    client = _client(monkeypatch)
+    body = _sse_stream([_sse_chunk("hi"), _sse_chunk(None, finish_reason="stop")])
+    respx_mock.post("/chat/completions").mock(
+        return_value=httpx.Response(
+            200, content=body, headers={"content-type": "text/event-stream"}
+        )
+    )
+
+    result = await client.complete(_spec(force_stream=True))
+
+    assert isinstance(result.latency_ms, int)
+    assert result.latency_ms >= 0
+
+
+@pytest.mark.respx(base_url=_BASE_URL)
+async def test_on_payload_seam_sees_and_can_mutate_the_outgoing_request(monkeypatch, respx_mock):
+    """The single on_payload seam runs on the assembled kwargs for BOTH paths right before create().
+    Proven here for the non-streaming path: the hook observes the real model/messages and its returned
+    dict is what actually goes on the wire (an injected extra_body key lands in the sent request)."""
+    seen: list[dict] = []
+
+    def hook(payload: dict) -> dict:
+        seen.append(payload)
+        body = dict(payload.get("extra_body") or {})
+        body["_probe"] = 1
+        return {**payload, "extra_body": body}
+
+    monkeypatch.setattr("app.config.settings.qwen_api_key", "test-key", raising=False)
+    monkeypatch.setattr("app.config.settings.qwen_base_url", _BASE_URL, raising=False)
+
+    async def _sleep(_seconds: float) -> None:
+        return None
+
+    monkeypatch.setattr("asyncio.sleep", _sleep)
+    client = QwenClient(on_payload=hook)
+    route = respx_mock.post("/chat/completions").mock(
+        return_value=httpx.Response(200, json=_chat_completion("ok"))
+    )
+
+    await client.complete(_spec())
+
+    assert len(seen) == 1
+    assert seen[0]["model"] == "qwen-flash"
+    assert seen[0]["messages"][0]["role"] == "system"
+    sent = json.loads(route.calls.last.request.content)
+    assert sent["_probe"] == 1  # extra_body is flattened into the request body by the SDK
+
+
+@pytest.mark.respx(base_url=_BASE_URL)
+async def test_on_payload_hook_returning_none_leaves_the_payload_untouched(monkeypatch, respx_mock):
+    """A hook that only observes (returns None) must not blank the request — the payload is sent as
+    built. Guards the `if mutated is not None` branch so a read-only observer can't accidentally
+    null the whole request."""
+    monkeypatch.setattr("app.config.settings.qwen_api_key", "test-key", raising=False)
+    monkeypatch.setattr("app.config.settings.qwen_base_url", _BASE_URL, raising=False)
+
+    async def _sleep(_seconds: float) -> None:
+        return None
+
+    monkeypatch.setattr("asyncio.sleep", _sleep)
+    client = QwenClient(on_payload=lambda _payload: None)  # observe-only, returns None
+    route = respx_mock.post("/chat/completions").mock(
+        return_value=httpx.Response(200, json=_chat_completion("ok"))
+    )
+
+    result = await client.complete(_spec())
+
+    assert result.text == "ok"
+    sent = json.loads(route.calls.last.request.content)
+    assert sent["model"] == "qwen-flash"
+    assert sent["messages"][0]["role"] == "system"

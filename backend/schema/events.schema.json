@@ -225,7 +225,8 @@
           "cost_usd": { "type": "number" },
           "cumulative_usd": { "type": "number" },
           "retry_count": { "type": "integer", "description": "Additive: transient-error retries this call needed before it succeeded." },
-          "cached_tokens": { "type": "integer", "description": "Additive: of in_tokens, how many DashScope served from its prompt cache (0 if unknown or none)." }
+          "cached_tokens": { "type": "integer", "description": "Additive: of in_tokens, how many DashScope served from its prompt cache (0 if unknown or none)." },
+          "latency_ms": { "type": "integer", "description": "Additive: wall-clock of the model call itself (create/stream), mirroring tool_result.latency_ms (0 if unknown)." }
         }
       },
       "hold_opened": {

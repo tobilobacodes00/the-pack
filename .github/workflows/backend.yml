@@ -24,5 +24,8 @@ jobs:
       - run: uv run ruff check .
       - run: uv run ruff format --check .
       - run: uv run mypy app        # static type gate (config in pyproject.toml)
-      - run: uv run pytest -q       # validates backend/fixtures against backend/schema
+      - run: uv run python scripts/check_architecture.py   # AST invariant guard (LLM funnel, SSRF blocklist)
+      # --randomly-seed=0 pins a reproducible test ORDER (pytest-randomly is in dev deps) so a run is
+      # deterministic per commit while still exercising a non-file-order that surfaces shared-state leaks.
+      - run: uv run pytest -q --randomly-seed=0   # validates backend/fixtures against backend/schema
       - run: uv run pip-audit        # dependency CVE scan

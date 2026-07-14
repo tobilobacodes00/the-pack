@@ -2049,6 +2049,7 @@ class Supervisor:
                     "cumulative_usd": round(self._boundary.cumulative_usd, 6),
                     "retry_count": result.retry_count,
                     "cached_tokens": result.cached_tokens,
+                    "latency_ms": result.latency_ms,
                 },
             )
             return result

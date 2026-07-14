@@ -72,7 +72,9 @@ def test_system_content_becomes_cache_marked_blocks_when_enabled_and_long_enough
     monkeypatch,
 ) -> None:
     monkeypatch.setattr("app.config.settings.qwen_prompt_cache_enabled", True)
-    monkeypatch.setattr("app.config.settings.qwen_prompt_cache_min_chars", 10)  # scout persona clears this
+    monkeypatch.setattr(
+        "app.config.settings.qwen_prompt_cache_min_chars", 10
+    )  # scout persona clears this
     msgs = messages(_StubWolf(), raw_input="x", wolf_notes={}, intent="search", context="")  # type: ignore[arg-type]
     content = msgs[0]["content"]
     assert isinstance(content, list)

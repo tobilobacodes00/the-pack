@@ -154,6 +154,7 @@ const TokensSpent = base.extend({
     cumulative_usd: z.number(),
     retry_count: z.number().int().optional(),
     cached_tokens: z.number().int().optional(),
+    latency_ms: z.number().int().optional(),
   }),
 })
 
