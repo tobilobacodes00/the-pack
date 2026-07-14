@@ -80,6 +80,15 @@ def _loads_lenient(text: str) -> dict | None:
     return None
 
 
+def _cached_tokens(usage: object) -> int:
+    """Extract `prompt_tokens_details.cached_tokens` off an OpenAI-SDK usage object, tolerating a
+    provider that omits the field entirely (older DashScope responses, or caching genuinely
+    inactive for this call) — never raises, degrades to 0 (means "unknown/none served from cache")."""
+    details = getattr(usage, "prompt_tokens_details", None)
+    cached = getattr(details, "cached_tokens", None) if details is not None else None
+    return cached if isinstance(cached, int) else 0
+
+
 class CircuitOpenError(RuntimeError):
     """Raised when the breaker is open — fail fast instead of hammering a dead endpoint."""
 
@@ -247,7 +256,8 @@ class QwenClient:
         if on_delta and text:  # non-streamed call still surfaces one progress beat
             await on_delta(text)
         usage = resp.usage
-        return self._account(spec, model, text, usage.prompt_tokens, usage.completion_tokens)
+        cached = _cached_tokens(usage)
+        return self._account(spec, model, text, usage.prompt_tokens, usage.completion_tokens, cached)
 
     async def _stream(
         self,
@@ -258,7 +268,7 @@ class QwenClient:
         on_delta: OnDelta | None = None,
     ) -> CompletionResult:
         chunks: list[str] = []
-        in_tokens = out_tokens = 0
+        in_tokens = out_tokens = cached_tokens = 0
         stream: AsyncIterator = await self._client.chat.completions.create(  # type: ignore[union-attr,call-overload]
             model=model,
             messages=spec.messages or [],
@@ -276,10 +286,17 @@ class QwenClient:
             if getattr(chunk, "usage", None):  # final chunk carries usage
                 in_tokens = chunk.usage.prompt_tokens
                 out_tokens = chunk.usage.completion_tokens
-        return self._account(spec, model, "".join(chunks), in_tokens, out_tokens)
+                cached_tokens = _cached_tokens(chunk.usage)
+        return self._account(spec, model, "".join(chunks), in_tokens, out_tokens, cached_tokens)
 
     def _account(
-        self, spec: CallSpec, model: str, text: str, in_tokens: int, out_tokens: int
+        self,
+        spec: CallSpec,
+        model: str,
+        text: str,
+        in_tokens: int,
+        out_tokens: int,
+        cached_tokens: int = 0,
     ) -> CompletionResult:
         parsed: dict | None = None
         if spec.response_schema is not None:
@@ -292,4 +309,5 @@ class QwenClient:
             out_tokens=out_tokens,
             cost_usd=pricing.cost(spec.tier, in_tokens, out_tokens),
             parsed=parsed,
+            cached_tokens=cached_tokens,
         )

@@ -198,10 +198,15 @@ class Settings(BaseSettings):
     qwen_context_budget_tokens: int = 48_000  # soft cap on the assembled context string, not a
     # hard token count — see app/qwen/context_budget.py.
 
-    # Prompt caching — OFF by default. DashScope's context-cache feature is unverified against
-    # the pack's actual endpoint/workspace; flip this on only after scripts/check_prompt_cache.py
-    # confirms real cache hits (see PACK plan notes on prompt caching).
+    # Prompt caching — confirmed working on the pack's real DashScope key/endpoint via
+    # scripts/check_prompt_cache.py (turn 2 of a repeated system prompt served from cache). Still
+    # opt-in: flip to True once the reordered, cache-marked system prompt (prompt_context.py) has
+    # been proven on a live key in THIS shape, not just the spike script's synthetic padding.
     qwen_prompt_cache_enabled: bool = False
+    # DashScope's minimum cacheable block, per the spike script's findings. A persona shorter than
+    # this wastes the cache_control marker (never actually caches), so we only attach the marker
+    # when the stable prefix clears it — chars/4 heuristic, same margin the rest of the client uses.
+    qwen_prompt_cache_min_chars: int = 4096
 
 
 settings = Settings()

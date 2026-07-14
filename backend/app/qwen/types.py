@@ -39,3 +39,4 @@ class CompletionResult:
     cost_usd: float
     parsed: dict | None = None
     retry_count: int = 0  # transient-error retries this call needed before it succeeded
+    cached_tokens: int = 0  # of in_tokens, how many DashScope served from its prompt cache

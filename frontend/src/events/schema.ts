@@ -152,6 +152,8 @@ const TokensSpent = base.extend({
     out_tokens: z.number().int(),
     cost_usd: z.number(),
     cumulative_usd: z.number(),
+    retry_count: z.number().int().optional(),
+    cached_tokens: z.number().int().optional(),
   }),
 })
 

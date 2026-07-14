@@ -224,7 +224,8 @@
           "out_tokens": { "type": "integer" },
           "cost_usd": { "type": "number" },
           "cumulative_usd": { "type": "number" },
-          "retry_count": { "type": "integer", "description": "Additive: transient-error retries this call needed before it succeeded." }
+          "retry_count": { "type": "integer", "description": "Additive: transient-error retries this call needed before it succeeded." },
+          "cached_tokens": { "type": "integer", "description": "Additive: of in_tokens, how many DashScope served from its prompt cache (0 if unknown or none)." }
         }
       },
       "hold_opened": {

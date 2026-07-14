@@ -195,6 +195,26 @@ INTENT_INSTRUCTIONS: dict[str, str] = {
 }
 
 
+def _system_content(wolf: Wolf) -> str | list[dict]:
+    """The persona body (STABLE — identical for this role/version on every hunt) followed by
+    temporal grounding (VOLATILE — changes every call, down to the minute). Order matters: a
+    provider's prompt cache keys on the longest common PREFIX, so the volatile part must come last
+    or the prefix differs on every single call and nothing ever caches (the bug this replaces —
+    the old code built `f"{temporal_grounding()}\\n\\n{persona}"`, volatile-first).
+
+    When `qwen_prompt_cache_enabled` and the persona clears DashScope's minimum cacheable block,
+    returns typed content blocks with `cache_control` on the persona only — the temporal suffix is
+    a separate, uncached block, so re-grounding the date never invalidates the cached prefix."""
+    persona = load_prompt(wolf.role).body
+    temporal = temporal_grounding()
+    if settings.qwen_prompt_cache_enabled and len(persona) >= settings.qwen_prompt_cache_min_chars:
+        return [
+            {"type": "text", "text": persona, "cache_control": {"type": "ephemeral"}},
+            {"type": "text", "text": f"\n\n{temporal}"},
+        ]
+    return f"{persona}\n\n{temporal}"
+
+
 def messages(
     wolf: Wolf,
     raw_input: str,
@@ -207,9 +227,7 @@ def messages(
     context is the user message. `instruction_override`, when given, replaces the static
     INTENT_INSTRUCTIONS text for this dispatch (used to pass depth-scaled merge/draft wording while
     keeping intent='merge'/'draft' for FakeQwen dispatch + pricing)."""
-    # Prepend the real date so no wolf reasons from a frozen training cutoff (a scout adds the right
-    # year to a search, Tracker/Sentinel can call a source stale, the brief speaks in the present).
-    system = f"{temporal_grounding()}\n\n{load_prompt(wolf.role).body}"
+    system = _system_content(wolf)
     user = f"Task: {raw_input or 'Research the topic and produce a briefing.'}\n\n"
     user += (
         instruction_override

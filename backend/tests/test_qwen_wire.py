@@ -51,7 +51,10 @@ def _spec(**overrides) -> CallSpec:
     return CallSpec(**base)
 
 
-def _chat_completion(text: str) -> dict:
+def _chat_completion(text: str, *, cached_tokens: int | None = None) -> dict:
+    usage = {"prompt_tokens": 50, "completion_tokens": 10, "total_tokens": 60}
+    if cached_tokens is not None:
+        usage["prompt_tokens_details"] = {"cached_tokens": cached_tokens}
     return {
         "id": "chatcmpl-1",
         "object": "chat.completion",
@@ -60,7 +63,7 @@ def _chat_completion(text: str) -> dict:
         "choices": [
             {"index": 0, "message": {"role": "assistant", "content": text}, "finish_reason": "stop"}
         ],
-        "usage": {"prompt_tokens": 50, "completion_tokens": 10, "total_tokens": 60},
+        "usage": usage,
     }
 
 
@@ -255,3 +258,33 @@ def test_is_transient_provider_error_distinguishes_real_bugs_from_provider_failu
     assert not is_transient_provider_error(KeyError("missing_field"))
     assert not is_transient_provider_error(AttributeError("'NoneType' object has no attribute 'x'"))
     assert not is_transient_provider_error(RuntimeError("something else entirely"))
+
+
+@pytest.mark.respx(base_url=_BASE_URL)
+async def test_cached_tokens_flows_from_usage_into_the_result(monkeypatch, respx_mock):
+    """DashScope reports cache hits on `usage.prompt_tokens_details.cached_tokens` — this must
+    survive into CompletionResult so the Supervisor can put it on the tokens_spent event and the
+    cache-boundary fix (persona-first ordering) becomes MEASURABLE, not just assumed to work."""
+    client = _client(monkeypatch)
+    respx_mock.post("/chat/completions").mock(
+        return_value=httpx.Response(200, json=_chat_completion("ok", cached_tokens=42))
+    )
+
+    result = await client.complete(_spec())
+
+    assert result.cached_tokens == 42
+    assert result.in_tokens == 50
+
+
+@pytest.mark.respx(base_url=_BASE_URL)
+async def test_missing_cached_tokens_field_defaults_to_zero_not_a_crash(monkeypatch, respx_mock):
+    """An older/non-caching DashScope response has no prompt_tokens_details at all — must degrade
+    to 0, never raise (caching is opportunistic instrumentation, not load-bearing)."""
+    client = _client(monkeypatch)
+    respx_mock.post("/chat/completions").mock(
+        return_value=httpx.Response(200, json=_chat_completion("ok"))  # no cached_tokens key
+    )
+
+    result = await client.complete(_spec())
+
+    assert result.cached_tokens == 0
