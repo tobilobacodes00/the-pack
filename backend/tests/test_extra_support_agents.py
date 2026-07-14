@@ -18,7 +18,6 @@ from app.qwen.client import QwenClient
 
 from ._fakes import FakeRepo
 
-
 # --- the id convention (unit) ---------------------------------------------------------------------
 
 
@@ -90,3 +89,63 @@ async def test_deep_dive_with_doubled_support_completes() -> None:
     events = await _run_with_team(_team_with_doubled_support(), strategy="deep_dive")
     kinds = [e.type for e in events]
     assert "hunt_completed" in kinds and "hunt_failed" not in kinds
+
+
+# --- the added instance actually contributes (its note reaches the step) --------------------------
+
+
+def _sup() -> Supervisor:
+    repo = FakeRepo()
+    return Supervisor(
+        "h",
+        Emitter("h", repo),
+        repo,
+        QwenClient(),
+        __import__("asyncio").Queue(),
+        source="typed",
+        raw_input="x",
+        strategy="orchestrate",
+    )
+
+
+def test_second_support_note_is_folded_into_the_step() -> None:
+    sup = _sup()
+    sup._wolves["tracker"] = sup._make_wolf("tracker", "tracker", "plus", False)
+    sup._wolves["tracker-2"] = sup._make_wolf("tracker-2", "tracker", "plus", False)
+    sup._wolf_notes = {
+        "tracker": "focus on the leading players",
+        "tracker-2": "double-check every statistic",
+    }
+    overlay = sup._role_note("tracker")
+    note = overlay["tracker"]
+    # BOTH instances' instructions reach the single merge dispatch — the added tracker isn't a no-op.
+    assert "focus on the leading players" in note
+    assert "double-check every statistic" in note
+    assert "honor ALL" in note
+
+
+def test_single_instance_note_is_unchanged_no_overhead() -> None:
+    sup = _sup()
+    sup._wolves["sentinel"] = sup._make_wolf("sentinel", "sentinel", "plus", False)
+    sup._wolf_notes = {"sentinel": "be strict"}
+    # one instance → the plain notes dict, no wrapping, zero risk for the common case
+    assert sup._role_note("sentinel") is sup._wolf_notes
+
+
+# --- heal, don't crash: a SUPPORT-role fault routes to the Warden (target = the support wolf) ------
+
+
+async def test_support_fault_heals_via_warden_not_crash() -> None:
+    sup = _sup()
+    sup._team = build_team({})
+    await sup._spawn_roster()
+    # a tracker fault (the case that used to KeyError) now goes down the same Warden heal path scouts do
+    await sup._stray_event("tracker", "provider_error", None)
+    events = sup._repo.all_events("h")
+    dispatched = [e for e in events if e.type == "doctor_dispatched"]
+    assert dispatched, "the Warden was dispatched to the faulted tracker"
+    assert dispatched[0].payload["target_wolf_id"] == "tracker"  # the canvas glides it to this node
+    assert any(
+        e.type == "doctor_healed" and e.payload["target_wolf_id"] == "tracker" for e in events
+    )
+    assert any(e.type == "stray_recovered" and e.payload["wolf_id"] == "tracker" for e in events)
