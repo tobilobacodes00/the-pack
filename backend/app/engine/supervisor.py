@@ -67,7 +67,7 @@ from app.engine.strategies.base import (
 from app.engine.stray import StrayDetector
 from app.engine.wolves import Wolf
 from app.prompts import load_prompt
-from app.qwen.client import CircuitOpenError, OnDelta, QwenClient
+from app.qwen.client import OnDelta, QwenClient, is_transient_provider_error
 from app.qwen.types import CompletionResult
 from app.storage import store_forged_content
 from app.tools.knowledge import select_relevant
@@ -790,6 +790,41 @@ class Supervisor:
         extras = [w for wid, w in self._wolves.items() if w.role == role and w is not primary]
         return ([primary] if primary is not None else []) + extras
 
+    def _role_note(self, role: str) -> dict[str, str]:
+        """A one-entry notes overlay for a support STEP, keyed by the PRIMARY's id, that folds in the
+        handler notes from EVERY instance of the role. A support step runs as one dispatch (the
+        primary), so when the Packmaster adds a second tracker/sentinel/howler with its own note ("this
+        one double-checks the figures"), that note must still reach the merge/critique/draft — otherwise
+        the extra agent is a no-op. Each distinct instance note is labelled so the model treats them as
+        separate directions to honor. Returns the plain notes dict unchanged when there's ≤1 instance."""
+        instances = self._wolves_of(role)
+        if len(instances) <= 1:
+            return self._wolf_notes
+        primary_id = instances[0].wolf_id
+        parts: list[str] = []
+        for i, w in enumerate(instances, start=1):
+            note = (self._wolf_notes.get(w.wolf_id) or "").strip()
+            if note:
+                label = "primary" if i == 1 else f"#{i}"
+                parts.append(f"[{role} {label}] {note}")
+        if not parts:
+            return self._wolf_notes
+        overlay = dict(self._wolf_notes)
+        overlay[primary_id] = (
+            "You are running this step for a team of "
+            f"{len(instances)} {role}s, each with its own instruction — honor ALL of them:\n"
+            + "\n".join(parts)
+        )
+        return overlay
+
+    async def _show_role_contributors(self, role: str, phase: str, text: str) -> None:
+        """Light up the EXTRA instances of a support role on the canvas while their role's step runs,
+        so an added second tracker/sentinel/howler is visibly contributing (its note is folded into the
+        step via `_role_note`) instead of sitting as a dead node. No-op for a lone instance."""
+        for w in self._wolves_of(role)[1:]:
+            with contextlib.suppress(Exception):
+                await self.progress(w.wolf_id, phase, text)
+
     def queries(self) -> list[str]:
         return list(self._queries)
 
@@ -938,6 +973,9 @@ class Supervisor:
             },
         )
         await self.progress("tracker", "merging", f"Cross-referencing {len(findings)} findings")
+        await self._show_role_contributors(
+            "tracker", "merging", "Cross-checking alongside the lead"
+        )
 
         # Absorb the library BEFORE building the registry (on both branches below) so the KB docs get
         # stable [N]s too — building the registry from findings alone would leave KB sources unnumbered
@@ -962,6 +1000,7 @@ class Supervisor:
                         phase="merging",
                         response_schema=MERGE_SCHEMA,
                         instruction_override=prompt_context.merge_instruction(self.depth),
+                        notes=self._role_note("tracker"),
                     ),
                     timeout=self._synthesis_timeout,
                 )
@@ -1188,6 +1227,7 @@ class Supervisor:
                     context=self._merged_context(merged),
                     phase="thinking",
                     response_schema=GAPS_SCHEMA,
+                    notes=self._role_note("tracker"),
                 ),
                 timeout=self._step_timeout,
             )
@@ -1209,6 +1249,9 @@ class Supervisor:
             {"step_id": "s-critique", "wolf_id": "sentinel", "summary": "Verifying the claims"},
         )
         await self.progress("sentinel", "critiquing", "Checking every claim carries a source")
+        await self._show_role_contributors(
+            "sentinel", "critiquing", "Second pair of eyes on the claims"
+        )
 
         # A critique that didn't actually run must read as UNVERIFIED, not passed. The old code
         # returned ok=True on timeout (blanket approval) and — worse — on a faulted/oversize dispatch
@@ -1239,6 +1282,7 @@ class Supervisor:
                         context=self._merged_context(merged, sources=merged.sources),
                         phase="critiquing",
                         response_schema=CRITIQUE_SCHEMA,
+                        notes=self._role_note("sentinel"),
                     ),
                     timeout=self._synthesis_timeout,
                 )
@@ -1586,6 +1630,9 @@ class Supervisor:
             },
         )
         await self.progress("howler", "writing", "Drafting the briefing")
+        await self._show_role_contributors(
+            "howler", "writing", "Shaping sections alongside the lead"
+        )
         # Drafting the whole brief is the other heavy synthesis call — give it the same generous
         # budget + one retry as the merge, so a slow draft doesn't collapse to the bare merge summary.
         res = None
@@ -1599,6 +1646,7 @@ class Supervisor:
                         phase="writing",
                         response_schema=DRAFT_SCHEMA,
                         instruction_override=prompt_context.draft_instruction(self.depth),
+                        notes=self._role_note("howler"),
                     ),
                     timeout=self._synthesis_timeout,
                 )
@@ -1863,6 +1911,7 @@ class Supervisor:
         phase: str | None = None,
         response_schema: dict | None = None,
         instruction_override: str | None = None,
+        notes: dict[str, str] | None = None,
     ) -> CompletionResult:
         """The one path a model call takes. Per-wolf cap + hunt Boundary gate BEFORE, account AFTER.
 
@@ -1946,7 +1995,9 @@ class Supervisor:
             try:
                 result = await wolf.think(
                     intent,
-                    messages=self._messages(wolf, intent, context, instruction_override),
+                    messages=self._messages(
+                        wolf, intent, context, instruction_override, notes=notes
+                    ),
                     response_schema=response_schema,
                     on_delta=on_delta,
                 )
@@ -1959,14 +2010,23 @@ class Supervisor:
                 async with self._dispatch_lock:
                     self._boundary.cumulative_usd -= est
                     self._wolf_spend[wolf.wolf_id] = self._wolf_spend.get(wolf.wolf_id, 0.0) - est
-                if isinstance(exc, CircuitOpenError):
-                    pattern = "provider_error"
-                elif isinstance(exc, ValueError):
+                if isinstance(exc, ValueError):
                     pattern = "size_exceeded"
-                else:
+                elif is_transient_provider_error(exc):
                     pattern = "provider_error"
-                    logging.getLogger("pack").warning(
-                        "dispatch for %s errored: %r", wolf.wolf_id, exc
+                else:
+                    # Anything else — KeyError, AttributeError, a bug in our own parsing — is NOT a
+                    # provider failure. The wire-level `stray_detected.pattern` enum is frozen and has
+                    # no room for a 6th value, so it still rides the closest-fit "provider_error" bucket
+                    # on the wire, but we log it LOUD (exception, not warning) and distinctly, so a real
+                    # defect is never indistinguishable from "DashScope hiccuped" when someone's reading
+                    # logs or triaging a Warden reroute.
+                    pattern = "provider_error"
+                    logging.getLogger("pack").exception(
+                        "dispatch for %s hit an UNEXPECTED (non-provider) error — likely a real bug, "
+                        "not a transient failure: %r",
+                        wolf.wolf_id,
+                        exc,
                     )
                 await self._stray_event(wolf.wolf_id, pattern, evidence_ref=None)
                 return self._faulted_result(wolf)
@@ -2192,10 +2252,23 @@ class Supervisor:
     # Prompt/context assembly delegates to app/engine/prompt_context.py (pure builders); these thin
     # wrappers pass the hunt's state in, keeping the Engine-primitive call sites unchanged.
     def _messages(
-        self, wolf: Wolf, intent: str, context: str, instruction_override: str | None = None
+        self,
+        wolf: Wolf,
+        intent: str,
+        context: str,
+        instruction_override: str | None = None,
+        *,
+        notes: dict[str, str] | None = None,
     ) -> list[dict]:
+        # `notes` lets a support step pass a role-combined overlay (every tracker/sentinel/howler
+        # instance's handler note folded in); defaults to the plain per-wolf notes.
         return prompt_context.messages(
-            wolf, self._raw_input, self._wolf_notes, intent, context, instruction_override
+            wolf,
+            self._raw_input,
+            notes if notes is not None else self._wolf_notes,
+            intent,
+            context,
+            instruction_override,
         )
 
     def _hits_context(self, query: str, hits: list[dict]) -> str:

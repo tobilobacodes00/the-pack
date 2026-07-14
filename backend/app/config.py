@@ -99,6 +99,12 @@ class Settings(BaseSettings):
     # actually produces its synthesis instead of falling back to pasting raw findings.
     synthesis_timeout_s: float = 300.0
 
+    # Per-step budget for graceful shutdown (registry drain, background-task cancel, relay stop, bus
+    # close, pool close). Each step races this timeout independently and a failing/hanging step is
+    # logged and skipped rather than blocking the steps after it — so a stuck DB write on redeploy
+    # can't also leak the connection pool by never reaching pool.close().
+    shutdown_step_timeout_s: float = 10.0
+
     # A merge/draft that overruns even the synthesis budget is retried ONCE before the honest
     # fallback — a single transient slow call shouldn't collapse the whole brief to a raw-findings
     # paste. The retry runs under the same synthesis budget.

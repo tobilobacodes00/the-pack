@@ -9,8 +9,10 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import logging
+from collections.abc import Awaitable
 from contextlib import asynccontextmanager
 
+import asyncpg
 from fastapi import Depends, FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from starlette.exceptions import HTTPException as StarletteHTTPException
@@ -31,6 +33,41 @@ from app.qwen.pricing import validate_pricing
 from app.routers import documents, hunts, instincts, memory, projects, system, tools
 
 configure_logging(logging.INFO)
+
+
+async def _shutdown_step(name: str, coro: Awaitable[None]) -> None:
+    """Race one shutdown step against `shutdown_step_timeout_s`, catching and logging any failure
+    (timeout OR exception) instead of letting it propagate. Each step runs regardless of whether an
+    earlier one failed — previously one flat `finally` block meant a raise/hang in an early step (e.g.
+    `registry.shutdown()`) skipped every step after it, including `pool.close()`, leaking the DB pool
+    on a botched redeploy."""
+    try:
+        await asyncio.wait_for(coro, timeout=settings.shutdown_step_timeout_s)
+    except Exception as exc:  # noqa: BLE001 — a failed shutdown step must never block the rest
+        logging.getLogger("pack").warning("shutdown step %r failed/timed out: %r", name, exc)
+
+
+async def _graceful_shutdown(
+    registry: HuntRegistry,
+    background: set[asyncio.Task],
+    relay: OutboxRelay,
+    bus: EventBus,
+    pool: asyncpg.Pool,
+) -> None:
+    """Drain each subsystem in turn, isolated: a failing/hanging step is logged and skipped, never
+    blocking the steps after it (see `_shutdown_step`)."""
+    await _shutdown_step("registry.shutdown", registry.shutdown())
+
+    async def _cancel_background() -> None:
+        for bg in list(background):
+            bg.cancel()
+            with contextlib.suppress(asyncio.CancelledError, Exception):
+                await bg
+
+    await _shutdown_step("cancel background tasks", _cancel_background())
+    await _shutdown_step("relay.stop", relay.stop())
+    await _shutdown_step("bus.close", bus.close())
+    await _shutdown_step("pool.close", pool.close())
 
 
 @asynccontextmanager
@@ -70,14 +107,7 @@ async def lifespan(app: FastAPI):
     try:
         yield
     finally:
-        await registry.shutdown()
-        for bg in list(app.state.background):
-            bg.cancel()
-            with contextlib.suppress(asyncio.CancelledError, Exception):
-                await bg
-        await relay.stop()
-        await bus.close()
-        await pool.close()
+        await _graceful_shutdown(registry, app.state.background, relay, bus, pool)
 
 
 app = FastAPI(

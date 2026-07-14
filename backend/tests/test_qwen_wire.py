@@ -197,6 +197,30 @@ async def test_circuit_breaker_opens_after_threshold_and_fails_fast(monkeypatch,
     assert route.call_count == 1  # breaker failed fast — no second HTTP call
 
 
+@pytest.mark.respx(base_url=_BASE_URL)
+async def test_circuit_breaker_is_scoped_per_hunt_not_process_global(monkeypatch, respx_mock):
+    """One hunt tripping the breaker must NOT fail-fast a different, concurrent hunt — the breaker
+    used to be one instance shared by the whole QwenClient singleton (constructed once at app
+    startup), so a single hunt's bad luck could trip fail-fast for every other in-flight hunt too."""
+    client = _client(monkeypatch, qwen_max_retries=0, qwen_breaker_threshold=1)
+    route = respx_mock.post("/chat/completions").mock(
+        side_effect=[
+            httpx.ConnectError("boom"),  # hunt_a's only call — trips ITS breaker
+            httpx.Response(200, json=_chat_completion("ok")),  # hunt_b's call — must still land
+        ]
+    )
+
+    with pytest.raises(Exception):  # noqa: B017 - hunt_a's transient error surfaces
+        await client.complete(_spec(hunt_id="hunt_a"))
+    with pytest.raises(CircuitOpenError):  # hunt_a is now open
+        await client.complete(_spec(hunt_id="hunt_a"))
+
+    # hunt_b has never failed — its own (fresh) breaker is closed, so this call reaches the network.
+    result = await client.complete(_spec(hunt_id="hunt_b"))
+    assert result.text == "ok"
+    assert route.call_count == 2
+
+
 @pytest.mark.respx(base_url=_BASE_URL, assert_all_called=False)
 async def test_oversized_request_rejected_before_any_http_call(monkeypatch, respx_mock):
     client = _client(monkeypatch, qwen_max_request_bytes=200)
@@ -208,3 +232,26 @@ async def test_oversized_request_rejected_before_any_http_call(monkeypatch, resp
     with pytest.raises(ValueError):
         await client.complete(huge)
     assert route.call_count == 0
+
+
+def test_is_transient_provider_error_distinguishes_real_bugs_from_provider_failures() -> None:
+    """The Supervisor uses this to stop silently bucketing a real code defect (KeyError from bad
+    model output, an AttributeError from our own parsing) into the same 'provider_error' Stray
+    pattern as a genuine DashScope outage — the two used to be indistinguishable in logs/telemetry."""
+    from openai import APIConnectionError, RateLimitError
+
+    from app.qwen.client import is_transient_provider_error
+
+    assert is_transient_provider_error(CircuitOpenError("open"))
+    assert is_transient_provider_error(APIConnectionError(request=httpx.Request("POST", _BASE_URL)))
+    assert is_transient_provider_error(
+        RateLimitError(
+            message="rate limited",
+            response=httpx.Response(429, request=httpx.Request("POST", _BASE_URL)),
+            body=None,
+        )
+    )
+    # These are NOT provider errors — they're bugs in our own code and must be classified as such.
+    assert not is_transient_provider_error(KeyError("missing_field"))
+    assert not is_transient_provider_error(AttributeError("'NoneType' object has no attribute 'x'"))
+    assert not is_transient_provider_error(RuntimeError("something else entirely"))

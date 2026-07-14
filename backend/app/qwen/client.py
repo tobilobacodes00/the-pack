@@ -42,6 +42,17 @@ from app.qwen.types import CallSpec, CompletionResult
 # retrying a malformed call just wastes budget.
 _TRANSIENT = (APIConnectionError, APITimeoutError, RateLimitError, InternalServerError)
 
+
+def is_transient_provider_error(exc: BaseException) -> bool:
+    """True for an exception shape that genuinely came from the model provider (a retry-exhausted
+    transient failure, or the circuit breaker refusing to call at all) — False for anything else
+    (a KeyError/AttributeError from a code defect, a schema-parse bug, etc.). The Supervisor uses
+    this to stop silently bucketing real bugs into the same 'provider_error' Stray pattern as an
+    actual DashScope outage — the two need to be told apart in logs even though the wire-level
+    `stray_detected.pattern` enum (frozen) only has room for one shared value."""
+    return isinstance(exc, (*_TRANSIENT, CircuitOpenError))
+
+
 # A streaming sink the caller (Supervisor) supplies to observe text as it arrives, so it can
 # emit throttled `wolf_progress` beats to the canvas. None => no streaming observation.
 OnDelta = Callable[[str], Awaitable[None]]
@@ -99,12 +110,26 @@ class _Breaker:
         if self._failures >= self._threshold:
             self._opened_at = time.monotonic()
 
+    def is_idle(self) -> bool:
+        """True once this breaker has no failures on record and isn't (or is no longer) open — safe
+        to evict and let a fresh breaker take its place next time this hunt (if ever) dispatches."""
+        if self._opened_at is not None:
+            return time.monotonic() - self._opened_at >= self._cooldown_s
+        return self._failures == 0
+
 
 class QwenClient:
     def __init__(self) -> None:
         self.offline = not settings.qwen_api_key
         self._fake = FakeQwen()
-        self._breaker = _Breaker(settings.qwen_breaker_threshold, settings.qwen_breaker_cooldown_s)
+        # One breaker PER HUNT, not one shared breaker on the client singleton. The client is
+        # constructed once at app startup (main.py) and shared by every concurrent hunt; a single
+        # process-global breaker meant one hunt's 5 consecutive transient failures (its own bad luck,
+        # or a request that happens to hit an overloaded shard) fail-fast every OTHER concurrent hunt's
+        # calls for the full cooldown, even though the endpoint may be fine for them. Breakers are
+        # evicted after their cooldown elapses with no further failures, so this dict never grows
+        # unbounded across a long-running process.
+        self._breakers: dict[str, _Breaker] = {}
         self._client: AsyncOpenAI | None = None
         if not self.offline:
             self._client = AsyncOpenAI(
@@ -121,6 +146,17 @@ class QwenClient:
             return TIER_REGISTRY[tier]
         except KeyError as exc:  # pragma: no cover - guardrail
             raise ValueError(f"unknown model tier: {tier!r}") from exc
+
+    def _breaker_for(self, hunt_id: str) -> _Breaker:
+        """Fetch (or create) this hunt's breaker, evicting any OTHER hunt's breaker whose cooldown has
+        fully elapsed with no further failures — keeps the dict bounded without a background sweep."""
+        for key in [k for k, b in self._breakers.items() if k != hunt_id and b.is_idle()]:
+            del self._breakers[key]
+        breaker = self._breakers.get(hunt_id)
+        if breaker is None:
+            breaker = _Breaker(settings.qwen_breaker_threshold, settings.qwen_breaker_cooldown_s)
+            self._breakers[hunt_id] = breaker
+        return breaker
 
     async def complete(self, spec: CallSpec, on_delta: OnDelta | None = None) -> CompletionResult:
         """Run one completion through the chokepoint. Offline → FakeQwen; online → Qwen.
@@ -158,20 +194,21 @@ class QwenClient:
             spec.thinking or spec.force_stream
         )  # thinking always needs stream; force_stream opts in without thinking
 
+        breaker = self._breaker_for(spec.hunt_id)
         last_exc: Exception | None = None
         for attempt in range(settings.qwen_max_retries + 1):
-            self._breaker.before()
+            breaker.before()
             try:
                 if must_stream:
                     result = await self._stream(model, spec, extra_body, response_format, on_delta)
                 else:
                     result = await self._once(model, spec, extra_body, response_format, on_delta)
-                self._breaker.on_success()
+                breaker.on_success()
                 result.retry_count = attempt
                 return result
             except _TRANSIENT as exc:  # retry these
                 last_exc = exc
-                self._breaker.on_failure()
+                breaker.on_failure()
                 if attempt < settings.qwen_max_retries:
                     # Jittered exponential backoff — bare 2**attempt would let every wolf retrying
                     # the same transient outage wake up in lockstep and thundering-herd the
