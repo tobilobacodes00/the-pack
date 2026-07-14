@@ -24,9 +24,19 @@ describe('wolfIds', () => {
   it('numbers scouts scout-1..N', () => {
     expect(wolfIds('scout', 3)).toEqual(['scout-1', 'scout-2', 'scout-3'])
   })
-  it('keeps a single non-scout bare, suffixes when >1', () => {
+  it('keeps the PRIMARY non-scout bare and suffixes only extras (never renames the primary)', () => {
+    // Load-bearing: the engine addresses the primary by its bare id, so the first instance must
+    // stay "tracker", not become "tracker-1" — else a cloned support role KeyErrors the hunt.
     expect(wolfIds('tracker', 1)).toEqual(['tracker'])
-    expect(wolfIds('tracker', 2)).toEqual(['tracker-1', 'tracker-2'])
+    expect(wolfIds('tracker', 2)).toEqual(['tracker', 'tracker-2'])
+    expect(wolfIds('tracker', 3)).toEqual(['tracker', 'tracker-2', 'tracker-3'])
+  })
+
+  it('holds for every cloneable support role', () => {
+    for (const role of ['tracker', 'sentinel', 'howler']) {
+      expect(wolfIds(role, 2)).toEqual([role, `${role}-2`])
+      expect(wolfIds(role, 2)[0]).toBe(role) // the bare primary always survives
+    }
   })
 })
 

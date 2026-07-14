@@ -43,8 +43,12 @@ export function wolfIds(role: string, count: number): string[] {
     const n = Math.max(1, count)
     return Array.from({ length: n }, (_, i) => `scout-${i + 1}`)
   }
-  if (count <= 1) return [role]
-  return Array.from({ length: count }, (_, i) => `${role}-${i + 1}`)
+  // Every non-scout role keeps its BARE name for the primary and suffixes only the extras —
+  // "tracker", "tracker-2", "tracker-3". Must mirror the backend's roster.wolf_ids exactly: the
+  // engine addresses the primary by its bare id, so a "tracker-1" primary (from a second tracker)
+  // would KeyError and fail the hunt. Keep this in lockstep with backend/app/engine/roster.py.
+  const n = Math.max(1, count)
+  return [role, ...Array.from({ length: n - 1 }, (_, i) => `${role}-${i + 2}`)]
 }
 
 /** Build the canonical 7-role team from a counts map — mirror of `_build_team` (:92-118).

@@ -59,13 +59,16 @@ MAX_SCOUTS = 5
 
 
 def wolf_ids(role: str, count: int) -> list[str]:
-    """Mint ids for a role. Scouts are always suffixed (scout-1..N, the canonical convention); a
-    singleton of any other role keeps its bare role name; clones get -1..-N."""
+    """Mint ids for a role. Scouts are always suffixed (scout-1..N, the canonical convention). Every
+    OTHER role keeps its bare role name for the PRIMARY instance and suffixes only the extras —
+    "tracker", "tracker-2", "tracker-3". This is load-bearing: the merge/critique/draft steps address
+    the primary by its bare id (self._wolves["tracker"], ["sentinel"], ["howler"]), so if a second
+    instance renamed the primary to "tracker-1" the bare lookup would KeyError and the whole hunt would
+    fail the moment a support role was cloned in the formation editor."""
     if role == "scout":
         return [f"scout-{i + 1}" for i in range(max(1, count))]
-    if count <= 1:
-        return [role]
-    return [f"{role}-{i + 1}" for i in range(count)]
+    n = max(1, count)
+    return [role] + [f"{role}-{i}" for i in range(2, n + 1)]
 
 
 def build_team(parsed: dict) -> list[dict]:

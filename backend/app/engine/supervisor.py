@@ -764,6 +764,32 @@ class Supervisor:
         # Live scouts in spawn order — N is whatever Alpha built / the user edited, not a fixed 3.
         return [wid for wid, w in self._wolves.items() if w.role == "scout"]
 
+    def _lead_of(self, role: str) -> Wolf:
+        """The wolf that runs a support STEP for `role` (merge→tracker, critique→sentinel,
+        draft→howler). Normally the primary keeps the bare id (`roster.wolf_ids`), but NEVER index
+        `self._wolves[role]` directly: a formation edit that removed/renamed the primary, or added a
+        second instance ahead of it, would KeyError and crash the whole hunt at step setup — outside
+        `_dispatch`'s heal-don't-fail guard. Resolve defensively: bare id → else the first instance of
+        the role → else mint one on the fly so the step (and the hunt) always proceeds."""
+        w = self._wolves.get(role)
+        if w is not None:
+            return w
+        for wolf in self._wolves.values():
+            if wolf.role == role:
+                return wolf
+        # No instance at all (a stripped formation) — spawn one so the step can still run.
+        tier, thinking, _budget = ROLE_SPEC.get(role, ("plus", False, 0.05))
+        self._wolves[role] = self._make_wolf(role, role, tier, thinking)
+        self._wolf_budget.setdefault(role, _budget)
+        return self._wolves[role]
+
+    def _wolves_of(self, role: str) -> list[Wolf]:
+        """Every live instance of a support role, primary first — so an added second tracker/sentinel/
+        howler (a distinct editable agent with its own note) actually contributes instead of idling."""
+        primary = self._wolves.get(role)
+        extras = [w for wid, w in self._wolves.items() if w.role == role and w is not primary]
+        return ([primary] if primary is not None else []) + extras
+
     def queries(self) -> list[str]:
         return list(self._queries)
 
@@ -901,7 +927,7 @@ class Supervisor:
     async def merge(self, findings: list[Finding], step_id: str = "s2") -> Merged:
         """Tracker cross-references the findings into claims and surfaces any real conflict."""
         await self._absorb_inputs()  # A7: fold in anything the Packmaster added mid-hunt
-        tracker = self._wolves["tracker"]
+        tracker = self._lead_of("tracker")
         await self._emit(
             "step_started",
             "tracker",
@@ -1153,7 +1179,7 @@ class Supervisor:
 
     async def find_gaps(self, merged: Merged) -> list[str]:
         """Tracker names what's still missing — the queries for a second deep-dive round."""
-        tracker = self._wolves["tracker"]
+        tracker = self._lead_of("tracker")
         try:
             res = await asyncio.wait_for(
                 self._dispatch(
@@ -1176,7 +1202,7 @@ class Supervisor:
 
     async def critique(self, merged: Merged) -> CritiqueResult:
         """Sentinel checks every claim carries a real source."""
-        sentinel = self._wolves["sentinel"]
+        sentinel = self._lead_of("sentinel")
         await self._emit(
             "step_started",
             "sentinel",
@@ -1549,7 +1575,7 @@ class Supervisor:
             return "\n\n".join(b["text"] for b in self._blocks)
         if self._mode == "on_command":
             await self._confirm_draft()
-        howler = self._wolves["howler"]
+        howler = self._lead_of("howler")
         await self._emit(
             "step_started",
             "howler",
