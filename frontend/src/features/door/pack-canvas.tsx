@@ -112,10 +112,10 @@ export function PackCanvas({
     // is a short choreography over the pose uniforms the shader already drives (yaw/pitch/roll/jaw/
     // blink/glow/scale/offset); `dur` is its length in seconds. Picked at random per click, avoiding an
     // immediate repeat so the same move rarely fires twice in a row.
-    const TRICKS = ['wag', 'nod', 'roll', 'pounce', 'howl', 'wink', 'perk', 'spark'] as const
+    const TRICKS = ['wag', 'nod', 'howl', 'wink', 'perk', 'spark'] as const
     type Trick = (typeof TRICKS)[number]
     const TRICK_DUR: Record<Trick, number> = {
-      wag: 0.6, nod: 0.55, roll: 0.8, pounce: 0.6, howl: 1.1, wink: 0.4, perk: 0.55, spark: 0.9,
+      wag: 0.6, nod: 0.55, howl: 1.1, wink: 0.4, perk: 0.55, spark: 0.9,
     }
     const pickTrick = (avoid?: Trick): Trick => {
       const pool = TRICKS.filter((t) => t !== avoid)
@@ -310,13 +310,6 @@ export function PackCanvas({
               break
             case 'nod': // eager yes-nod
               pitch += Math.sin(t * Math.PI * 4) * 0.4 * e
-              break
-            case 'roll': // barrel-roll / roll over — a full turn
-              roll += t * Math.PI * 2
-              break
-            case 'pounce': // hops up and lands
-              hop += Math.sin(t * Math.PI) * 0.08
-              breath += Math.sin(t * Math.PI) * 0.12
               break
             case 'howl': // head tips back, jaw opens, eyes blaze
               pitch -= 0.35 * e
