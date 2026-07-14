@@ -394,6 +394,17 @@ export type WolfState = {
   status: 'active' | 'done' | 'error' | 'strayed' | 'healing'
   cost_usd: number
   parent_wolf_id: string | null
+  /** The ordered phases/tools this wolf has passed through (consecutive dupes collapsed), so the
+   *  inspector can draw a "searched → read → summarizing" timeline. Rebuilt from the stream, so a
+   *  full replay reconstructs the identical sequence (replay-safe). */
+  phaseHistory: string[]
+  /** Last tool call's outcome + wall-clock, from `tool_result` (last-write-wins → replay-safe). */
+  lastTool: { tool: string; ok: boolean; latency_ms: number } | null
+  /** Last model-call latency (ms) from `tokens_spent` (last-write-wins → replay-safe). */
+  lastLatencyMs: number | null
+  /** Running count of tool calls + model calls this wolf made — a cheap "how busy" signal. Additive,
+   *  so like cost_usd it is NOT replay-safe; only surfaced live in the inspector (never persisted). */
+  toolCalls: number
 }
 
 export type BoundaryStatus = 'ok' | 'warn' | 'downgraded' | 'halted'

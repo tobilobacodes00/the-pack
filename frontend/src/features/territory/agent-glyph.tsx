@@ -112,6 +112,7 @@ export function IdleGlyph({
   tone = 'idle',
   accent,
   outline = false,
+  showDone = false,
 }: {
   role: string
   size?: number
@@ -120,10 +121,14 @@ export function IdleGlyph({
   accent?: string
   /** Draw a chunky forest-ink rim so the disc reads as a coin on the cream landing. */
   outline?: boolean
+  /** When true, a finished (`done`) wolf gets a small check badge so it reads as DONE at a glance —
+   *  not just "same colour as active, minus the ring". The canvas node opts in; tiny avatars don't. */
+  showDone?: boolean
 }) {
   const { cx, cy, icon } = iconFor(role)
   const viewBox = `${cx - GLYPH_SIZE / 2} ${cy - GLYPH_SIZE / 2} ${GLYPH_SIZE} ${GLYPH_SIZE}`
   const idle = tone === 'idle'
+  const done = tone === 'done'
   // Charcoal coin (the logo grey) always; an idle agent's glyph is a dim grey, an ACTIVE one lights up
   // in its role/state colour — so the pack carries colour while the chrome stays monochrome.
   const tc = accent ?? toneColor(role, tone)
@@ -131,12 +136,21 @@ export function IdleGlyph({
   const ring = idle ? '#9a9a9a' : tc
   const halo = idle ? '#ebeae6' : tc
   const discFill = '#1a1a1a' // charcoal ink coin
+  // Ease every colour/opacity change so a tone flip (idle→active→done→strayed) glides instead of
+  // snapping — the "refined, clearly-alive" feel. GPU-cheap (paint-only props).
+  const ease = 'stroke 400ms ease, fill 400ms ease, opacity 400ms ease, color 400ms ease'
 
   return (
     // `color` drives the glyph via currentColor; rings + faint halo pick up the role colour once active.
-    <svg width={size} height={size} viewBox={viewBox} fill="none" style={{ display: 'block', color }}>
-      <circle opacity={idle ? 0.1 : 0.18} cx={cx} cy={cy} r="39.75" fill={halo} stroke={ring} strokeWidth="0.5" />
-      <circle opacity={idle ? 0.3 : 0.28} cx={cx} cy={cy} r="34.75" fill={halo} stroke={ring} strokeWidth="0.5" />
+    <svg
+      width={size}
+      height={size}
+      viewBox={viewBox}
+      fill="none"
+      style={{ display: 'block', color, transition: ease, overflow: 'visible' }}
+    >
+      <circle opacity={idle ? 0.1 : 0.18} cx={cx} cy={cy} r="39.75" fill={halo} stroke={ring} strokeWidth="0.5" style={{ transition: ease }} />
+      <circle opacity={idle ? 0.3 : 0.28} cx={cx} cy={cy} r="34.75" fill={halo} stroke={ring} strokeWidth="0.5" style={{ transition: ease }} />
       <circle
         cx={cx}
         cy={cy}
@@ -144,8 +158,24 @@ export function IdleGlyph({
         fill={discFill}
         stroke={outline ? '#1A1A1A' : ring}
         strokeWidth={outline ? 2.5 : idle ? 0.5 : 1.5}
+        style={{ transition: ease }}
       />
       {icon}
+      {/* Done badge — a small check disc at the coin's lower-right. Only when the caller opts in AND
+          the wolf has actually finished, so "done" is instantly distinct from "active". */}
+      {showDone && done && (
+        <g style={{ transformOrigin: `${cx + 20}px ${cy + 20}px` }} className="glyph-done-pop">
+          <circle cx={cx + 20} cy={cy + 20} r="9" fill={ring} stroke="#1a1a1a" strokeWidth="1.5" />
+          <path
+            d={`M ${cx + 15.5} ${cy + 20} L ${cx + 18.7} ${cy + 23} L ${cx + 24.5} ${cy + 16.5}`}
+            fill="none"
+            stroke="#ffffff"
+            strokeWidth="2"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+          />
+        </g>
+      )}
     </svg>
   )
 }

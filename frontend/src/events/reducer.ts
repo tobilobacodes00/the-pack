@@ -52,6 +52,16 @@ function setWolf(state: HuntState, wolf_id: string, patch: Partial<WolfState>): 
   }
 }
 
+/** Record a phase/tool step in a wolf's timeline, collapsing a repeat of the current phase so
+ *  "reading, reading, reading" stays one "reading" step. Rebuilt on replay → replay-safe. */
+function pushPhase(state: HuntState, wolf_id: string, phase: string): HuntState {
+  const w = state.wolves[wolf_id]
+  if (!w || !phase) return state
+  const hist = w.phaseHistory
+  const nextHist = hist[hist.length - 1] === phase ? hist : [...hist, phase]
+  return setWolf(state, wolf_id, { phase, phaseHistory: nextHist })
+}
+
 export function huntReducer(state: HuntState, event: HuntEvent): HuntState {
   const next = { ...state, last_seq: Math.max(state.last_seq, event.seq) }
 
@@ -132,6 +142,10 @@ export function huntReducer(state: HuntState, event: HuntEvent): HuntState {
             status: 'active',
             cost_usd: 0,
             parent_wolf_id: event.payload.parent_wolf_id ?? null,
+            phaseHistory: [],
+            lastTool: null,
+            lastLatencyMs: null,
+            toolCalls: 0,
           },
         },
       }
@@ -149,16 +163,28 @@ export function huntReducer(state: HuntState, event: HuntEvent): HuntState {
       return pushActivity(next, event.seq, event.payload.from_wolf, event.payload.summary)
 
     case 'wolf_progress':
-      return setWolf(next, event.payload.wolf_id, {
-        phase: event.payload.phase,
-        last_text: event.payload.text,
-      })
+      return pushPhase(
+        setWolf(next, event.payload.wolf_id, { last_text: event.payload.text }),
+        event.payload.wolf_id,
+        event.payload.phase,
+      )
 
-    case 'tool_called':
-      return setWolf(next, event.payload.wolf_id, { phase: event.payload.tool })
+    case 'tool_called': {
+      const w = next.wolves[event.payload.wolf_id]
+      const withCount = w
+        ? setWolf(next, event.payload.wolf_id, { toolCalls: w.toolCalls + 1 })
+        : next
+      return pushPhase(withCount, event.payload.wolf_id, event.payload.tool)
+    }
 
     case 'tool_result':
-      return next
+      return setWolf(next, event.payload.wolf_id, {
+        lastTool: {
+          tool: event.payload.tool,
+          ok: event.payload.ok,
+          latency_ms: event.payload.latency_ms,
+        },
+      })
 
     case 'tokens_spent': {
       // SET the hunt total from the event's authoritative cumulative_usd — never add the incremental
@@ -180,7 +206,17 @@ export function huntReducer(state: HuntState, event: HuntEvent): HuntState {
         ...next,
         boundary: { ...next.boundary, spent_usd: spent, pct },
         wolves: wolf
-          ? { ...next.wolves, [event.payload.wolf_id]: { ...wolf, cost_usd: wolf.cost_usd + cost } }
+          ? {
+              ...next.wolves,
+              [event.payload.wolf_id]: {
+                ...wolf,
+                cost_usd: wolf.cost_usd + cost,
+                // Last model-call latency (last-write-wins → replay-safe); toolCalls is additive so
+                // (like cost_usd) it's live-only, never trusted after a replay.
+                lastLatencyMs: event.payload.latency_ms ?? wolf.lastLatencyMs,
+                toolCalls: wolf.toolCalls + 1,
+              },
+            }
           : next.wolves,
       }
     }

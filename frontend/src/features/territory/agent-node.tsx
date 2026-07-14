@@ -1,9 +1,7 @@
-import { useState } from 'react'
 import { Handle, Position } from '@xyflow/react'
 import type { NodeProps, Node } from '@xyflow/react'
 import type { WolfState } from '@/events/schema'
-import { ROLE_DESC } from './roles'
-import { wolfActivity } from './wolf-activity'
+import { wolfLabel } from '@/features/reward/lib/wolf-label'
 import { IdleGlyph, toneColor, type AgentTone } from './agent-glyph'
 
 // Glyph rendering lives in agent-glyph (no @xyflow/react dep) so the landing can reuse it
@@ -11,7 +9,16 @@ import { IdleGlyph, toneColor, type AgentTone } from './agent-glyph'
 export { IdleGlyph, toneColor } from './agent-glyph'
 export type { AgentTone } from './agent-glyph'
 
-export type AgentNodeData = { role: string; wolfId?: string; tone?: AgentTone; live?: WolfState }
+export type AgentNodeData = {
+  role: string
+  wolfId?: string
+  tone?: AgentTone
+  live?: WolfState
+  /** True when this node is the one the user has clicked to inspect. */
+  selected?: boolean
+  /** Click handler — selects this wolf so the inspector card opens anchored to it. */
+  onSelect?: (wolfId: string) => void
+}
 type AgentNodeType = Node<AgentNodeData, 'agentNode'>
 
 const SIZE = 80
@@ -31,43 +38,74 @@ function OrbitRing({ color }: { color: string }) {
   )
 }
 
+/** One-word state label under the glyph so the pack's state is legible WITHOUT hovering. */
+function toneWord(tone: AgentTone): { text: string; color: string } | null {
+  switch (tone) {
+    case 'active': return { text: 'working', color: '#8a7a4a' }
+    case 'done': return { text: 'done', color: '#3f9d5a' }
+    case 'strayed': return { text: 'recovering', color: '#9a9a9a' }
+    case 'healing': return { text: 'healing', color: '#1a9aad' }
+    default: return null
+  }
+}
+
 export function AgentNode({ data }: NodeProps<AgentNodeType>) {
-  const [hovered, setHovered] = useState(false)
   const tone = data.tone ?? 'idle'
+  const clickable = !!(data.wolfId && data.onSelect && data.live)
+  const label = data.wolfId ? wolfLabel(data.wolfId) : null
+  const word = toneWord(tone)
+  const accent = toneColor(data.role, tone)
 
   return (
     <div
-      style={{ width: SIZE, height: SIZE, position: 'relative' }}
-      onMouseEnter={() => setHovered(true)}
-      onMouseLeave={() => setHovered(false)}
+      style={{
+        width: SIZE,
+        position: 'relative',
+        display: 'flex',
+        flexDirection: 'column',
+        alignItems: 'center',
+        cursor: clickable ? 'pointer' : 'default',
+      }}
+      onClick={clickable ? () => data.onSelect!(data.wolfId!) : undefined}
+      title={label ? label.label : data.role}
     >
-      {tone === 'active' && <OrbitRing color={toneColor(data.role, tone)} />}
-      <IdleGlyph role={data.role} tone={tone} />
+      <div style={{ width: SIZE, height: SIZE, position: 'relative' }}>
+        {tone === 'active' && <OrbitRing color={accent} />}
 
-      {hovered && (
+        {/* Selected halo — a soft ring in the wolf's colour marking the inspected node. */}
+        {data.selected && (
+          <div
+            className="node-selected-halo"
+            style={{
+              position: 'absolute', inset: -7, borderRadius: '50%',
+              border: `2px solid ${accent}`, pointerEvents: 'none',
+            }}
+          />
+        )}
+
+        {/* The glyph itself. `.node-breathe` gently pulses an active wolf; `.node-done-settle`
+            plays once when it finishes; a strayed wolf is dimmed (no shake — refined). */}
         <div
-          style={{
-            position: 'absolute',
-            left: '100%',
-            top: '50%',
-            transform: 'translateY(-50%)',
-            marginLeft: 10,
-            background: '#ffffff',
-            border: '1px solid #dcdcd8',
-            borderRadius: 8,
-            padding: '9px 13px',
-            width: 240,
-            pointerEvents: 'none',
-            zIndex: 1000,
-          }}
+          className={
+            tone === 'active' ? 'node-breathe' : tone === 'done' ? 'node-done-settle' : undefined
+          }
+          style={{ opacity: tone === 'strayed' ? 0.55 : 1, transition: 'opacity 400ms ease' }}
         >
-          <p style={{ fontSize: 14, fontWeight: 600, color: '#1a1a1a', textTransform: 'capitalize', margin: 0 }}>
-            {data.role}
-          </p>
-          {/* While the hunt runs, show what this agent is doing right now; otherwise its role blurb. */}
-          <p style={{ fontSize: 12.5, color: '#4a4a4a', margin: '3px 0 0', lineHeight: 1.45 }}>
-            {data.live ? wolfActivity(data.live) : (ROLE_DESC[data.role] ?? '')}
-          </p>
+          <IdleGlyph role={data.role} tone={tone} showDone />
+        </div>
+      </div>
+
+      {/* Always-visible caption: which wolf + its state, so the pack reads at a glance without hover. */}
+      {label && (
+        <div style={{ marginTop: 5, textAlign: 'center', pointerEvents: 'none', width: SIZE + 40 }}>
+          <div style={{ fontSize: 11.5, fontWeight: 600, color: '#2a2a2a', lineHeight: 1.1 }}>
+            {label.label}
+          </div>
+          {word && (
+            <div style={{ fontSize: 10, fontWeight: 500, color: word.color, marginTop: 1 }}>
+              {word.text}
+            </div>
+          )}
         </div>
       )}
 
