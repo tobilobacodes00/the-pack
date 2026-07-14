@@ -28,6 +28,11 @@ import { ScorecardPanel } from './scorecard-panel'
 import { IconButton } from './icon-button'
 import { parseBrief } from './lib/brief-view'
 import { buildInstinctPayload } from './lib/instinct-spec'
+import {
+  FirstInstinctPrompt,
+  hasSeenFirstInstinctPrompt,
+  markFirstInstinctPromptSeen,
+} from './first-instinct-prompt'
 
 interface Props {
   huntId: string
@@ -39,6 +44,9 @@ export function RewardModal({ huntId, open, onClose }: Props) {
   const [panel, setPanel] = useState<'reading' | 'scorecard'>('reading')
   const [drawerOpen, setDrawerOpen] = useState(false)
   const [refineOpen, setRefineOpen] = useState(false)
+  // The first-completion Instinct nudge: shown once ever (localStorage-gated), the moment the very
+  // first brief is in hand. "Save as Instinct" is otherwise buried in the ⋮ menu and rarely found.
+  const [showFirstInstinct, setShowFirstInstinct] = useState(() => !hasSeenFirstInstinctPrompt())
 
   const plan = useHuntStore((s) => s.state.plan)
   const totals = useHuntStore((s) => s.state.totals)
@@ -83,13 +91,23 @@ export function RewardModal({ huntId, open, onClose }: Props) {
     else toast({ variant: 'warn', title: 'No files to export yet' })
   }
 
-  const handleSaveInstinct = () => {
-    const title = brief.data ? parseBrief(brief.data, prompt).title : prompt
-    const payload = buildInstinctPayload(title, prompt, plan)
+  const briefTitle = brief.data ? parseBrief(brief.data, prompt).title : prompt
+
+  const handleSaveInstinct = (name?: string) => {
+    const payload = buildInstinctPayload(name || briefTitle, prompt, plan)
     createInstinct.mutate(payload, {
       onSuccess: () => toast({ variant: 'success', title: 'Saved as Instinct' }),
       onError: (e) => toast({ variant: 'danger', title: 'Could not save', description: String(e) }),
     })
+  }
+
+  const dismissFirstInstinct = () => {
+    markFirstInstinctPromptSeen()
+    setShowFirstInstinct(false)
+  }
+  const saveFromFirstPrompt = (name: string) => {
+    handleSaveInstinct(name)
+    dismissFirstInstinct() // saving also retires the one-time nudge
   }
 
   const handleShare = () => {
@@ -164,7 +182,17 @@ export function RewardModal({ huntId, open, onClose }: Props) {
       ) : brief.isError || !brief.data?.content ? (
         <RewardEmpty kind="missing" />
       ) : (
-        <ReadingView brief={brief.data} dateISO={dateISO} projectName={projectName} />
+        <>
+          {showFirstInstinct && (
+            <FirstInstinctPrompt
+              defaultName={briefTitle}
+              saving={createInstinct.isPending}
+              onSave={saveFromFirstPrompt}
+              onDismiss={dismissFirstInstinct}
+            />
+          )}
+          <ReadingView brief={brief.data} dateISO={dateISO} projectName={projectName} />
+        </>
       )}
     </RewardShell>
   )

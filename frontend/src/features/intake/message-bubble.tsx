@@ -1,3 +1,5 @@
+import { ChatMarkdown } from './chat-markdown'
+
 export type ChatMessage = {
   id?: string
   role: 'user' | 'alpha'
@@ -27,13 +29,14 @@ export function MessageBubble({ message }: Props) {
   const isAlpha = message.role === 'alpha'
 
   if (isAlpha) {
-    // Alpha replies read as plain prose — no bubble, no caption.
+    // Alpha replies read as plain prose — no bubble, no caption. Alpha is prompted to use light
+    // Markdown (bold, bullets), so render that subset instead of printing raw `**` / `-`.
     return message.isThinking ? (
       <ThinkingDots />
     ) : (
-      <p className="text-sm leading-relaxed whitespace-pre-wrap text-ink-700">
-        {message.text}
-      </p>
+      <div className="text-sm leading-relaxed text-ink-700">
+        <ChatMarkdown text={message.text} />
+      </div>
     )
   }
 
