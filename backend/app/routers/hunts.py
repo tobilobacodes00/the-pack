@@ -536,6 +536,23 @@ async def rehearse_hunt(hunt_id: str, body: RehearseBody) -> dict:
 # ---------------------------------------------------------------------------
 
 
+# The frontend tags Alpha's turns with role "alpha" (its own UI convention). DashScope/OpenAI only
+# accept system|assistant|user|tool|function — sending "alpha" (or any other custom role) back in the
+# history 400s the whole call ("alpha is not one of [...]"), which surfaced as an intermittent
+# "Something went wrong" the moment a conversation had any prior Alpha turn. Map roles to the standard
+# set before ANY history reaches the model: alpha/assistant → assistant, everything else → user.
+def _model_history(messages: list[dict]) -> list[dict]:
+    out: list[dict] = []
+    for m in messages:
+        content = m.get("content")
+        if not content:
+            continue
+        role = str(m.get("role") or "user").lower()
+        norm = "assistant" if role in ("alpha", "assistant") else "user"
+        out.append({"role": norm, "content": content})
+    return out
+
+
 @router.post("/hunts/intake", response_model=IntakeReply)
 async def intake(
     body: IntakeBody,
@@ -588,7 +605,7 @@ async def intake(
                 wolf_id="alpha",
                 tier="plus",
                 intent="intake",
-                messages=[{"role": "system", "content": system}, *msgs],
+                messages=[{"role": "system", "content": system}, *_model_history(msgs)],
             )
         )
     except RateLimitError as exc:
@@ -674,7 +691,7 @@ async def intake_stream(
                     tier="plus",
                     intent="intake",
                     force_stream=True,
-                    messages=[{"role": "system", "content": system}, *msgs],
+                    messages=[{"role": "system", "content": system}, *_model_history(msgs)],
                 ),
                 on_delta=_on_delta,
             )
@@ -949,7 +966,7 @@ async def _compose_ask_reply(
     handed to Alpha to phrase in its own voice (so 'I've re-worked the brief' is real, not invented)."""
     system = await _ask_system(repo, hunt_id, full_brief=full_brief)
     hint = outcome.get("reply_hint") or ""
-    turns = [*history]
+    turns = _model_history(history)
     if hint:
         system += (
             f"\n\nYou JUST did this for the Packmaster: {hint} "
@@ -1074,7 +1091,7 @@ async def ask_stream(
                     tier="plus",
                     intent="chat",
                     force_stream=True,
-                    messages=[{"role": "system", "content": system}, *history],
+                    messages=[{"role": "system", "content": system}, *_model_history(history)],
                 ),
                 on_delta=_on_delta,
             )

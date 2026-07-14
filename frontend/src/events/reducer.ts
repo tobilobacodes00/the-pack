@@ -57,7 +57,9 @@ function setWolf(state: HuntState, wolf_id: string, patch: Partial<WolfState>): 
 function pushPhase(state: HuntState, wolf_id: string, phase: string): HuntState {
   const w = state.wolves[wolf_id]
   if (!w || !phase) return state
-  const hist = w.phaseHistory
+  // Tolerate a wolf that predates this field (an older cached/rehydrated store entry) — never assume
+  // phaseHistory exists, or reading .length throws and takes down the whole reducer mid-hunt.
+  const hist = w.phaseHistory ?? []
   const nextHist = hist[hist.length - 1] === phase ? hist : [...hist, phase]
   return setWolf(state, wolf_id, { phase, phaseHistory: nextHist })
 }
@@ -172,7 +174,7 @@ export function huntReducer(state: HuntState, event: HuntEvent): HuntState {
     case 'tool_called': {
       const w = next.wolves[event.payload.wolf_id]
       const withCount = w
-        ? setWolf(next, event.payload.wolf_id, { toolCalls: w.toolCalls + 1 })
+        ? setWolf(next, event.payload.wolf_id, { toolCalls: (w.toolCalls ?? 0) + 1 })
         : next
       return pushPhase(withCount, event.payload.wolf_id, event.payload.tool)
     }
@@ -213,8 +215,8 @@ export function huntReducer(state: HuntState, event: HuntEvent): HuntState {
                 cost_usd: wolf.cost_usd + cost,
                 // Last model-call latency (last-write-wins → replay-safe); toolCalls is additive so
                 // (like cost_usd) it's live-only, never trusted after a replay.
-                lastLatencyMs: event.payload.latency_ms ?? wolf.lastLatencyMs,
-                toolCalls: wolf.toolCalls + 1,
+                lastLatencyMs: event.payload.latency_ms ?? wolf.lastLatencyMs ?? null,
+                toolCalls: (wolf.toolCalls ?? 0) + 1,
               },
             }
           : next.wolves,

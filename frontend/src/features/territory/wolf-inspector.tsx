@@ -41,8 +41,12 @@ export function WolfInspector({ wolf, onClose }: { wolf: WolfState; onClose: () 
   const accent = toneColor(wolf.role, t)
   const done = t === 'done'
 
+  // Defensive: a wolf rehydrated from an older cached store may lack the enrichment fields.
+  const phaseHistory = wolf.phaseHistory ?? []
+  const toolCalls = wolf.toolCalls ?? 0
+
   const stats: string[] = []
-  if (wolf.toolCalls > 0) stats.push(`${wolf.toolCalls} step${wolf.toolCalls === 1 ? '' : 's'}`)
+  if (toolCalls > 0) stats.push(`${toolCalls} step${toolCalls === 1 ? '' : 's'}`)
   if (wolf.lastLatencyMs != null) stats.push(`${(wolf.lastLatencyMs / 1000).toFixed(1)}s last call`)
   if (wolf.lastTool) stats.push(wolf.lastTool.ok ? 'last tool ok' : 'last tool failed')
   if (wolf.cost_usd > 0) stats.push(`$${wolf.cost_usd.toFixed(3)}`)
@@ -93,14 +97,14 @@ export function WolfInspector({ wolf, onClose }: { wolf: WolfState; onClose: () 
         </div>
 
         {/* Phase timeline — the trail of what it has done, most-recent last. */}
-        {wolf.phaseHistory.length > 0 && (
+        {phaseHistory.length > 0 && (
           <div>
             <div style={{ fontSize: 10.5, fontWeight: 600, color: '#9a9a9a', textTransform: 'uppercase', letterSpacing: 0.4, marginBottom: 5 }}>
               Trail
             </div>
             <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 4 }}>
-              {wolf.phaseHistory.map((p, i) => {
-                const isLast = i === wolf.phaseHistory.length - 1
+              {phaseHistory.map((p, i) => {
+                const isLast = i === phaseHistory.length - 1
                 const live = isLast && !done
                 return (
                   <span key={`${p}-${i}`} style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}>
