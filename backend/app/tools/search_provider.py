@@ -16,11 +16,13 @@ configured it returns Canned, so the engine still runs end to end offline (Doc 0
 from __future__ import annotations
 
 import asyncio
+import logging
 import time
 from typing import Protocol
 
 from app.config import settings
 from app.tools.cache import TTLCache
+from app.tools.content_guard import is_fetchable_url, scan_content
 from app.tools.providers.academic import CoreSearch, OpenAlexSearch
 from app.tools.providers.base import (
     _BLOCKED_HOSTS,
@@ -217,12 +219,28 @@ class MultiProvider:
         )
 
     async def _read_chain(self, url: str) -> str:
+        # Fail-closed pre-fetch gate: screen the URL BEFORE any reader (including the paid ones that
+        # fetch server-side) touches it — an internal/metadata/non-http URL is denied here rather than
+        # relying on each reader's own ad-hoc protection (only DirectReader had one).
+        if not is_fetchable_url(url):
+            logging.getLogger("pack").warning("content guard blocked unsafe fetch URL: %s", url)
+            return ""
         # Priority chain (Jina → Firecrawl → Tavily → Apify): first reader to return text wins. Each
         # reader carries its own timeout, so the chain is bounded even if an early one is slow.
         for reader in self._readers:
             text = await reader.read(url)
             if text:
-                return text
+                # Screen scraped third-party text for prompt-injection before it's cached and fed into
+                # a single-turn wolf's prompt — a hostile page can't slip "ignore your instructions"
+                # into the reasoning turn. Masks offending spans; real content is untouched.
+                result = scan_content(text)
+                if result.hits:
+                    logging.getLogger("pack").warning(
+                        "content guard masked %d possible prompt-injection span(s) in %s",
+                        result.hits,
+                        url,
+                    )
+                return result.text
         return ""
 
     async def fetch(self, url: str) -> str:
