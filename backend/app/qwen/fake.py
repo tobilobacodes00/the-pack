@@ -14,6 +14,7 @@ the event stream.
 
 from __future__ import annotations
 
+import json
 from collections.abc import Awaitable, Callable
 
 from app.config import TIER_REGISTRY
@@ -39,6 +40,34 @@ def _task_of(spec: CallSpec) -> str:
                 return content[len("Task:") :].split("\n", 1)[0].strip() or "the topic"
             return (content.split("\n", 1)[0].strip() or "the topic")[:120]
     return "the topic"
+
+
+def _user_content_of(spec: CallSpec) -> str:
+    """The full latest user message — some intents (deep_scout_step) need to see the whole running
+    context, not just the one-line task, to return a stateful-looking-but-pure decision."""
+    for m in reversed(spec.messages or []):
+        if m.get("role") == "user":
+            return str(m.get("content", ""))
+    return ""
+
+
+def _deep_scout_step(task: str, context: str) -> dict:
+    """A deterministic decision for one turn of the bounded deep_scout loop. FakeQwen is STATELESS, so
+    it can't count turns in a variable — instead it reads the running context the loop feeds back in
+    (which grows one "[turn N] …" line per turn) and dispatches on that. Scripted arc: turn 1 search →
+    turn 2 fetch the first hit → turn 3+ finish. Pure: same context in, same decision out."""
+    did_search = "] searched " in context
+    did_fetch = "] fetched " in context
+    if not did_search:
+        return {"action": "search", "query": f"{task} overview", "reason": "start broad"}
+    if not did_fetch:
+        # Fetch a stable synthetic URL for this task (matches what the canned search would surface).
+        return {"action": "fetch", "url": "https://example.com/1", "reason": "read the top hit"}
+    return {
+        "action": "finish",
+        "summary": f"deep_scout gathered sources on {task} across a search and a deep read.",
+        "reason": "enough gathered",
+    }
 
 
 def _offline_result(intent: str, task: str) -> tuple[str, dict | None]:
@@ -184,7 +213,14 @@ class FakeQwen:
         in_tokens, out_tokens = _USAGE_BY_TIER.get(spec.tier, _USAGE_BY_TIER["plus"])
         model = TIER_REGISTRY.get(spec.tier, spec.tier)
         task = _task_of(spec)
-        text, parsed = _offline_result(spec.intent or "", task)
+        text: str
+        parsed: dict | None
+        if (spec.intent or "") == "deep_scout_step":
+            # Needs the full running context (not just the one-line task) to pick the next move.
+            decision = _deep_scout_step(task, _user_content_of(spec))
+            text, parsed = json.dumps(decision), decision
+        else:
+            text, parsed = _offline_result(spec.intent or "", task)
         # Structured calls must return a parsed object; free-text calls return None.
         if spec.response_schema is None:
             parsed = None

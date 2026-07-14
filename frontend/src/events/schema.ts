@@ -158,6 +158,16 @@ const TokensSpent = base.extend({
   }),
 })
 
+const ToolSelected = base.extend({
+  type: z.literal('tool_selected'),
+  payload: z.object({
+    wolf_id: z.string(),
+    iteration: z.number().int(),
+    tool: z.string(),
+    args_summary: z.string().optional(),
+  }),
+})
+
 // Holds
 const HoldOpened = base.extend({
   type: z.literal('hold_opened'),
@@ -356,7 +366,7 @@ export const HuntEventSchema = z.discriminatedUnion('type', [
   HuntCreated, InputAdded, TranscriptReady,
   PlanProposed, PlanEdited, PlanApproved,
   WolfSpawned, StepStarted, StepCompleted, MessagePassed, WolfProgress,
-  ToolCalled, ToolResult, TokensSpent,
+  ToolCalled, ToolResult, TokensSpent, ToolSelected,
   HoldOpened, HoldResolved,
   StandoffOpened, StandoffTurn, StandoffResolved,
   StrayDetected, StrayRecovered,

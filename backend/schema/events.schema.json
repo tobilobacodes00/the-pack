@@ -30,6 +30,7 @@
     { "if": { "properties": { "type": { "const": "tool_called" } } }, "then": { "properties": { "payload": { "$ref": "#/$defs/payloads/tool_called" } } } },
     { "if": { "properties": { "type": { "const": "tool_result" } } }, "then": { "properties": { "payload": { "$ref": "#/$defs/payloads/tool_result" } } } },
     { "if": { "properties": { "type": { "const": "tokens_spent" } } }, "then": { "properties": { "payload": { "$ref": "#/$defs/payloads/tokens_spent" } } } },
+    { "if": { "properties": { "type": { "const": "tool_selected" } } }, "then": { "properties": { "payload": { "$ref": "#/$defs/payloads/tool_selected" } } } },
     { "if": { "properties": { "type": { "const": "hold_opened" } } }, "then": { "properties": { "payload": { "$ref": "#/$defs/payloads/hold_opened" } } } },
     { "if": { "properties": { "type": { "const": "hold_resolved" } } }, "then": { "properties": { "payload": { "$ref": "#/$defs/payloads/hold_resolved" } } } },
     { "if": { "properties": { "type": { "const": "standoff_opened" } } }, "then": { "properties": { "payload": { "$ref": "#/$defs/payloads/standoff_opened" } } } },
@@ -57,7 +58,7 @@
         "hunt_created", "input_added", "transcript_ready",
         "plan_proposed", "plan_edited", "plan_approved",
         "wolf_spawned", "step_started", "step_completed", "message_passed", "wolf_progress",
-        "tool_called", "tool_result", "tokens_spent",
+        "tool_called", "tool_result", "tokens_spent", "tool_selected",
         "hold_opened", "hold_resolved",
         "standoff_opened", "standoff_turn", "standoff_resolved",
         "stray_detected", "stray_recovered",
@@ -227,6 +228,16 @@
           "retry_count": { "type": "integer", "description": "Additive: transient-error retries this call needed before it succeeded." },
           "cached_tokens": { "type": "integer", "description": "Additive: of in_tokens, how many DashScope served from its prompt cache (0 if unknown or none)." },
           "latency_ms": { "type": "integer", "description": "Additive: wall-clock of the model call itself (create/stream), mirroring tool_result.latency_ms (0 if unknown)." }
+        }
+      },
+      "tool_selected": {
+        "type": "object",
+        "required": ["wolf_id", "iteration", "tool"],
+        "properties": {
+          "wolf_id": { "type": "string" },
+          "iteration": { "type": "integer", "description": "Which turn of the bounded deep_scout loop this choice was made on (1-based)." },
+          "tool": { "type": "string", "description": "The tool the deep_scout wolf chose this turn: web_search, web_fetch, or finish." },
+          "args_summary": { "type": "string", "description": "A short human-readable summary of the chosen tool's argument (the query or URL)." }
         }
       },
       "hold_opened": {

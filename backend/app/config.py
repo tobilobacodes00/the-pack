@@ -208,6 +208,15 @@ class Settings(BaseSettings):
     # when the stable prefix clears it — chars/4 heuristic, same margin the rest of the client uses.
     qwen_prompt_cache_min_chars: int = 4096
 
+    # deep_scout — the ONE bounded model-driven tool-loop (app/engine/deep_scout.py), the study's
+    # opt-in architecture bet. A deep_scout wolf gets up to `deep_scout_max_iterations` turns to CHOOSE
+    # (search again / fetch a URL / finish) instead of the single-turn engine-scripted ladder. OFF by
+    # default and gated the same way prompt caching is: it must be PROVEN on the live-key harness
+    # (tests/live) before being trusted, because it changes cost/latency shape. The hard iteration cap
+    # bounds spend regardless — each iteration still passes the per-wolf Boundary meter.
+    deep_scout_enabled: bool = False
+    deep_scout_max_iterations: int = 3
+
 
 settings = Settings()
 

@@ -1,0 +1,45 @@
+name: backend-live
+
+# The LIVE-key suite (tests/live/) — real Qwen calls, gated behind executable-green. It runs ONLY:
+#   * manually (workflow_dispatch), or on a schedule, so a real-model call never fires on every push
+#     (that would cost money and couple CI to DashScope availability), and
+#   * ONLY after the offline suite passes in the SAME run (the `needs: offline-green` gate below), so
+#     a live flake can never mask an offline regression, and
+#   * ONLY when the QWEN_API_KEY secret is configured (the live tests skip themselves otherwise, so an
+#     unconfigured fork/clone is a clean no-op, not a red X).
+on:
+  workflow_dispatch: {}
+  schedule:
+    - cron: "0 6 * * 1" # Mondays 06:00 UTC — a weekly live health check, not per-commit
+
+jobs:
+  offline-green:
+    name: offline suite must pass first
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: backend
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v3
+      - run: uv python install 3.12
+      - run: uv sync --extra dev
+      - run: uv run pytest -q --randomly-seed=0 # the SAME offline gate backend.yml runs
+
+  live:
+    name: live-key suite
+    needs: offline-green # gated behind executable-green — never runs if the offline suite failed
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: backend
+    env:
+      QWEN_API_KEY: ${{ secrets.QWEN_API_KEY }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v3
+      - run: uv python install 3.12
+      - run: uv sync --extra dev
+      # Only tests/live. They skip themselves when QWEN_API_KEY is empty, so an unconfigured secret is a
+      # clean skip, not a failure.
+      - run: uv run pytest -q tests/live

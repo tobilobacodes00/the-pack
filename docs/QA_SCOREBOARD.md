@@ -9,7 +9,7 @@ needs the live-key harness, `tests/live/`). The offline suite's own pass/fail is
 
 | Wolf | Prompt | Test coverage |
 | --- | --- | --- |
-| scout | yes | `test_scout_logic`, `test_scout_resilience` |
+| scout | yes | `test_deep_scout`, `test_scout_logic`, `test_scout_resilience` |
 | tracker | yes | `test_merge_attribution` |
 | sentinel | yes | `test_sentinel` |
 | howler | yes | `test_offline_hunt` |
