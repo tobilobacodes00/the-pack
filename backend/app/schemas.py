@@ -112,6 +112,10 @@ class AskAlpha(BaseModel):
 
 class IntakeBody(BaseModel):
     messages: list[dict] = Field(default_factory=list, max_length=200)
+    # The hunt this conversation is attached to, if one already exists. Lets the front-door gate see
+    # the live hunt state (running/delivered) so it stops re-asking scoping questions after a hunt has
+    # started, and doesn't relaunch after one delivered. None during a genuinely fresh intake.
+    hunt_id: str | None = Field(None, max_length=64)
 
 
 # ---------------------------------------------------------------------------
@@ -184,6 +188,12 @@ class IntakeReply(BaseModel):
 
 class AskReply(BaseModel):
     reply: str
+    # What Alpha DID with this turn, so the frontend can react (refresh the brief on a refine, track a
+    # spawned follow-up hunt, etc.). "answer" = a plain reply (the legacy behaviour). "refined" = the
+    # brief was re-drafted (refresh the reward). "subhunt" = a scoped follow-up hunt was launched to
+    # extend the brief (its id is on `hunt_id`). "new_hunt" = a fresh hunt (its id on `hunt_id`).
+    action: str = "answer"
+    hunt_id: str | None = None
 
 
 class MessageItem(BaseModel):

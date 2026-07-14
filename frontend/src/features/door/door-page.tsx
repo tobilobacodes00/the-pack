@@ -1,7 +1,10 @@
-import { lazy, Suspense, useEffect, useMemo, useState } from 'react'
+import { lazy, Suspense, useCallback, useEffect, useMemo, useState } from 'react'
 import { useLocation } from 'react-router-dom'
+import { useQueryClient } from '@tanstack/react-query'
 import { AnimatePresence, motion } from 'framer-motion'
 import { ChevronDown } from 'lucide-react'
+import { toast } from '@/store/toast-store'
+import type { AskAction } from '@/hooks/use-ask-stream'
 import { useDoorLogic } from '../intake/use-intake'
 import { PresetCard, PRESETS } from '../intake/preset-card'
 import { FileDropOverlay } from '../intake/file-drop-overlay'
@@ -32,7 +35,30 @@ const MORPH = { duration: 0.55, ease: [0.4, 0, 0.2, 1] as const }
 // Centered intake chat that morphs in place into territory when Alpha signals a real
 // job — one continuous animation, chat stays mounted, no route change (see useDoorLogic).
 export default function DoorPage() {
-  const door = useDoorLogic()
+  const qc = useQueryClient()
+  // React to chat-driven brief iteration / follow-up hunts once this door is a live hunt (see
+  // RightPanel for the same handler on the standalone territory view).
+  const onAskAction = useCallback(
+    (action: AskAction, newHuntId: string | null) => {
+      if (action === 'refined') {
+        // Refresh any cached brief/format artifacts so the reward shows the re-worked version.
+        void qc.invalidateQueries({ queryKey: ['hunts'], predicate: (q) => q.queryKey.includes('artifact') || q.queryKey.includes('artifacts') })
+        toast({ title: 'Brief updated', description: 'Alpha re-worked the brief.', variant: 'default' })
+      } else if ((action === 'subhunt' || action === 'new_hunt') && newHuntId) {
+        void qc.invalidateQueries({ queryKey: ['hunts'] })
+        toast({
+          title: action === 'subhunt' ? 'Digging deeper' : 'New hunt launched',
+          description:
+            action === 'subhunt'
+              ? 'The pack is researching that and will fold it into your brief.'
+              : 'The pack is on the new hunt.',
+          variant: 'default',
+        })
+      }
+    },
+    [qc],
+  )
+  const door = useDoorLogic({ onAskAction })
   const { phase, huntId, isDragging, onDragEnter, onDragOver, onDragLeave, onDrop } = door
 
   const huntState = useHuntStore((s) => s.state)

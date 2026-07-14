@@ -122,6 +122,26 @@ def _offline_result(intent: str, task: str) -> tuple[str, dict | None]:
             "strokes are here, but with less cross-checking and fewer sources than a full pack hunt."
         )
         return text, None
+    if intent == "route_intent":
+        # Offline intent router — a deterministic keyword heuristic over the latest message (woven into
+        # `task` by the caller) so the offline conversation still routes sensibly. The live model does
+        # this far better; this just keeps hermetic tests meaningful.
+        low = task.lower()
+        if any(w in low for w in ("add ", "also research", "also look", "dig deeper", "expand on")):
+            route = "new_subhunt"
+        elif any(
+            w in low for w in ("redo", "rewrite", "restructure", "tighten", "shorten", "reword")
+        ):
+            route = "refine_rewrite"
+        elif any(w in low for w in ("fix", "change the", "swap", "correct")):
+            route = "refine_patch"
+        elif any(w in low for w in ("thanks", "thank you", "nice", "great", "cool", "awesome")):
+            route = "chatter"
+        elif "?" in task:
+            route = "question_about_brief"
+        else:
+            route = "new_hunt"
+        return route, {"route": route, "confidence": 0.9, "requires_clarification": False}
     if intent == "judge":
         # The pack should win on depth + citations — that's the whole point of the Scorecard.
         return "Scored both briefings.", {"pack": 0.88, "lone": 0.62}

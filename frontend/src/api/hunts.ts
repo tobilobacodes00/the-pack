@@ -35,6 +35,9 @@ export type IntakeMessage = { role: 'user' | 'assistant'; content: string }
 export interface IntakePayload {
   messages: IntakeMessage[]
   artifact_ids?: string[]
+  /** The hunt this conversation is attached to, if one exists — lets the state-aware front door see a
+   *  running/delivered hunt so it stops re-scoping and won't relaunch. */
+  hunt_id?: string | null
 }
 
 export interface IntakeResponse {

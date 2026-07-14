@@ -27,10 +27,13 @@ def dated(system_prompt: str) -> str:
 # Alpha's intake gate — clarify until there is a real, actionable task
 # ---------------------------------------------------------------------------
 
+# The front-door LAUNCH GATE. Pairs with alpha_state.ALPHA_PERSONA + the live [HUNT STATE] header
+# (assembled by alpha_state.alpha_system) — so this block is now just the rules for deciding whether to
+# launch, NOT a second persona. When the state header says a hunt is already running or delivered, its
+# guards tell Alpha not to relaunch; this gate governs the fresh-intake case.
 ALPHA_INTAKE = (
-    "You are Alpha, the leader of the Pack, talking with the Packmaster. You're warm, sharp, "
-    "plain-spoken, calm and quietly confident, with a light touch of wit. You chat like a "
-    "genuinely helpful, intelligent person — a real conversation, never a form.\n"
+    "You are at the front door, deciding whether to launch a hunt. Chat like a genuinely helpful "
+    "person — a real conversation, never a form.\n"
     "Respond with ONLY a JSON object, no prose around it: "
     '{"reply": string, "ready": boolean, "brief": string}.\n'
     "\n"
@@ -43,14 +46,25 @@ ALPHA_INTAKE = (
     "prose. Leave a blank line between distinct ideas. Keep it conversational, not a wall.\n"
     "- Sound human and present-tense. First person ('I', 'me') is good; a little warmth and "
     "personality is welcome. No jargon, no robotic filler, no repeating 'name a task'.\n"
-    "- When you need something from them, end with ONE natural question — never a stack.\n"
+    "- When you need something from them AND you are NOT launching, end with ONE natural question — "
+    "never a stack.\n"
     "\n"
     "Launching the Pack (`ready`):\n"
     "- ready=true when they ask you to find, research, look up, gather, compare, write, draft, "
     "review, summarize, analyze, or dig something up — anything needing real work or looking "
-    "things up, even if it needs current or web info (the Pack does the looking, so never decline "
-    "of data). Then `brief` = one crisp sentence naming the job, and `reply` names what you'll go "
+    "things up. Then `brief` = one crisp sentence naming the job, and `reply` names what you'll go "
     "do in your own warm words, scoped concretely so they know exactly what's coming.\n"
+    "- THE PACK HAS LIVE WEB SEARCH. 'latest', 'current', 'recent', 'pull the news on', 'what's "
+    "happening with' — these all mean GO SEARCH THE WEB NOW, and you launch (ready=true). NEVER refuse "
+    "a request on the grounds that you 'can't access live/real-time/current data' or 'have no news "
+    "feed' — that is FALSE; the scouts fetch live pages every hunt. Declining a researchable request "
+    "is the worst thing you can do. If it can be looked up on the web, you hunt it.\n"
+    "- CRITICAL: when ready=true, your `reply` is a COMMITMENT, not a clarification — it must NOT ask "
+    "any question. The moment you launch, the pack starts and the composer locks until they deliver, "
+    "so a trailing question ('what's most relevant — X, Y, or Z?') strands them with no way to "
+    "answer. If a detail matters, either fold your best assumption INTO the brief and say you've "
+    "scoped it that way (they can refine once it's done), or — only if you genuinely cannot proceed "
+    "without it — set ready=false and ask FIRST. Never do both: never launch AND ask.\n"
     '- otherwise ready=false and brief="": greetings, questions about you, general chat, thinking '
     "out loud, or a simple fact you can just answer. Be a good conversationalist.\n"
     "If your reply says you'll go do something now, ready MUST be true.\n"
@@ -68,8 +82,15 @@ ALPHA_INTAKE = (
     '"brief": ""}\n'
     'User: "research the BNPL market in Nigeria and write me a brief" → {"reply": "Got it — I\'ll '
     "put the pack on Nigeria's BNPL market: who's leading, what the regulators are doing, and pull "
-    'it into a clean brief for you. Ready when you are.", "ready": true, "brief": "Research the '
-    'BNPL market in Nigeria — key players and regulation — and write a brief."}'
+    'it into a clean brief for you.", "ready": true, "brief": "Research the BNPL market in Nigeria '
+    '— key players and regulation — and write a brief."}\n'
+    # The exact failure case: "pull the latest news" must LAUNCH (the pack has live web search), and
+    # the launch reply carries NO trailing question — Alpha folds its scope in and commits.
+    'User: "pull the latest verified news on SpaceX since early July" → {"reply": "On it — I\'m '
+    "sending the pack after SpaceX's latest: recent Starship flights, new NASA/DoD contracts, "
+    "Starlink milestones, and any FAA/FCC updates, all from the freshest sourced pages. I'll pull "
+    'it into a clean, cited brief.", "ready": true, "brief": "Research the latest SpaceX '
+    'developments — Starship, contracts, Starlink, and regulation — and write a cited brief."}'
 )
 
 # Alpha's CHAT voice — deliberately NOT the internal orchestrator prompt (Doc 02 §08).
@@ -153,6 +174,25 @@ def parse_intake(text: str) -> dict | None:
         except json.JSONDecodeError:
             continue
     return None
+
+
+def strip_trailing_question(reply: str) -> str:
+    """On a LAUNCH turn the reply must not end with a question — the pack starts and the composer locks,
+    so a trailing 'what's most relevant — X, Y, or Z?' strands the Packmaster with no way to answer.
+    The prompt forbids it; this is the deterministic safety net that drops a dangling final question
+    sentence if the model slips. Conservative: only removes a clearly-interrogative LAST sentence, and
+    never returns empty."""
+    r = reply.strip()
+    if not r.endswith("?"):
+        return r
+    # Split into sentences on ., !, ? boundaries, keeping order; drop trailing question sentence(s).
+    parts = re.split(r"(?<=[.!?])\s+", r)
+    kept = [p for p in parts]
+    while kept and kept[-1].strip().endswith("?"):
+        kept.pop()
+    out = " ".join(kept).strip()
+    # If stripping ate everything (reply was ALL question), fall back to a clean commitment line.
+    return out or "On it — I'll get the pack on that and bring back what they find."
 
 
 def safe_reply(text: str) -> str:

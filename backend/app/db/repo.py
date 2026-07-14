@@ -252,6 +252,14 @@ class Repo:
             project_id,
         )
 
+    async def set_parent_hunt(self, hunt_id: str, parent_hunt_id: str) -> None:
+        """Record that this hunt is a follow-up spun off `parent_hunt_id` (chat-driven sub-hunt)."""
+        await self._pool.execute(
+            "UPDATE hunts SET parent_hunt_id = $2, updated_at = now() WHERE hunt_id = $1",
+            hunt_id,
+            parent_hunt_id,
+        )
+
     # --- conversation messages (durable per-hunt chat) ---------------------------------
 
     async def save_message(self, hunt_id: str, role: str, content: str) -> None:

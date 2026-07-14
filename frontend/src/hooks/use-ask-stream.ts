@@ -11,6 +11,13 @@ const ERROR_COPY: Record<string, string> = {
 /** One prior turn, in the wire shape the ask endpoints expect ('assistant' = Alpha). */
 export type AskTurn = { role: 'user' | 'assistant'; content: string }
 
+/** What Alpha DID with the turn, so the caller can react — refresh the brief on a refine, track a
+ *  spawned follow-up hunt, etc. Mirrors the backend AskReply.action. */
+export type AskAction = 'answer' | 'refined' | 'subhunt' | 'new_hunt' | 'steer'
+
+/** The result of an ask: the streamed reply plus what Alpha did and any new hunt it spun off. */
+export type AskResult = { reply: string; action: AskAction; huntId: string | null }
+
 // The backend caps AskAlpha.messages at 200 and question at 10k chars — trim client-side so a long
 // session degrades (drops oldest turns) instead of 422ing.
 const MAX_TURNS = 200
@@ -28,7 +35,7 @@ interface UseAskStreamResult {
     question: string,
     onToken?: (chunk: string) => void,
     history?: AskTurn[],
-  ) => Promise<string>
+  ) => Promise<AskResult>
   reset: () => void
 }
 
@@ -53,7 +60,7 @@ export function useAskStream(): UseAskStreamResult {
     question: string,
     onToken?: (chunk: string) => void,
     history?: AskTurn[],
-  ): Promise<string> => {
+  ): Promise<AskResult> => {
     abortRef.current?.abort()
     const abort = new AbortController()
     abortRef.current = abort
@@ -61,6 +68,8 @@ export function useAskStream(): UseAskStreamResult {
     setAnswer('')
     setStreaming(true)
     let full = ''
+    let action: AskAction = 'answer'
+    let newHuntId: string | null = null
 
     try {
       const res = await fetch(`${env.VITE_ENGINE_URL}/hunts/${huntId}/ask/stream`, {
@@ -94,11 +103,24 @@ export function useAskStream(): UseAskStreamResult {
           const json = part.slice('data:'.length).trim()
           if (!json || json === '[DONE]') continue
           try {
-            const msg = JSON.parse(json) as { type: string; text?: string; kind?: string }
+            const msg = JSON.parse(json) as {
+              type: string
+              text?: string
+              kind?: string
+              reply?: string
+              action?: AskAction
+              hunt_id?: string | null
+            }
             if (msg.type === 'token' && msg.text) {
               full += msg.text
               onToken?.(msg.text)
               setAnswer((prev) => prev + msg.text)
+            } else if (msg.type === 'done') {
+              // The dispatcher tells us what it did (refined the brief, spawned a follow-up hunt, …)
+              // and, if it launched one, that hunt's id — so the caller can refresh/track it.
+              action = msg.action ?? 'answer'
+              newHuntId = msg.hunt_id ?? null
+              if (!full && msg.reply) full = msg.reply
             } else if (msg.type === 'error') {
               toast({
                 title: 'Ask Alpha failed',
@@ -124,7 +146,7 @@ export function useAskStream(): UseAskStreamResult {
     } finally {
       setStreaming(false)
     }
-    return full
+    return { reply: full, action, huntId: newHuntId }
   }, [])
 
   return { answer, streaming, ask, reset }

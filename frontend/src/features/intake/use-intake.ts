@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect, useCallback } from 'react'
 import { useIntake, useCreateHunt, postMessage, type IntakeMessage } from '@/api/hunts'
-import { useAskStream } from '@/hooks/use-ask-stream'
+import { useAskStream, type AskAction } from '@/hooks/use-ask-stream'
 
 export type Role = 'user' | 'alpha'
 
@@ -36,6 +36,10 @@ export interface DoorLogicOptions {
   initialHuntId?: string | null
   /** Server-stored transcript to seed the chat with, once, when it arrives. */
   seedMessages?: Array<{ role: Role; text: string }>
+  /** Fired after a chat turn on a live hunt when Alpha DID something beyond answering — 'refined'
+   *  (the brief was re-worked → refresh the reward), or 'subhunt'/'new_hunt' (a follow-up launched,
+   *  its id passed along so the caller can track/switch to it). */
+  onAskAction?: (action: AskAction, newHuntId: string | null) => void
 }
 
 /**
@@ -135,7 +139,9 @@ export function useDoorLogic(opts?: DoorLogicOptions) {
       setAttachedFiles([])
       void persistMessage(huntId, 'user', builtText)
 
-      const reply = await askAlpha(
+      // The one smart Alpha: it may just answer, OR it may have re-worked the brief / launched a
+      // scoped follow-up hunt. `result.action` tells us which so the UI reacts.
+      const result = await askAlpha(
         huntId,
         builtText,
         (chunk) => {
@@ -145,11 +151,12 @@ export function useDoorLogic(opts?: DoorLogicOptions) {
         },
         history,
       )
-      const finalText = reply.trim() || "Alpha couldn't answer that one — please try again."
+      const finalText = result.reply.trim() || "Alpha couldn't answer that one — please try again."
       setMessages((prev) =>
         prev.map((m) => (m.id === replyId ? { ...m, text: finalText, isThinking: false } : m)),
       )
-      if (reply.trim()) void persistMessage(huntId, 'alpha', reply)
+      if (result.reply.trim()) void persistMessage(huntId, 'alpha', result.reply)
+      opts?.onAskAction?.(result.action, result.huntId)
       return
     }
 
@@ -170,7 +177,9 @@ export function useDoorLogic(opts?: DoorLogicOptions) {
     setAttachedFiles([])
 
     try {
-      const res = await sendToAlpha({ messages: history })
+      // Pass the current huntId (if any) so the front door is state-aware — it won't re-scope or
+      // relaunch over a hunt that's already running or delivered.
+      const res = await sendToAlpha({ messages: history, hunt_id: huntId })
 
       setMessages((prev) =>
         prev.map((m) =>
@@ -208,7 +217,7 @@ export function useDoorLogic(opts?: DoorLogicOptions) {
       )
       console.error('[door]', err)
     }
-  }, [input, attachedFiles, messages, phase, huntId, sendToAlpha, createHunt, askAlpha])
+  }, [input, attachedFiles, messages, phase, huntId, sendToAlpha, createHunt, askAlpha, opts])
 
   const handleKeyDown = useCallback(
     (e: React.KeyboardEvent<HTMLTextAreaElement>) => {

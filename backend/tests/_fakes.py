@@ -119,6 +119,25 @@ class FakeRepo:
     async def set_hunt_state(self, hunt_id: str, state: str) -> None:
         self.hunts.setdefault(hunt_id, {})["state"] = state
 
+    async def get_hunt_snapshot(self, hunt_id: str) -> dict[str, Any] | None:
+        h = self.hunts.get(hunt_id)
+        if h is None:
+            return None
+        return {
+            "hunt_id": hunt_id,
+            "state": h.get("state", "planning"),
+            "source": h.get("source", "typed"),
+            "raw_input": h.get("raw_input") or "",
+            "strategy": h.get("strategy", "orchestrate"),
+            "boundary_usd": h.get("boundary_usd"),
+            "project_id": h.get("project_id"),
+            "parent_hunt_id": h.get("parent_hunt_id"),
+            "last_seq": (self.events.get(hunt_id, [])[-1].seq if self.events.get(hunt_id) else 0),
+        }
+
+    async def set_parent_hunt(self, hunt_id: str, parent_hunt_id: str) -> None:
+        self.hunts.setdefault(hunt_id, {})["parent_hunt_id"] = parent_hunt_id
+
     async def set_boundary(self, hunt_id: str, boundary_usd: float) -> None:
         self.hunts.setdefault(hunt_id, {})["boundary_usd"] = boundary_usd
 

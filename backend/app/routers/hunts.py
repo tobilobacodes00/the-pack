@@ -11,17 +11,21 @@ from fastapi.responses import JSONResponse, Response, StreamingResponse
 from openai import APIStatusError, RateLimitError
 
 from app.config import settings
+from app.core.alpha_state import (
+    alpha_system,
+    hunt_state_header,
+    route_intent,
+)
 from app.core.intake import (
     _SSE_HEADERS,
-    ALPHA_CHAT,
     ALPHA_INTAKE,
     cancel_task,
-    dated,
     last_user,
     looks_like_task,
     parse_intake,
     safe_reply,
     stream_tokens,
+    strip_trailing_question,
 )
 from app.db.repo import Repo
 from app.dependencies import (
@@ -126,29 +130,62 @@ async def create_hunt(
                 seed_team = team
 
     try:
-        await repo.create_hunt(hunt_id, body.source, raw_input, strategy)
-        handle = registry.register(hunt_id)
-        emitter = Emitter(hunt_id, repo)
-        supervisor = Supervisor(
+        await _launch_hunt(
             hunt_id,
-            emitter,
             repo,
+            registry,
             client,
-            handle.commands,
             source=body.source,
             raw_input=raw_input,
             strategy=strategy,
             seed_team=seed_team,
+            slots=slots,
+            parent_hunt_id=None,
         )
-        handle.task = asyncio.create_task(supervisor.run(), name=f"hunt-{hunt_id}")
     except BaseException:
         if slots is not None:  # nothing will run → don't leak the slot
             slots.release()
         raise
+    return _accepted({"hunt_id": hunt_id, "state": "planning"})
+
+
+async def _launch_hunt(
+    hunt_id: str,
+    repo: Repo,
+    registry: HuntRegistry,
+    client: QwenClient,
+    *,
+    source: str,
+    raw_input: str,
+    strategy: str,
+    seed_team: list[dict] | None,
+    slots: asyncio.Semaphore | None,
+    parent_hunt_id: str | None,
+) -> None:
+    """Create a hunt row + spawn its Supervisor task. Shared by the front-door `POST /hunts` and the
+    chat-driven follow-up sub-hunt, so a hunt launched from a conversation is a first-class hunt with
+    the same lifecycle, events, and slot accounting. `parent_hunt_id` records provenance when this is a
+    follow-up spun off an existing brief (so the frontend can thread it under the original)."""
+    await repo.create_hunt(hunt_id, source, raw_input, strategy)
+    if parent_hunt_id:
+        await repo.set_parent_hunt(hunt_id, parent_hunt_id)
+    handle = registry.register(hunt_id)
+    emitter = Emitter(hunt_id, repo)
+    supervisor = Supervisor(
+        hunt_id,
+        emitter,
+        repo,
+        client,
+        handle.commands,
+        source=source,
+        raw_input=raw_input,
+        strategy=strategy,
+        seed_team=seed_team,
+    )
+    handle.task = asyncio.create_task(supervisor.run(), name=f"hunt-{hunt_id}")
     # From here the task owns the slot: free it whenever the hunt ends (done / failed / cancelled).
     if slots is not None:
         handle.task.add_done_callback(lambda _t: slots.release())
-    return _accepted({"hunt_id": hunt_id, "state": "planning"})
 
 
 @router.get("/hunts", response_model=HuntListResponse)
@@ -495,13 +532,29 @@ async def rehearse_hunt(hunt_id: str, body: RehearseBody) -> dict:
 async def intake(
     body: IntakeBody,
     client: QwenClient = Depends(get_client),
+    repo: Repo = Depends(get_repo),
 ) -> JSONResponse:
-    """Front-door clarify-gate: Alpha converses until there's a real task, then signals ready
-    with a one-line brief. No hunt is created here — the frontend creates one only on ready=true."""
+    """Front-door gate, now state-aware: Alpha is ONE continuous lead. If the conversation already has
+    a running or delivered hunt (body.hunt_id), the injected [HUNT STATE] header stops it re-asking
+    scoping questions or relaunching — it converses about the live/finished hunt instead. Only a fresh,
+    hunt-less turn can signal ready. No hunt is created here — the frontend creates one on ready=true."""
     msgs = [m for m in body.messages if m.get("content")]
     last = last_user(msgs)
 
+    # Coarse lifecycle bucket for THIS conversation — gates whether a launch is even allowed.
+    _header, bucket = await hunt_state_header(repo, body.hunt_id)
+    hunt_in_flight = bucket in ("active", "delivered", "dead")
+
     if client.offline:
+        # A hunt already exists for this thread → never relaunch; just acknowledge (the state-aware
+        # live model gives a real reply; offline stays deterministic).
+        if hunt_in_flight:
+            ack = {
+                "active": "The pack is on it right now — I'll bring back what they find.",
+                "delivered": "That one's done — the brief's ready. Want me to refine it or dig further?",
+                "dead": "That hunt ended early — want me to retry or adjust it?",
+            }[bucket]
+            return JSONResponse({"reply": ack, "ready": False, "brief": ""})
         if looks_like_task(last):
             return JSONResponse(
                 {
@@ -519,14 +572,15 @@ async def intake(
             }
         )
 
+    system, _bucket = await alpha_system(repo, body.hunt_id, task_gate=ALPHA_INTAKE)
     try:
         result = await client.complete(
             CallSpec(
-                hunt_id="intake",
+                hunt_id=body.hunt_id or "intake",
                 wolf_id="alpha",
                 tier="plus",
                 intent="intake",
-                messages=[{"role": "system", "content": dated(ALPHA_INTAKE)}, *msgs],
+                messages=[{"role": "system", "content": system}, *msgs],
             )
         )
     except RateLimitError as exc:
@@ -547,8 +601,16 @@ async def intake(
         reply = safe_reply(text)
         ready = False
         brief = ""
+    # Safety net: a hunt already in flight for this thread must never trigger a second launch, even if
+    # the model slips and says ready=true — the state header should prevent it, but belt-and-braces.
+    if hunt_in_flight:
+        ready, brief = False, ""
     if ready and not brief:
         brief = last.strip()[:200]
+    if ready:
+        # On launch the composer locks — a trailing question would strand the Packmaster. The prompt
+        # forbids it; this guarantees it (drops a dangling final question if the model slipped).
+        reply = strip_trailing_question(reply)
     return JSONResponse({"reply": reply, "ready": ready, "brief": brief})
 
 
@@ -557,13 +619,24 @@ async def intake_stream(
     request: Request,
     body: IntakeBody,
     client: QwenClient = Depends(get_client),
+    repo: Repo = Depends(get_repo),
 ) -> StreamingResponse:
-    """SSE variant of /intake — yields `token` events as text arrives, then a `done` event."""
+    """SSE variant of /intake — yields `token` events as text arrives, then a `done` event.
+    State-aware like /intake: an in-flight hunt for this thread suppresses relaunch."""
     msgs = [m for m in body.messages if m.get("content")]
     last = last_user(msgs)
+    _header, bucket = await hunt_state_header(repo, body.hunt_id)
+    hunt_in_flight = bucket in ("active", "delivered", "dead")
 
     if client.offline:
-        if looks_like_task(last):
+        if hunt_in_flight:
+            reply = {
+                "active": "The pack is on it right now — I'll bring back what they find.",
+                "delivered": "That one's done — the brief's ready. Want me to refine it or dig deeper?",
+                "dead": "That hunt ended early — want me to retry or adjust it?",
+            }[bucket]
+            ready, brief = False, ""
+        elif looks_like_task(last):
             reply, ready, brief = "On it — I'll get the Pack on that.", True, last.strip()[:200]
         else:
             reply = "I'm Alpha — I lead the Pack. Ask me anything, or tell me what to look into."
@@ -578,6 +651,7 @@ async def intake_stream(
             _offline_gen(), media_type="text/event-stream", headers=_SSE_HEADERS
         )
 
+    system, _b = await alpha_system(repo, body.hunt_id, task_gate=ALPHA_INTAKE)
     queue: asyncio.Queue[str | None] = asyncio.Queue()
 
     async def _on_delta(delta: str) -> None:
@@ -587,12 +661,12 @@ async def intake_stream(
         async def _run():
             r = await client.complete(
                 CallSpec(
-                    hunt_id="intake",
+                    hunt_id=body.hunt_id or "intake",
                     wolf_id="alpha",
                     tier="plus",
                     intent="intake",
                     force_stream=True,
-                    messages=[{"role": "system", "content": dated(ALPHA_INTAKE)}, *msgs],
+                    messages=[{"role": "system", "content": system}, *msgs],
                 ),
                 on_delta=_on_delta,
             )
@@ -620,9 +694,21 @@ async def intake_stream(
                 brief = str(parsed.get("brief") or "").strip()
             else:
                 reply, ready, brief = safe_reply(text), False, ""
+            if hunt_in_flight:  # never relaunch over a live/finished hunt
+                ready, brief = False, ""
             if ready and not brief:
                 brief = last.strip()[:200]
-            done = {"type": "done", "reply": reply, "ready": ready, "brief": brief}
+            if ready:
+                reply = strip_trailing_question(reply)
+            # On a launch turn the streamed tokens may have included a trailing question; signal the
+            # client to REPLACE the streamed text with this cleaned reply so nothing dangles.
+            done = {
+                "type": "done",
+                "reply": reply,
+                "ready": ready,
+                "brief": brief,
+                "replace": bool(ready),
+            }
             yield f"data: {json.dumps(done)}\n\n"
         finally:
             await cancel_task(task)
@@ -639,37 +725,168 @@ async def intake_stream(
 _ASK_BRIEF_BUDGET = 6_000
 
 
-async def _ask_system(repo: Repo, hunt_id: str) -> str:
-    """Alpha's side-chat system prompt, grounded in this hunt: the chat voice + what the hunt is
-    about + — once the pack has delivered — the actual findings (brief text + its sources). So a
-    follow-up like "what did you find about X?" is answered from the research, not from thin air."""
-    snap = await repo.get_hunt_snapshot(hunt_id)
-    task = (snap or {}).get("raw_input", "") or "the current task"
-    system = f"{ALPHA_CHAT}\n\nThe hunt you're discussing is about: {task}."
+async def _ask_system(repo: Repo, hunt_id: str, *, full_brief: bool = False) -> str:
+    """Alpha's side-chat system prompt, built on the ONE state-aware Alpha (persona + live [HUNT STATE]
+    header via alpha_system) plus the chat rules. The state header already carries a SUMMARY of the
+    delivered brief; `full_brief=True` additionally injects the brief's FULL text + sources — used on a
+    refine turn where Alpha needs the exact wording to re-angle it (the sliding-window-plus-summary
+    pattern: cheap by default, full fidelity only when editing)."""
+    chat_gate = (
+        "You're in the side-chat about this hunt. Answer in plain English, present tense, warm and "
+        "concise. Never expose internal machinery. Ground answers in the hunt's real findings; if a "
+        "question goes beyond them, say so plainly and offer what the pack could dig into next."
+    )
+    system, _bucket = await alpha_system(repo, hunt_id, task_gate=chat_gate)
 
-    art = await repo.get_final_artifact(hunt_id)
-    content = (art or {}).get("content") or {}
-    text = str(content.get("text") or "").strip()
-    if not text:  # older artifacts may carry only blocks
-        blocks = content.get("blocks") or []
-        text = "\n\n".join(
-            str(b.get("text") or "").strip() for b in blocks if b.get("text")
-        ).strip()
-    if text:
-        sources = content.get("sources") or []
-        src_lines = "\n".join(
-            f"[{i}] {s.get('title') or s.get('url') or ''}".strip()
-            for i, s in enumerate(sources[:12], start=1)
-            if s.get("title") or s.get("url")
+    if full_brief:
+        art = await repo.get_final_artifact(hunt_id)
+        content = (art or {}).get("content") or {}
+        text = str(content.get("text") or "").strip()
+        if not text:  # older artifacts may carry only blocks
+            blocks = content.get("blocks") or []
+            text = "\n\n".join(
+                str(b.get("text") or "").strip() for b in blocks if b.get("text")
+            ).strip()
+        if text:
+            sources = content.get("sources") or []
+            src_lines = "\n".join(
+                f"[{i}] {s.get('title') or s.get('url') or ''}".strip()
+                for i, s in enumerate(sources[:12], start=1)
+                if s.get("title") or s.get("url")
+            )
+            system += f"\n\nThe delivered brief, in full:\n{text[:_ASK_BRIEF_BUDGET]}" + (
+                f"\n\nIts sources:\n{src_lines}" if src_lines else ""
+            )
+    return system
+
+
+# Routes that DO something to the brief vs. routes that just talk. Only the "act" routes run the
+# router's side effects (refine / sub-hunt / steer); everything else is a plain grounded reply.
+_ACT_ROUTES = {"refine_patch", "refine_rewrite", "new_subhunt", "new_hunt"}
+
+
+async def _act_on_intent(
+    route: dict,
+    hunt_id: str,
+    message: str,
+    repo: Repo,
+    client: QwenClient,
+    registry: HuntRegistry,
+    slots: asyncio.Semaphore | None,
+) -> dict:
+    """Carry out what the router decided, INTERPRETED THROUGH the live hunt state. Returns
+    {action, hunt_id?, reply_hint} — reply_hint is a short truthful line Alpha weaves into its reply so
+    the Packmaster knows what just happened. Falls back to a plain answer on anything it can't do."""
+    r = route["route"]
+    _header, bucket = await hunt_state_header(repo, hunt_id)
+
+    # A hunt still running: a "do more" request STEERS the live hunt instead of spawning a duplicate
+    # or being ignored (Cursor's addFollowup pattern), routed through the existing add_input command.
+    if bucket == "active" and r in ("new_subhunt", "refine_patch", "refine_rewrite"):
+        await registry.send(hunt_id, {"type": "add_input", "text": message, "kind": "note"})
+        return {
+            "action": "steer",
+            "hunt_id": None,
+            "reply_hint": "I've passed that to the pack while they're still out — they'll fold it in.",
+        }
+
+    # Delivered brief + a refine → re-draft from the SAME findings (no re-scout). Cheap and fast.
+    if bucket == "delivered" and r in ("refine_patch", "refine_rewrite"):
+        art = await repo.get_final_artifact(hunt_id)
+        if art is not None:
+            new_id = await refine_brief(repo, client, hunt_id, message)
+            if new_id is not None:
+                return {
+                    "action": "refined",
+                    "hunt_id": None,
+                    "reply_hint": "Done — I've re-worked the brief; it's updated above.",
+                }
+        # nothing to refine → fall through to a plain answer
+
+    # A request that needs NEW research → a scoped follow-up hunt that extends this brief.
+    if r in ("new_subhunt", "new_hunt"):
+        if slots is not None and slots.locked():
+            return {
+                "action": "answer",
+                "hunt_id": None,
+                "reply_hint": "The pack's at capacity right now — give it a moment and I'll launch that.",
+            }
+        parent = hunt_id if r == "new_subhunt" else None
+        # A sub-hunt's task is scoped by the follow-up message + what it extends; a new_hunt stands alone.
+        if r == "new_subhunt":
+            snap = await repo.get_hunt_snapshot(hunt_id)
+            topic = str((snap or {}).get("raw_input") or "").strip()
+            task = (
+                f"{message.strip()} (extending the earlier brief on: {topic})"
+                if topic
+                else message.strip()
+            )
+        else:
+            task = message.strip()
+        new_id = new_hunt_id()
+        if slots is not None:
+            await slots.acquire()
+        try:
+            await _launch_hunt(
+                new_id,
+                repo,
+                registry,
+                client,
+                source="chat",
+                raw_input=task,
+                strategy=settings.default_strategy,
+                seed_team=None,
+                slots=slots,
+                parent_hunt_id=parent,
+            )
+        except BaseException:
+            if slots is not None:
+                slots.release()
+            raise
+        hint = (
+            "On it — I've sent the pack to dig into that and I'll fold it into the brief."
+            if r == "new_subhunt"
+            else "On it — I've put the pack on that fresh."
         )
+        return {
+            "action": "subhunt" if r == "new_subhunt" else "new_hunt",
+            "hunt_id": new_id,
+            "reply_hint": hint,
+        }
+
+    return {"action": "answer", "hunt_id": None, "reply_hint": ""}
+
+
+async def _compose_ask_reply(
+    hunt_id: str,
+    history: list[dict],
+    message: str,
+    outcome: dict,
+    repo: Repo,
+    client: QwenClient,
+    *,
+    full_brief: bool,
+) -> str:
+    """Generate Alpha's spoken reply. When the router took an action, its truthful `reply_hint` is
+    handed to Alpha to phrase in its own voice (so 'I've re-worked the brief' is real, not invented)."""
+    system = await _ask_system(repo, hunt_id, full_brief=full_brief)
+    hint = outcome.get("reply_hint") or ""
+    turns = [*history]
+    if hint:
         system += (
-            "\n\nThe pack has finished this hunt. What they found — the delivered brief:\n"
-            f"{text[:_ASK_BRIEF_BUDGET]}"
-            + (f"\n\nIts sources:\n{src_lines}" if src_lines else "")
-            + "\n\nGround your answers in these findings. If the question goes beyond them, say so "
-            "plainly and suggest what the pack could hunt next."
+            f"\n\nYou JUST did this for the Packmaster: {hint} "
+            "Reply in your own warm voice confirming it — do not contradict it or offer to do it again."
         )
-    return dated(system)  # so a follow-up like "is that still current?" is anchored to today
+    result = await client.complete(
+        CallSpec(
+            hunt_id=hunt_id,
+            wolf_id="alpha",
+            tier="plus",
+            intent="chat",
+            messages=[{"role": "system", "content": system}, *turns],
+        )
+    )
+    return (result.text or "").strip()
 
 
 @router.post("/hunts/{hunt_id}/ask", response_model=AskReply)
@@ -678,21 +895,37 @@ async def ask_alpha(
     body: AskAlpha,
     repo: Repo = Depends(get_repo),
     client: QwenClient = Depends(get_client),
+    registry: HuntRegistry = Depends(get_registry),
+    slots: asyncio.Semaphore | None = Depends(get_hunt_slots),
 ) -> JSONResponse:
-    """A side conversation with Alpha about the hunt — multi-turn, carries the full history."""
+    """The ONE Alpha side-chat, now a smart dispatcher: it classifies each message against the live
+    hunt state and either answers, refines the brief in place, steers a running hunt, or launches a
+    scoped follow-up — then replies in Alpha's voice. Multi-turn; carries the full history."""
     history = [m for m in body.messages if m.get("content")]
-    if not history and body.question:
-        history = [{"role": "user", "content": body.question}]
-    system = await _ask_system(repo, hunt_id)
+    message = body.question or last_user(history) or ""
+    if not history and message:
+        history = [{"role": "user", "content": message}]
+
+    route = await route_intent(client, repo, hunt_id, message, history)
+    outcome = {"action": "answer", "hunt_id": None, "reply_hint": ""}
+    # Only act on a confident classification (research's confidence cascade: <0.5 → treat as a plain
+    # answer/ask rather than firing an expensive/irreversible action on a guess).
+    if (
+        route["route"] in _ACT_ROUTES
+        and route["confidence"] >= 0.5
+        and not route["requires_clarification"]
+    ):
+        try:
+            outcome = await _act_on_intent(route, hunt_id, message, repo, client, registry, slots)
+        except (RateLimitError, APIStatusError):
+            raise
+        except Exception:  # noqa: BLE001 — a failed action degrades to a plain answer, never a 500
+            outcome = {"action": "answer", "hunt_id": None, "reply_hint": ""}
+
+    full_brief = route["route"] in ("refine_patch", "refine_rewrite")
     try:
-        result = await client.complete(
-            CallSpec(
-                hunt_id=hunt_id,
-                wolf_id="alpha",
-                tier="plus",
-                intent="chat",
-                messages=[{"role": "system", "content": system}, *history],
-            )
+        reply = await _compose_ask_reply(
+            hunt_id, history, message, outcome, repo, client, full_brief=full_brief
         )
     except RateLimitError as exc:
         raise HTTPException(429, detail="rate_limit") from exc
@@ -700,7 +933,9 @@ async def ask_alpha(
         if "content_filter" in str(e):
             raise HTTPException(400, detail="content_filter") from e
         raise HTTPException(500, detail=str(e)) from e
-    return JSONResponse(content={"reply": result.text})
+    return JSONResponse(
+        content={"reply": reply, "action": outcome["action"], "hunt_id": outcome.get("hunt_id")}
+    )
 
 
 @router.post("/hunts/{hunt_id}/ask/stream")
@@ -710,12 +945,37 @@ async def ask_stream(
     body: AskAlpha,
     repo: Repo = Depends(get_repo),
     client: QwenClient = Depends(get_client),
+    registry: HuntRegistry = Depends(get_registry),
+    slots: asyncio.Semaphore | None = Depends(get_hunt_slots),
 ) -> StreamingResponse:
-    """SSE variant of /ask — yields `token` events then a `done` event with the full reply."""
+    """SSE variant of the smart dispatcher: classify the message against live hunt state, take the
+    action (refine / steer / follow-up hunt), THEN stream Alpha's reply and emit the action + any new
+    hunt_id on the `done` frame so the frontend can refresh the brief or track the sub-hunt."""
     history = [m for m in body.messages if m.get("content")]
-    if not history and body.question:
-        history = [{"role": "user", "content": body.question}]
-    system = await _ask_system(repo, hunt_id)
+    message = body.question or last_user(history) or ""
+    if not history and message:
+        history = [{"role": "user", "content": message}]
+
+    route = await route_intent(client, repo, hunt_id, message, history)
+    outcome = {"action": "answer", "hunt_id": None, "reply_hint": ""}
+    if (
+        route["route"] in _ACT_ROUTES
+        and route["confidence"] >= 0.5
+        and not route["requires_clarification"]
+    ):
+        try:
+            outcome = await _act_on_intent(route, hunt_id, message, repo, client, registry, slots)
+        except Exception:  # noqa: BLE001 — degrade to a plain answer, never break the stream
+            outcome = {"action": "answer", "hunt_id": None, "reply_hint": ""}
+
+    full_brief = route["route"] in ("refine_patch", "refine_rewrite")
+    system = await _ask_system(repo, hunt_id, full_brief=full_brief)
+    hint = outcome.get("reply_hint") or ""
+    if hint:
+        system += (
+            f"\n\nYou JUST did this for the Packmaster: {hint} "
+            "Reply in your own warm voice confirming it — do not contradict it or offer to do it again."
+        )
     queue: asyncio.Queue[str | None] = asyncio.Queue()
 
     async def _on_delta(delta: str) -> None:
@@ -750,7 +1010,13 @@ async def ask_stream(
                 kind = "content_filter" if "content_filter" in str(e) else "unknown"
                 yield f"data: {json.dumps({'type': 'error', 'kind': kind})}\n\n"
                 return
-            yield f"data: {json.dumps({'type': 'done', 'reply': result.text})}\n\n"
+            done = {
+                "type": "done",
+                "reply": result.text,
+                "action": outcome["action"],
+                "hunt_id": outcome.get("hunt_id"),
+            }
+            yield f"data: {json.dumps(done)}\n\n"
         finally:
             await cancel_task(task)
 

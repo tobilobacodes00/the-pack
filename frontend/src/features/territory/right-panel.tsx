@@ -1,6 +1,9 @@
-import { useMemo } from 'react'
+import { useCallback, useMemo } from 'react'
+import { useQueryClient } from '@tanstack/react-query'
 import type { HuntState } from '@/events/schema'
 import type { MessageItem, useApprovePlan } from '@/api/hunts'
+import type { AskAction } from '@/hooks/use-ask-stream'
+import { toast } from '@/store/toast-store'
 import { useDoorLogic } from '../intake/use-intake'
 import { ChatColumn } from '../door/chat-column'
 import { HiddenFileInput } from '../door/hidden-file-input'
@@ -30,10 +33,36 @@ export function RightPanel({ huntId, huntState, messages, onApprove, onEditForma
     [messages],
   )
 
+  const qc = useQueryClient()
+  // React to what the chat's Alpha DID beyond replying: a refine re-worked the brief (refresh the
+  // reward's reading view + format tabs), a follow-up hunt was launched (surface it so the Packmaster
+  // can jump to the new hunt as it runs).
+  const onAskAction = useCallback(
+    (action: AskAction, newHuntId: string | null) => {
+      if (action === 'refined') {
+        void qc.invalidateQueries({ queryKey: ['hunts', huntId, 'artifact'] })
+        void qc.invalidateQueries({ queryKey: ['hunts', huntId, 'artifacts'] })
+        toast({ title: 'Brief updated', description: 'Alpha re-worked the brief above.', variant: 'default' })
+      } else if ((action === 'subhunt' || action === 'new_hunt') && newHuntId) {
+        void qc.invalidateQueries({ queryKey: ['hunts'] })
+        toast({
+          title: action === 'subhunt' ? 'Digging deeper' : 'New hunt launched',
+          description:
+            action === 'subhunt'
+              ? 'The pack is researching that and will fold it into your brief.'
+              : 'The pack is on the new hunt.',
+          variant: 'default',
+        })
+      }
+    },
+    [qc, huntId],
+  )
+
   const door = useDoorLogic({
     initialPhase: 'territory',
     initialHuntId: huntId,
     seedMessages,
+    onAskAction,
   })
 
   const footer = (
