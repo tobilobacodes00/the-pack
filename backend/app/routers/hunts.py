@@ -762,7 +762,7 @@ async def _ask_system(repo: Repo, hunt_id: str, *, full_brief: bool = False) -> 
 
 # Routes that DO something to the brief vs. routes that just talk. Only the "act" routes run the
 # router's side effects (refine / sub-hunt / steer); everything else is a plain grounded reply.
-_ACT_ROUTES = {"refine_patch", "refine_rewrite", "new_subhunt", "new_hunt"}
+_ACT_ROUTES = {"refine_patch", "refine_rewrite", "new_subhunt", "new_hunt", "retry"}
 
 
 async def _act_on_intent(
@@ -852,6 +852,63 @@ async def _act_on_intent(
             "action": "subhunt" if r == "new_subhunt" else "new_hunt",
             "hunt_id": new_id,
             "reply_hint": hint,
+        }
+
+    # RETRY — re-run the same job from the beginning. The load-bearing case: a hunt that FAILED or was
+    # stopped before delivering, where the Packmaster says "start again / try it again". Alpha actually
+    # relaunches (a fresh hunt with the same task) instead of only offering to. If they asked to adjust
+    # the focus ("retry but narrow to React"), the message rides along so the re-run is steered.
+    if r == "retry":
+        if slots is not None and slots.locked():
+            return {
+                "action": "answer",
+                "hunt_id": None,
+                "reply_hint": "The pack's at capacity right now — give it a moment and I'll run it again.",
+            }
+        snap = await repo.get_hunt_snapshot(hunt_id)
+        base_task = str((snap or {}).get("raw_input") or "").strip()
+        if not base_task:
+            return {"action": "answer", "hunt_id": None, "reply_hint": ""}
+        # Fold an adjustment into the re-run task only when the message clearly adds direction (more
+        # than a bare "retry"/"start again"); otherwise re-run the task verbatim.
+        adjust = message.strip()
+        bare = {
+            "",
+            "retry",
+            "start again",
+            "try again",
+            "run it again",
+            "do it over",
+            "yes",
+            "go",
+            "again",
+        }
+        task = base_task if adjust.lower() in bare else f"{base_task} — {adjust}"
+        strategy = str((snap or {}).get("strategy") or settings.default_strategy)
+        new_id = new_hunt_id()
+        if slots is not None:
+            await slots.acquire()
+        try:
+            await _launch_hunt(
+                new_id,
+                repo,
+                registry,
+                client,
+                source="chat",
+                raw_input=task,
+                strategy=strategy,
+                seed_team=None,
+                slots=slots,
+                parent_hunt_id=hunt_id,  # thread the re-run under the original
+            )
+        except BaseException:
+            if slots is not None:
+                slots.release()
+            raise
+        return {
+            "action": "retry",
+            "hunt_id": new_id,
+            "reply_hint": "On it — I'm running it again from the top; you'll see the pack move now.",
         }
 
     return {"action": "answer", "hunt_id": None, "reply_hint": ""}

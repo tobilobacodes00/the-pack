@@ -183,6 +183,7 @@ ROUTE_SCHEMA: dict = {
                 "refine_rewrite",  # restructure/re-angle — no new research
                 "new_subhunt",  # add a section that NEEDS new web research → follow-up hunt
                 "new_hunt",  # a genuinely new topic → fresh hunt
+                "retry",  # re-run the SAME task from scratch (a failed/stopped hunt, or "run it again")
             ],
         },
         "confidence": {"type": "number"},
@@ -205,9 +206,14 @@ _ROUTER_INSTRUCTION = (
     "- new_subhunt: add/expand something that genuinely NEEDS new web research ('also research X', "
     "'add a section on competitor pricing') — a scoped follow-up whose findings extend this brief.\n"
     "- new_hunt: a brand-new topic unrelated to the current brief.\n"
-    "THE KEY TEST: does the request need NEW web research (new_subhunt/new_hunt) or can it be done from "
-    "what the pack already found (refine_*)? Set requires_clarification=true and confidence<0.5 only if "
-    "you genuinely can't tell what they want."
+    "- retry: RE-RUN the same task from the beginning. Choose this when the hunt state is ended/failed "
+    "or stopped and they want it done ('start again', 'retry', 'run it again', 'try it', 'yes' after "
+    "you offered to retry, 'do it over'). Also when a delivered hunt should simply be re-run as-is. If "
+    "they say 'retry but focus on X / narrow it to Y', still choose retry — the adjusted focus rides "
+    "along in their message.\n"
+    "THE KEY TEST: does the request need NEW web research (new_subhunt/new_hunt), a re-run of the same "
+    "job (retry), or can it be done from what the pack already found (refine_*)? Set "
+    "requires_clarification=true and confidence<0.5 only if you genuinely can't tell what they want."
 )
 
 

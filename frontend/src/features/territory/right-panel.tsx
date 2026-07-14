@@ -1,4 +1,5 @@
 import { useCallback, useMemo } from 'react'
+import { useNavigate } from 'react-router-dom'
 import { useQueryClient } from '@tanstack/react-query'
 import type { HuntState } from '@/events/schema'
 import type { MessageItem, useApprovePlan } from '@/api/hunts'
@@ -34,6 +35,7 @@ export function RightPanel({ huntId, huntState, messages, onApprove, onEditForma
   )
 
   const qc = useQueryClient()
+  const navigate = useNavigate()
   // React to what the chat's Alpha DID beyond replying: a refine re-worked the brief (refresh the
   // reward's reading view + format tabs), a follow-up hunt was launched (surface it so the Packmaster
   // can jump to the new hunt as it runs).
@@ -53,9 +55,14 @@ export function RightPanel({ huntId, huntState, messages, onApprove, onEditForma
               : 'The pack is on the new hunt.',
           variant: 'default',
         })
+      } else if (action === 'retry' && newHuntId) {
+        // Alpha re-ran the job — navigate to the fresh hunt so the Packmaster watches it run.
+        void qc.invalidateQueries({ queryKey: ['hunts'] })
+        toast({ title: 'Running it again', description: 'Taking you to the new run.', variant: 'default' })
+        navigate(`/hunts/${newHuntId}`)
       }
     },
-    [qc, huntId],
+    [qc, huntId, navigate],
   )
 
   const door = useDoorLogic({

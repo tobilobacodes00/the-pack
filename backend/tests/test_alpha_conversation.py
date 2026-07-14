@@ -182,6 +182,42 @@ class TestAskDispatcher:
         assert body["hunt_id"] is None
         app.dependency_overrides.clear()
 
+    async def test_retry_on_a_failed_hunt_relaunches_the_same_task(self) -> None:
+        repo, registry, client = _deps()
+        _override(repo, registry, client)
+        await repo.create_hunt("h_fail", "chat", "roadmap to software engineer 2027", "orchestrate")
+        await repo.set_hunt_state("h_fail", "failed")
+        async with _client() as c:
+            r = await c.post("/hunts/h_fail/ask", json={"question": "start again"})
+        body = r.json()
+        assert body["action"] == "retry"  # Alpha actually re-ran it, didn't just offer to
+        child = body["hunt_id"]
+        assert child and child != "h_fail"
+        snap = await repo.get_hunt_snapshot(child)
+        # same task, threaded under the failed original
+        assert snap is not None
+        assert snap["raw_input"] == "roadmap to software engineer 2027"
+        assert snap["parent_hunt_id"] == "h_fail"
+        app.dependency_overrides.clear()
+
+    async def test_retry_with_an_adjustment_folds_it_into_the_task(self) -> None:
+        repo, registry, client = _deps()
+        _override(repo, registry, client)
+        await repo.create_hunt("h_fail2", "chat", "roadmap to software engineer", "orchestrate")
+        await repo.set_hunt_state("h_fail2", "failed")
+        async with _client() as c:
+            r = await c.post(
+                "/hunts/h_fail2/ask", json={"question": "retry but focus on React and TypeScript"}
+            )
+        body = r.json()
+        assert body["action"] == "retry"
+        snap = await repo.get_hunt_snapshot(body["hunt_id"])
+        assert snap is not None
+        # the base task is preserved AND the adjustment rides along
+        assert "roadmap to software engineer" in snap["raw_input"]
+        assert "React and TypeScript" in snap["raw_input"]
+        app.dependency_overrides.clear()
+
 
 # --- intake relaunch-suppression ------------------------------------------------------------------
 

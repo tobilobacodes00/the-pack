@@ -13,7 +13,7 @@ export type AskTurn = { role: 'user' | 'assistant'; content: string }
 
 /** What Alpha DID with the turn, so the caller can react — refresh the brief on a refine, track a
  *  spawned follow-up hunt, etc. Mirrors the backend AskReply.action. */
-export type AskAction = 'answer' | 'refined' | 'subhunt' | 'new_hunt' | 'steer'
+export type AskAction = 'answer' | 'refined' | 'subhunt' | 'new_hunt' | 'steer' | 'retry'
 
 /** The result of an ask: the streamed reply plus what Alpha did and any new hunt it spun off. */
 export type AskResult = { reply: string; action: AskAction; huntId: string | null }

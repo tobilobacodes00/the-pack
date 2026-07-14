@@ -127,7 +127,22 @@ def _offline_result(intent: str, task: str) -> tuple[str, dict | None]:
         # `task` by the caller) so the offline conversation still routes sensibly. The live model does
         # this far better; this just keeps hermetic tests meaningful.
         low = task.lower()
-        if any(w in low for w in ("add ", "also research", "also look", "dig deeper", "expand on")):
+        if any(
+            w in low
+            for w in (
+                "start again",
+                "run it again",
+                "retry",
+                "try again",
+                "do it over",
+                "re-run",
+                "rerun",
+            )
+        ):
+            route = "retry"
+        elif any(
+            w in low for w in ("add ", "also research", "also look", "dig deeper", "expand on")
+        ):
             route = "new_subhunt"
         elif any(
             w in low for w in ("redo", "rewrite", "restructure", "tighten", "shorten", "reword")

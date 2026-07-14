@@ -54,6 +54,11 @@ export default function DoorPage() {
               : 'The pack is on the new hunt.',
           variant: 'default',
         })
+      } else if (action === 'retry' && newHuntId) {
+        // Alpha re-ran the job as a fresh hunt — send the Packmaster to it so they watch it run.
+        void qc.invalidateQueries({ queryKey: ['hunts'] })
+        toast({ title: 'Running it again', description: 'Taking you to the new run.', variant: 'default' })
+        window.location.assign(`/hunts/${newHuntId}`)
       }
     },
     [qc],
