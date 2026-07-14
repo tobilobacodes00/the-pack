@@ -22,7 +22,15 @@ from typing import Protocol
 from app.config import settings
 from app.tools.cache import TTLCache
 from app.tools.providers.academic import CoreSearch, OpenAlexSearch
-from app.tools.providers.base import Reader, SearchHit, SearchResults, SubProvider
+from app.tools.providers.base import (
+    _BLOCKED_HOSTS,
+    Reader,
+    SearchHit,
+    SearchResults,
+    SubProvider,
+    canonical_url,
+    host_key,
+)
 from app.tools.providers.community import GitHubSearch, HackerNewsSearch
 from app.tools.providers.duckduckgo import DuckDuckGoSearch
 from app.tools.providers.kg import DBpediaSearch, GoogleKgSearch, WikidataSearch
@@ -89,6 +97,16 @@ class CannedProvider:
 _SEARCH_BUDGET_S = settings.search_budget_s
 _SEARCH_SOFT_S = settings.search_soft_s
 
+# Cross-provider ranking: raw `score` is incommensurate (Tavily/Exa emit 0-1 relevance, DDG emits
+# rank-position, GitHub emits star COUNT, Serp/You emit 0.0). We never compare raw scores across
+# providers — we blend a within-provider RANK component with a relevance component that is trusted
+# ONLY from providers that emit real 0-1 relevance. Providers absent from _REAL_SCORE degrade to pure
+# rank (so their best hit floats instead of always sinking on a 0.0 score).
+_REAL_SCORE = frozenset({"tavily", "exa", "canned"})
+_RANK_W = 0.6
+_REL_W = 0.4
+_DIVERSITY_PENALTY = 0.85  # a 2nd+ hit from the same host is nudged down (never dropped)
+
 # Cap concurrent calls to the SAME upstream across parallel scouts — light rate-limit politeness.
 _PROVIDER_SEM: dict[str, asyncio.Semaphore] = {}
 
@@ -120,7 +138,8 @@ class MultiProvider:
     async def _fan_out(self, query: str, max_results: int) -> list[SearchHit]:
         per = max(3, max_results // 2)
         tasks = [asyncio.create_task(self._guarded(s, query, per)) for s in self._subs]
-        best: dict[str, SearchHit] = {}
+        best: dict[str, SearchHit] = {}  # canonical url -> highest RAW-score hit (survivor rule)
+        rank: dict[int, float] = {}  # id(hit) -> within-provider rank component (0..1)
 
         def collect(finished: set) -> None:
             for t in finished:
@@ -128,12 +147,19 @@ class MultiProvider:
                     r = t.result()
                 except Exception:  # noqa: BLE001 — an upstream errored; already isolated, skip it
                     continue
-                for h in r:
-                    if not h.url:
-                        continue
-                    cur = best.get(h.url)
+                n = len(r)
+                for idx, h in enumerate(r):
+                    if not h.url or host_key(h.url) in _BLOCKED_HOSTS:
+                        continue  # junk-domain blocklist (link shorteners) — exact host match
+                    # Position within THIS provider's own list (its own relevance order), captured
+                    # per-hit so a shared sub name / non-deterministic task order can't confuse it.
+                    rank[id(h)] = 1.0 - idx / max(1, n)
+                    key = canonical_url(h.url)
+                    cur = best.get(key)
+                    # Keep the higher RAW score on a cross-provider collision (unchanged survivor rule
+                    # — blending decides ORDER, never which duplicate wins).
                     if cur is None or h.score > cur.score:
-                        best[h.url] = h
+                        best[key] = h
 
         # Phase 1 — gather whatever the FAST providers return within the soft window (never longer
         # than the hard budget, so a patched/tiny budget still bounds the whole fan-out).
@@ -146,7 +172,35 @@ class MultiProvider:
             collect(done)
         for t in pending:
             t.cancel()
-        return sorted(best.values(), key=lambda h: h.score, reverse=True)[:max_results]
+        return self._rank(list(best.values()), rank, max_results)
+
+    def _rank(
+        self, hits: list[SearchHit], rank: dict[int, float], max_results: int
+    ) -> list[SearchHit]:
+        """Order hits by a coherent blended score (never the raw cross-provider score). rank_component
+        = within-provider position; relevance_component = the raw 0-1 score ONLY from providers that
+        emit real relevance, else it degrades to the rank component (so 0.0-score providers don't
+        always sink). Then a soft, gated domain-diversity nudge. Neither ever DROPS a hit."""
+
+        def blended(h: SearchHit) -> float:
+            rc = rank.get(id(h), 0.0)
+            rel = max(0.0, min(1.0, h.score)) if h.provider in _REAL_SCORE else rc
+            return _RANK_W * rc + _REL_W * rel
+
+        ordered = sorted(hits, key=blended, reverse=True)
+        # Soft domain diversity: nudge the 2nd+ hit from the same host down (never drop). Gated so it
+        # can't bury a legitimately single-source narrow topic.
+        if settings.search_domain_diversity and len({host_key(h.url) for h in ordered}) >= 3:
+            seen: dict[str, int] = {}
+            scored = []
+            for h in ordered:
+                hk = host_key(h.url)
+                seen[hk] = seen.get(hk, 0) + 1
+                penalty = _DIVERSITY_PENALTY ** (seen[hk] - 1)
+                scored.append((blended(h) * penalty, h))
+            scored.sort(key=lambda t: t[0], reverse=True)
+            ordered = [h for _s, h in scored]
+        return ordered[:max_results]
 
     async def search(self, query: str, *, max_results: int = 8) -> SearchResults:
         start = time.monotonic()

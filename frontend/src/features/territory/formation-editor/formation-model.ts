@@ -9,8 +9,11 @@ export type TeamEntry = { role: string; count: number }
 
 export const LEAD_ROLES = ['alpha', 'beta'] as const
 export const SUPPORT_ROLES = ['tracker', 'sentinel', 'howler', 'elder'] as const
-// Canonical build order — supervisor `_build_team` iterates exactly this (:102).
-export const CORE_ORDER = ['alpha', 'beta', 'scout', 'tracker', 'sentinel', 'howler', 'elder'] as const
+// The Warden (field-medic) is a FIXED ×1 standing member — always present, on the canvas from the
+// start, but locked (not user-editable), like the leads. Mirrors backend roster.FIXED_ROLES.
+export const FIXED_ROLES = ['warden'] as const
+// Canonical build order — supervisor `build_team` iterates exactly this (leads, scout, support, fixed).
+export const CORE_ORDER = ['alpha', 'beta', 'scout', 'tracker', 'sentinel', 'howler', 'elder', 'warden'] as const
 
 export const DEFAULT_SCOUTS = 3
 export const MIN_SCOUTS = 1
@@ -18,17 +21,17 @@ export const MAX_SCOUTS = 5
 export const MIN_SUPPORT = 1
 export const MAX_SUPPORT = 3
 
-// Roles the user may add / increase. doctor is spawned mid-hunt only; hunter has no `_ROLE_SPEC`
-// (would be silently dropped). Leads are locked at 1, so they aren't addable either.
+// Roles the user may add / increase. The Warden is a FIXED standing member (locked ×1, not editable);
+// the retired doctor and hunter aren't real roles. Leads are locked at 1, so they aren't addable either.
 export const SPAWNABLE_ROLES = ['scout', 'tracker', 'sentinel', 'howler', 'elder'] as const
 
 function clamp(n: number, lo: number, hi: number): number {
   return Math.max(lo, Math.min(hi, n))
 }
 
-/** The count range the user may set for a role (leads locked at 1). Mirrors `_build_team` clamps. */
+/** The count range the user may set for a role (leads + the Warden locked at 1). Mirrors `build_team`. */
 export function roleBounds(role: string): { min: number; max: number } {
-  if (role === 'alpha' || role === 'beta') return { min: 1, max: 1 }
+  if (role === 'alpha' || role === 'beta' || role === 'warden') return { min: 1, max: 1 }
   if (role === 'scout') return { min: MIN_SCOUTS, max: MAX_SCOUTS }
   return { min: MIN_SUPPORT, max: MAX_SUPPORT }
 }
@@ -48,7 +51,7 @@ export function wolfIds(role: string, count: number): string[] {
  *  Core roles are always present; leads forced to 1; scout 1–5; support 1–3. */
 export function buildTeam(counts: Record<string, number>): TeamEntry[] {
   return CORE_ORDER.map((role) => {
-    if (role === 'alpha' || role === 'beta') return { role, count: 1 }
+    if (role === 'alpha' || role === 'beta' || role === 'warden') return { role, count: 1 }
     if (role === 'scout') return { role, count: clamp(counts.scout || DEFAULT_SCOUTS, MIN_SCOUTS, MAX_SCOUTS) }
     return { role, count: clamp(counts[role] || 1, MIN_SUPPORT, MAX_SUPPORT) }
   })

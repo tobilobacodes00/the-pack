@@ -1,10 +1,10 @@
 import { useMemo } from 'react'
-import { useNavigate } from 'react-router-dom'
 import type { HuntState } from '@/events/schema'
 import type { MessageItem, useApprovePlan } from '@/api/hunts'
 import { useDoorLogic } from '../intake/use-intake'
 import { ChatColumn } from '../door/chat-column'
-import { TerritoryFooter, composerVisible } from './territory-footer'
+import { HiddenFileInput } from '../door/hidden-file-input'
+import { TerritoryFooter, composerVisible, composerPlaceholder } from './territory-footer'
 import { color } from '@/lib/theme'
 
 type ApproveFn = ReturnType<typeof useApprovePlan>['mutate']
@@ -25,7 +25,6 @@ interface RightPanelProps {
  * experience is identical however you arrived.
  */
 export function RightPanel({ huntId, huntState, messages, onApprove, onEditFormation, onOpenReward, approving }: RightPanelProps) {
-  const navigate = useNavigate()
   const seedMessages = useMemo(
     () => messages.map((m) => ({ role: m.role, text: m.text })),
     [messages],
@@ -59,13 +58,10 @@ export function RightPanel({ huntId, huntState, messages, onApprove, onEditForma
         footer={footer}
         hideComposer={!composerVisible(huntState.status)}
         activity={huntState.activity}
-        onHistory={() => navigate('/den', { state: { from: `/hunts/${huntId}` } })}
-        placeholder={
-          ['completed', 'failed', 'stopped'].includes(huntState.status)
-            ? 'Ask Alpha anything about this plan…'
-            : undefined
-        }
+        placeholder={composerPlaceholder(huntState.status)}
       />
+      {/* The composer's `+` file input — hoisted out of ChatColumn so the ref stays attached. */}
+      <HiddenFileInput inputRef={door.fileInputRef} onFiles={door.addFiles} />
     </div>
   )
 }

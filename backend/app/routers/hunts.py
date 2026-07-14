@@ -236,6 +236,7 @@ async def approve_plan(
             "mode": body.mode,
             "boundary_usd": body.boundary_usd,
             "edits": body.edits,
+            "depth": body.depth,  # v3: user's depth override (None keeps Beta's)
         },
     )
     if not ok:
@@ -481,7 +482,7 @@ async def rehearse_hunt(hunt_id: str, body: RehearseBody) -> dict:
     """Shadow Hunt (safety rail): estimate this team's cost + time before the pack runs."""
     strategy = body.strategy or settings.default_strategy
     team = body.team or [{"role": "scout", "count": 3}]
-    return rehearse(team, strategy)
+    return rehearse(team, strategy, body.depth or "standard")
 
 
 # ---------------------------------------------------------------------------
@@ -632,6 +633,43 @@ async def intake_stream(
 # Alpha ask (side-chat about a hunt)
 # ---------------------------------------------------------------------------
 
+# How much of the delivered brief Alpha carries into the side-chat (chars). Enough for a full
+# report's substance without blowing the context on a plus-tier chat call.
+_ASK_BRIEF_BUDGET = 6_000
+
+
+async def _ask_system(repo: Repo, hunt_id: str) -> str:
+    """Alpha's side-chat system prompt, grounded in this hunt: the chat voice + what the hunt is
+    about + — once the pack has delivered — the actual findings (brief text + its sources). So a
+    follow-up like "what did you find about X?" is answered from the research, not from thin air."""
+    snap = await repo.get_hunt_snapshot(hunt_id)
+    task = (snap or {}).get("raw_input", "") or "the current task"
+    system = f"{ALPHA_CHAT}\n\nThe hunt you're discussing is about: {task}."
+
+    art = await repo.get_final_artifact(hunt_id)
+    content = (art or {}).get("content") or {}
+    text = str(content.get("text") or "").strip()
+    if not text:  # older artifacts may carry only blocks
+        blocks = content.get("blocks") or []
+        text = "\n\n".join(
+            str(b.get("text") or "").strip() for b in blocks if b.get("text")
+        ).strip()
+    if text:
+        sources = content.get("sources") or []
+        src_lines = "\n".join(
+            f"[{i}] {s.get('title') or s.get('url') or ''}".strip()
+            for i, s in enumerate(sources[:12], start=1)
+            if s.get("title") or s.get("url")
+        )
+        system += (
+            "\n\nThe pack has finished this hunt. What they found — the delivered brief:\n"
+            f"{text[:_ASK_BRIEF_BUDGET]}"
+            + (f"\n\nIts sources:\n{src_lines}" if src_lines else "")
+            + "\n\nGround your answers in these findings. If the question goes beyond them, say so "
+            "plainly and suggest what the pack could hunt next."
+        )
+    return system
+
 
 @router.post("/hunts/{hunt_id}/ask", response_model=AskReply)
 async def ask_alpha(
@@ -641,12 +679,10 @@ async def ask_alpha(
     client: QwenClient = Depends(get_client),
 ) -> JSONResponse:
     """A side conversation with Alpha about the hunt — multi-turn, carries the full history."""
-    snap = await repo.get_hunt_snapshot(hunt_id)
-    task = (snap or {}).get("raw_input", "")
     history = [m for m in body.messages if m.get("content")]
     if not history and body.question:
         history = [{"role": "user", "content": body.question}]
-    system = f"{ALPHA_CHAT}\n\nThe hunt you're discussing is about: {task or 'the current task'}."
+    system = await _ask_system(repo, hunt_id)
     try:
         result = await client.complete(
             CallSpec(
@@ -675,13 +711,10 @@ async def ask_stream(
     client: QwenClient = Depends(get_client),
 ) -> StreamingResponse:
     """SSE variant of /ask — yields `token` events then a `done` event with the full reply."""
-    snap = await repo.get_hunt_snapshot(hunt_id)
-    task_desc = (snap or {}).get("raw_input", "")
     history = [m for m in body.messages if m.get("content")]
     if not history and body.question:
         history = [{"role": "user", "content": body.question}]
-    topic = task_desc or "the current task"
-    system = f"{ALPHA_CHAT}\n\nThe hunt you're discussing is about: {topic}."
+    system = await _ask_system(repo, hunt_id)
     queue: asyncio.Queue[str | None] = asyncio.Queue()
 
     async def _on_delta(delta: str) -> None:

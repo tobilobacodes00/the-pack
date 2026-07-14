@@ -84,6 +84,20 @@ export function deriveNarrative(events: RawTrackEvent[]): NarrativeItem[] {
           color: wolfLabel('sentinel').color,
         })
         break
+      case 'hold_resolved':
+        // Alpha's autonomous (Wild-mode) conflict call — surface WHY it chose. A human-resolved hold
+        // isn't narrated here (the user made that call themselves).
+        if (p.auto) {
+          out.push({
+            id,
+            title: 'Alpha made the call',
+            detail: str(p.rationale)
+              ? `${str(p.resolution)} — ${str(p.rationale)}`
+              : str(p.resolution),
+            color: wolfLabel('alpha').color,
+          })
+        }
+        break
       case 'stray_recovered':
         out.push({
           id,
@@ -113,7 +127,7 @@ export function deriveNarrative(events: RawTrackEvent[]): NarrativeItem[] {
           id,
           title: 'Hunt returned',
           detail: 'The pack brought the result home.',
-          color: '#22C55E',
+          color: '#1a1a1a',
         })
         break
       default:

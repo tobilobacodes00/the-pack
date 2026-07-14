@@ -1,5 +1,6 @@
 import { useState, useRef, useEffect, useCallback } from 'react'
 import { useIntake, useCreateHunt, postMessage, type IntakeMessage } from '@/api/hunts'
+import { useAskStream } from '@/hooks/use-ask-stream'
 
 export type Role = 'user' | 'alpha'
 
@@ -48,6 +49,7 @@ export interface DoorLogicOptions {
 export function useDoorLogic(opts?: DoorLogicOptions) {
   const { mutateAsync: sendToAlpha, isPending } = useIntake()
   const { mutateAsync: createHunt } = useCreateHunt()
+  const { ask: askAlpha, streaming: asking } = useAskStream()
 
   const [messages, setMessages] = useState<Message[]>([])
   const [input, setInput] = useState('')
@@ -56,36 +58,39 @@ export function useDoorLogic(opts?: DoorLogicOptions) {
 
   const [phase, setPhase] = useState<DoorPhase>(opts?.initialPhase ?? 'intake')
   const [huntId, setHuntId] = useState<string | null>(opts?.initialHuntId ?? null)
+  // Where the intake conversation ends and the hunt's live narration begins. The chat renders
+  // intake turns → the pack's activity → post-hunt follow-up Q&A, so a reply after completion lands
+  // BELOW the report, not back up in the intake thread. null until a hunt exists.
+  // Deep-link nuance: the durable log carries no launch marker, so on refresh the WHOLE stored
+  // transcript (intake + any past follow-ups, in their true relative order) seeds above the
+  // narration, and only NEW follow-ups split below it. All turns are present and ordered within
+  // their group — a per-message timestamp/marker in the log is the future fix if this ever matters.
+  const [launchIndex, setLaunchIndex] = useState<number | null>(
+    opts?.initialHuntId != null ? (opts?.seedMessages?.length ?? 0) : null,
+  )
 
-  // Seed the durable transcript once, when it first arrives and the chat is empty
-  // (deep-link into an existing hunt). After that, local state is the source of truth.
+  // Seed the durable transcript once, when it first arrives (deep-link into an existing hunt) — and
+  // set launchIndex alongside it, since it must describe THIS seed, not whatever seedMessages.length
+  // happened to be at mount (that's frozen at 0 while the transcript query is still in flight, which
+  // would otherwise invert the feed: the whole stored conversation rendering BELOW the live narration).
+  // If the Packmaster manages to send a follow-up before the seed lands, prefer their live messages —
+  // splice the seed in front of them rather than dropping the seed forever.
   const seed = opts?.seedMessages
+  const seededRef = useRef(false)
   useEffect(() => {
-    if (seed && seed.length > 0) {
-      setMessages((prev) =>
-        prev.length === 0
-          ? seed.map((m) => ({ id: nextId(), role: m.role, text: m.text }))
-          : prev,
-      )
-    }
+    if (!seed || seed.length === 0 || seededRef.current) return
+    seededRef.current = true
+    const seedMsgs = seed.map((m) => ({ id: nextId(), role: m.role, text: m.text }))
+    setMessages((prev) => (prev.length === 0 ? seedMsgs : [...seedMsgs, ...prev]))
+    setLaunchIndex((prev) => (prev === null ? seed.length : seed.length + prev))
   }, [seed])
 
-  const textareaRef = useRef<HTMLTextAreaElement>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
-  const messagesEndRef = useRef<HTMLDivElement>(null)
 
-  // Auto-resize textarea
-  useEffect(() => {
-    const el = textareaRef.current
-    if (!el) return
-    el.style.height = 'auto'
-    el.style.height = `${Math.min(el.scrollHeight, 120)}px`
-  }, [input])
-
-  // Auto-scroll to bottom on new messages
-  useEffect(() => {
-    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
-  }, [messages])
+  // NOTE: the composer's textarea/scroll-anchor refs and the autosize effect live in ChatColumn now —
+  // each instance owns its own (the door→territory morph remounts ChatColumn, so a ref threaded from
+  // here would go stale the moment the old instance unmounts). ChatColumn also sees the live activity
+  // feed, so its scroll effect follows the latest pack action, not just chat turns.
 
   const addFiles = useCallback((files: FileList | File[]) => {
     const incoming = Array.from(files).map((f) => ({
@@ -116,13 +121,35 @@ export function useDoorLogic(opts?: DoorLogicOptions) {
     // talking to Alpha in the side chat until there's a real job to run.
     if (phase === 'intake') setPhase('territory')
 
-    // Once the hunt exists, further turns are mid-hunt chatter. Log durably; a live
-    // Alpha reply mid-hunt is a later state (out of scope here).
+    // The hunt already exists (the composer is only open again once it's terminal — completed /
+    // failed / stopped). This is a follow-up question: log the turn, then stream Alpha's real answer
+    // straight into the chat so the conversation continues past the report. Alpha gets the FULL
+    // context — everything discussed so far goes as history, and the backend grounds the reply in
+    // what the pack actually researched (the delivered brief + sources).
     if (huntId) {
-      setMessages((prev) => [...prev, { id: nextId(), role: 'user', text: builtText }])
+      const askMsg: Message = { id: nextId(), role: 'user', text: builtText }
+      const history = [...messages, askMsg].filter((m) => !m.isThinking && m.text).map(toWire)
+      const replyId = nextId()
+      setMessages((prev) => [...prev, askMsg, { id: replyId, role: 'alpha', text: '', isThinking: true }])
       setInput('')
       setAttachedFiles([])
-      void postMessage(huntId, { role: 'user', content: builtText })
+      void persistMessage(huntId, 'user', builtText)
+
+      const reply = await askAlpha(
+        huntId,
+        builtText,
+        (chunk) => {
+          setMessages((prev) =>
+            prev.map((m) => (m.id === replyId ? { ...m, text: m.text + chunk, isThinking: false } : m)),
+          )
+        },
+        history,
+      )
+      const finalText = reply.trim() || "Alpha couldn't answer that one — please try again."
+      setMessages((prev) =>
+        prev.map((m) => (m.id === replyId ? { ...m, text: finalText, isThinking: false } : m)),
+      )
+      if (reply.trim()) void persistMessage(huntId, 'alpha', reply)
       return
     }
 
@@ -167,6 +194,9 @@ export function useDoorLogic(opts?: DoorLogicOptions) {
         window.history.replaceState(null, '', `/hunts/${hunt.hunt_id}`)
         setHuntId(hunt.hunt_id)
         setPhase('territory')
+        // Everything up to and including this launching turn is "intake"; the pack's live narration
+        // and any later follow-ups render after it. (+2 = this user turn + Alpha's reply.)
+        setLaunchIndex(messages.length + 2)
       }
     } catch (err) {
       setMessages((prev) =>
@@ -178,16 +208,18 @@ export function useDoorLogic(opts?: DoorLogicOptions) {
       )
       console.error('[door]', err)
     }
-  }, [input, attachedFiles, messages, phase, huntId, sendToAlpha, createHunt])
+  }, [input, attachedFiles, messages, phase, huntId, sendToAlpha, createHunt, askAlpha])
 
   const handleKeyDown = useCallback(
     (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
       if (e.key === 'Enter' && !e.shiftKey) {
         e.preventDefault()
-        void send()
+        // The send button disables while a turn is in flight; mirror that on the keyboard path so a
+        // fast double-Enter can't fire a second ask mid-stream (which would abort the first reply).
+        if (!isPending && !asking) void send()
       }
     },
-    [send],
+    [send, isPending, asking],
   )
 
   // Drag handlers attached to the outer container
@@ -225,20 +257,29 @@ export function useDoorLogic(opts?: DoorLogicOptions) {
     attachedFiles,
     removeFile,
     isDragging,
-    isPending,
+    isPending: isPending || asking,
     phase,
     huntId,
+    launchIndex,
     send,
     pickFiles,
     addFiles,
     fileInputRef,
-    textareaRef,
-    messagesEndRef,
     handleKeyDown,
     onDragEnter,
     onDragOver,
     onDragLeave,
     onDrop,
+  }
+}
+
+/** Best-effort persist — a durable-log write that never surfaces as an unhandled rejection (a
+ *  network blip or backend restart here shouldn't crash the tab; the chat already has the turn). */
+async function persistMessage(huntId: string, role: Role, content: string): Promise<void> {
+  try {
+    await postMessage(huntId, { role, content })
+  } catch (err) {
+    console.error('[door] persist message failed', err)
   }
 }
 
@@ -249,10 +290,6 @@ async function flushConversation(
 ) {
   for (const m of msgs) {
     if (!m.text) continue
-    try {
-      await postMessage(huntId, { role: m.role, content: m.text })
-    } catch (err) {
-      console.error('[door] persist message failed', err)
-    }
+    await persistMessage(huntId, m.role, m.text)
   }
 }

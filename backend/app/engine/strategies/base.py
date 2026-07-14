@@ -105,6 +105,16 @@ class CritiqueResult:
     issues: list[dict] = field(default_factory=list)  # [{claim, problem}]
 
 
+@dataclass(frozen=True)
+class StandoffOutcome:
+    """The result of a standoff — Alpha's actual ruling, so it can DECIDE the challenged claim's fate
+    (keep it despite Sentinel's flag, or let the drop stand) instead of being pure narration."""
+
+    outcome: str  # "alpha_call" | "unresolved"
+    verdict: str | None = None  # "keep" | "drop" | "qualify" | None (unresolved)
+    claim: str | None = None  # the challenged claim's text (matched against the merge)
+
+
 # --- structured-output schemas the wolves are asked to fill (json_schema response format) ---
 
 PLAN_SCHEMA: dict = {
@@ -193,6 +203,27 @@ GAPS_SCHEMA: dict = {
     "properties": {"gaps": {"type": "array", "items": {"type": "string"}}},
 }
 
+# Alpha's ruling on a standoff — a machine-actionable keep/drop/qualify so the ruling can actually
+# decide the challenged claim's fate (keep exempts it from Sentinel's deterministic drop).
+STANDOFF_JUDGE_SCHEMA: dict = {
+    "type": "object",
+    "required": ["verdict", "rationale"],
+    "properties": {
+        "verdict": {"type": "string", "enum": ["keep", "drop", "qualify"]},
+        "rationale": {"type": "string"},
+    },
+}
+
+# Alpha's wild-mode conflict decision — the chosen option (verbatim from the offered options) + why.
+CONFLICT_DECIDE_SCHEMA: dict = {
+    "type": "object",
+    "required": ["choice", "rationale"],
+    "properties": {
+        "choice": {"type": "string"},
+        "rationale": {"type": "string"},
+    },
+}
+
 # v2: Howler writes the brief as TAGGED BLOCKS so every line carries its sources (the gate for
 # click-any-line → source). `source_ids` index the numbered source list given in the draft context.
 DRAFT_SCHEMA: dict = {
@@ -251,13 +282,19 @@ class Engine(Protocol):
 
     async def merge(self, findings: list[Finding], step_id: str = "s2") -> Merged: ...
 
-    async def resolve_conflict(self, conflict: Conflict) -> str: ...
+    async def resolve_conflict(self, conflict: Conflict, sources: list[dict]) -> str: ...
 
     async def find_gaps(self, merged: Merged) -> list[str]: ...
 
     async def critique(self, merged: Merged) -> CritiqueResult: ...
 
-    async def apply_critique(self, merged: Merged, verdict: CritiqueResult) -> Merged: ...
+    async def apply_critique(
+        self,
+        merged: Merged,
+        verdict: CritiqueResult,
+        *,
+        ruling: StandoffOutcome | None = None,
+    ) -> Merged: ...
 
     def standoff_evidence(self, merged: Merged, issue: dict) -> str: ...
 
@@ -269,7 +306,8 @@ class Engine(Protocol):
         rationale: str,
         *,
         evidence: str = "",
-    ) -> None: ...
+        claim: str | None = None,
+    ) -> StandoffOutcome: ...
 
     async def draft(
         self, merged: Merged, decision: str | None = None, step_id: str = "s3"

@@ -1,4 +1,4 @@
-import { useState, useCallback, useRef } from 'react'
+import { useState, useCallback, useEffect, useRef } from 'react'
 import { env } from '@/env'
 import { toast } from '@/store/toast-store'
 
@@ -8,10 +8,27 @@ const ERROR_COPY: Record<string, string> = {
   unknown: "Alpha's reply stopped unexpectedly. Please try again.",
 }
 
+/** One prior turn, in the wire shape the ask endpoints expect ('assistant' = Alpha). */
+export type AskTurn = { role: 'user' | 'assistant'; content: string }
+
+// The backend caps AskAlpha.messages at 200 and question at 10k chars — trim client-side so a long
+// session degrades (drops oldest turns) instead of 422ing.
+const MAX_TURNS = 200
+const MAX_QUESTION = 10_000
+
 interface UseAskStreamResult {
   answer: string
   streaming: boolean
-  ask: (huntId: string, question: string) => Promise<void>
+  /** Stream Alpha's answer for `question`. `history` is the full conversation so far (ending with
+   *  the question itself) so Alpha keeps the context of everything discussed; `onToken` fires per
+   *  chunk (so callers can render it into their own chat bubble); resolves with the full reply
+   *  text ('' if it errored/aborted). */
+  ask: (
+    huntId: string,
+    question: string,
+    onToken?: (chunk: string) => void,
+    history?: AskTurn[],
+  ) => Promise<string>
   reset: () => void
 }
 
@@ -26,19 +43,33 @@ export function useAskStream(): UseAskStreamResult {
     setStreaming(false)
   }, [])
 
-  const ask = useCallback(async (huntId: string, question: string) => {
+  // Abort an in-flight ask if the consumer unmounts (navigating away mid-stream) — otherwise the
+  // fetch/reader keeps pulling tokens nobody will render, and the hunt's ask/stream call runs to
+  // completion for no reason.
+  useEffect(() => () => abortRef.current?.abort(), [])
+
+  const ask = useCallback(async (
+    huntId: string,
+    question: string,
+    onToken?: (chunk: string) => void,
+    history?: AskTurn[],
+  ): Promise<string> => {
     abortRef.current?.abort()
     const abort = new AbortController()
     abortRef.current = abort
 
     setAnswer('')
     setStreaming(true)
+    let full = ''
 
     try {
       const res = await fetch(`${env.VITE_ENGINE_URL}/hunts/${huntId}/ask/stream`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ question }),
+        body: JSON.stringify({
+          question: question.slice(0, MAX_QUESTION),
+          messages: (history ?? []).slice(-MAX_TURNS),
+        }),
         signal: abort.signal,
       })
 
@@ -65,6 +96,8 @@ export function useAskStream(): UseAskStreamResult {
           try {
             const msg = JSON.parse(json) as { type: string; text?: string; kind?: string }
             if (msg.type === 'token' && msg.text) {
+              full += msg.text
+              onToken?.(msg.text)
               setAnswer((prev) => prev + msg.text)
             } else if (msg.type === 'error') {
               toast({
@@ -91,6 +124,7 @@ export function useAskStream(): UseAskStreamResult {
     } finally {
       setStreaming(false)
     }
+    return full
   }, [])
 
   return { answer, streaming, ask, reset }

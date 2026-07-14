@@ -35,6 +35,9 @@ export function useMicRecorder(onComplete: (file: File, peaks: number[]) => void
   const dataRef = useRef<Uint8Array | null>(null)
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null)
   const mountedRef = useRef(true)
+  // getUserMedia is async: a second mic tap before it resolves would spin up a parallel recorder and
+  // orphan the first stream. This latch makes start() re-entrant-safe.
+  const startingRef = useRef(false)
 
   // Returns N_BARS normalized bars (0–1) using frequency data.
   // Frequency magnitudes are naturally high for voice (100–200/255) giving visually
@@ -58,9 +61,26 @@ export function useMicRecorder(onComplete: (file: File, peaks: number[]) => void
   }, [])
 
   const start = useCallback(async () => {
-    try {
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: true })
+    if (startingRef.current || recorderRef.current) return // already starting / recording — ignore re-entry
+    startingRef.current = true
 
+    let stream: MediaStream
+    try {
+      stream = await navigator.mediaDevices.getUserMedia({ audio: true })
+    } catch (err) {
+      console.error('[mic] permission denied or unavailable', err)
+      startingRef.current = false
+      return
+    }
+    // Unmounted (or somehow already recording) while the permission prompt was open — don't leave the
+    // microphone live; drop this stream and bail.
+    if (!mountedRef.current || recorderRef.current) {
+      stream.getTracks().forEach((t) => t.stop())
+      startingRef.current = false
+      return
+    }
+
+    try {
       const audioCtx = new AudioContext()
       const analyser = audioCtx.createAnalyser()
       analyser.fftSize = 2048
@@ -108,7 +128,10 @@ export function useMicRecorder(onComplete: (file: File, peaks: number[]) => void
         setRecordingSeconds(s => s + 1)
       }, 1000)
     } catch (err) {
-      console.error('[mic] permission denied or unavailable', err)
+      console.error('[mic] failed to start recording', err)
+      stream.getTracks().forEach((t) => t.stop())
+    } finally {
+      startingRef.current = false
     }
   }, [onComplete])
 
@@ -123,10 +146,22 @@ export function useMicRecorder(onComplete: (file: File, peaks: number[]) => void
   }, [isRecording, start, stop])
 
   useEffect(() => {
+    // Re-arm on every mount — without this, StrictMode's dev mount→cleanup→mount cycle would leave
+    // mountedRef stuck false and silently swallow every completed recording.
+    mountedRef.current = true
     return () => {
       mountedRef.current = false
       if (timerRef.current) clearInterval(timerRef.current)
-      void audioCtxRef.current?.close()
+      // Unmounting mid-recording: release the mic NOW (stop tracks), then stop the recorder so its
+      // onstop finishes teardown (closes the AudioContext); onComplete is suppressed via mountedRef.
+      const r = recorderRef.current
+      if (r) {
+        r.stream.getTracks().forEach((t) => t.stop())
+        if (r.state !== 'inactive') r.stop()
+        recorderRef.current = null
+      } else {
+        void audioCtxRef.current?.close()
+      }
     }
   }, [])
 

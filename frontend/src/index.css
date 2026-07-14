@@ -1,33 +1,100 @@
 @import "tailwindcss";
 
 @theme {
-  /* Neutrals — the single warm surface stack the whole app uses (was split cool/warm). */
-  --color-canvas: #0f0f0f;
-  --color-surface: #1a1a1a;
-  --color-surface-raised: #272727;
-  --color-border: #404040;
-  --color-border-subtle: #1c1c1c;
+  /* ── Semantic stack — the WHOLE app runs on this. MONOCHROME: cream paper + the logo's charcoal
+       grey (#1A1A1A) as ink. No brand hue — everything dark is a neutral grey. ── */
+  --color-canvas: #fdfcf8; /* cream paper */
+  --color-surface: #ffffff; /* cards / panels */
+  --color-surface-raised: #f2f2f0; /* raised / hover fill */
+  --color-border: #dcdcd8; /* neutral hairline */
+  --color-border-subtle: #ebebe7;
 
-  /* Accent + semantic. */
-  --color-accent: #8b5cf6;
-  --color-accent-dim: #6d28d9;
+  /* Accent + semantic — accent is the charcoal ink (mono); success charcoal. Danger/warn kept for alerts. */
+  --color-accent: #1a1a1a;
+  --color-accent-dim: #262626;
   --color-warn: #eab308;
   --color-danger: #ef4444;
-  --color-success: #22c55e;
+  --color-success: #1a1a1a;
 
-  /* Text ramp. */
-  --color-text: #fafafa;
-  --color-text-dim: #a3a3a3;
+  /* Text ramp — neutral charcoal greys (the logo's grey family). */
+  --color-text: #1a1a1a;
+  --color-text-dim: #4a4a4a;
   --color-text-faint: #6b6b6b;
-  --color-muted: #8a8a8a;
+  --color-muted: #6b6b6b;
 
-  --font-sans: "Inter", system-ui, sans-serif;
+  /* ── Monochrome palette. Cream paper; charcoal "ink" (the logo grey #1A1A1A) for text + outlines +
+       chunky shadows + CTA fills. `brand` is a neutral charcoal ramp — no colour. ── */
+  --color-cream-50: #fdfcf8;
+  --color-cream-100: #f6f5f1;
+  --color-cream-200: #ebeae6;
+
+  --color-brand-50: #f2f2f0;
+  --color-brand-100: #e3e3e0;
+  --color-brand-200: #c6c6c2;
+  --color-brand-300: #9a9a96;
+  --color-brand-400: #5a5a57;
+  --color-brand-500: #262626;
+  --color-brand-600: #1a1a1a;
+  --color-brand-700: #141414;
+  --color-brand-800: #101010;
+
+  --color-ink-900: #1a1a1a;
+  --color-ink-700: #3a3a3a;
+  --color-ink-500: #6b6b6b;
+  --color-ink-400: #9a9a9a;
+
+  /* legacy pastel slots kept for tokens that still reference them; neutralised to warm greys (mono). */
+  --color-periwinkle-50: #f2f2f0;
+  --color-periwinkle-100: #e3e3e0;
+  --color-periwinkle-200: #c6c6c2;
+  --color-periwinkle-300: #9a9a96;
+
+  --color-peach-50: #fdf0e7;
+  --color-peach-100: #fbdcc3;
+  --color-peach-200: #f5bf98;
+  --color-peach-300: #eba26e;
+
+  --color-rose-50: #fdebed;
+  --color-rose-100: #f9d4d7;
+  --color-rose-200: #f3b2b7;
+  --color-rose-300: #e98892;
+  --color-rose-400: #e25c6b;
+  --color-rose-500: #d93c4f;
+
+  --color-sky-50: #eaf2f9;
+  --color-sky-100: #cee0f0;
+  --color-sky-200: #a4c4e1;
+  --color-sky-300: #7ba6ce;
+
+  --color-butter-50: #fcf7d9;
+  --color-butter-100: #f6edaa;
+  --color-butter-200: #ebd970;
+
+  /* stone (warm neutral; was aqua→steel) */
+  --color-steel-50: #f2efe9;
+  --color-steel-100: #e4ded1;
+  --color-steel-200: #cabfa9;
+  --color-steel-300: #a89684;
+
+  --color-terracotta: #c97a55;
+  --color-plum: #61476c;
+
+  --font-display: "Nunito", "Outfit", system-ui, sans-serif;
+  --font-sans: "Outfit", "Inter", system-ui, sans-serif;
   --font-mono: "JetBrains Mono", "Fira Code", monospace;
 
   --radius-sm: 4px;
   --radius-md: 8px;
   --radius-lg: 12px;
   --radius-xl: 16px;
+  --radius-card: 1.75rem;
+  --radius-pill: 999px;
+
+  /* Chunky offset shadows anchored on charcoal ink — the brutalist tactile signature. */
+  --shadow-chunk: 4px 6px 0 0 #1a1a1a;
+  --shadow-chunk-sm: 3px 4px 0 0 #1a1a1a;
+  --shadow-chunk-lg: 6px 8px 0 0 #1a1a1a;
+  --shadow-soft: 0 10px 20px -6px rgba(26, 26, 26, 0.15), 0 4px 8px -4px rgba(26, 26, 26, 0.1);
 
   --animate-star-movement-bottom: star-movement-bottom linear infinite alternate;
   --animate-star-movement-top: star-movement-top linear infinite alternate;

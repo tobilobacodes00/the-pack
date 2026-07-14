@@ -12,8 +12,8 @@ export const IconButton = forwardRef<HTMLButtonElement, Props>(
       title={label}
       className={cn(
         'inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-text-dim',
-        'transition-colors hover:bg-[#262626] hover:text-text',
-        'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#8B5CF6]/50',
+        'transition-colors hover:bg-cream-100 hover:text-text',
+        'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-500/50',
         'disabled:pointer-events-none disabled:opacity-40',
         className,
       )}

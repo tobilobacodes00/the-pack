@@ -19,7 +19,10 @@ export const initialHuntState: HuntState = {
   final_artifact_id: null,
   scorecard: null,
   totals: null,
+  started_at: null,
+  ended_at: null,
   activity: [],
+  healers: {},
   last_seq: -1,
 }
 
@@ -76,6 +79,7 @@ export function huntReducer(state: HuntState, event: HuntEvent): HuntState {
           est_time: event.payload.est_time,
           queries: event.payload.queries,
           strategy: event.payload.strategy,
+          depth: event.payload.depth,
         },
       }
 
@@ -99,6 +103,14 @@ export function huntReducer(state: HuntState, event: HuntEvent): HuntState {
       return {
         ...next,
         status: 'running',
+        // C7 residual (documented, not faked): after a Boundary halt→resume the backend re-anchors
+        // its measured clock, but no dedicated resume event is emitted, so `started_at` isn't re-set.
+        // The live running-phase clock therefore over-reads by the halt gap until completion, when it
+        // snaps to the correct measured totals.time_s. Mitigated: the clock FREEZES during the halt
+        // (halted_boundary excluded from spend-timer's RUNNING). A full fix needs a resume event.
+        // Anchor the live spend/time clock to the server ts of the moment the hunt starts running.
+        // Derived from event data (pure), replay-safe, and matches the backend's measured time_s.
+        started_at: event.ts,
         boundary: {
           ...next.boundary,
           budget_usd: event.payload.boundary_usd,
@@ -149,9 +161,20 @@ export function huntReducer(state: HuntState, event: HuntEvent): HuntState {
       return next
 
     case 'tokens_spent': {
-      const cost = event.payload.cost_usd
-      const spent = next.boundary.spent_usd + cost
+      // SET the hunt total from the event's authoritative cumulative_usd — never add the incremental
+      // cost_usd. The backend Boundary owns the running total (and *decrements* it on a refund when a
+      // wolf's call fails); the additive model can't follow a refund and, worse, drifts on any stream
+      // gap/reconnect and then JUMPS when boundary_warning snaps to the absolute truth. SET makes this
+      // idempotent (replay-safe) and exact, and boundary_warning already sets the same absolute field,
+      // so the two now agree instead of fighting.
+      const spent = event.payload.cumulative_usd
       const pct = next.boundary.budget_usd > 0 ? spent / next.boundary.budget_usd : 0
+      // Per-wolf display cost stays additive: the payload carries no PER-WOLF cumulative to SET from.
+      // Honest caveat — this IS replay-unsafe: a full stream replay (fresh mount / Den return) doubles
+      // each wolf's cost_usd. It's tolerated ONLY because WolfState.cost_usd is not displayed anywhere
+      // today (verified: all shown costs read hunt-row/scorecard totals, not this per-wolf field). If
+      // a per-wolf cost is ever surfaced, switch this to SET from a per-wolf cumulative in the payload.
+      const cost = event.payload.cost_usd
       const wolf = next.wolves[event.payload.wolf_id]
       return {
         ...next,
@@ -230,14 +253,28 @@ export function huntReducer(state: HuntState, event: HuntEvent): HuntState {
         event.seq, event.payload.wolf_id, event.payload.note_plain_english,
       )
 
-    case 'doctor_dispatched':
-      return setWolf(next, event.payload.target_wolf_id, { status: 'healing' })
+    case 'doctor_dispatched': {
+      // The roaming healer (Warden) is dispatched to a patient: mark the patient 'healing' and record
+      // healer→patient so the canvas can glide the transient healer node beside its patient.
+      const healed = setWolf(next, event.payload.target_wolf_id, { status: 'healing' })
+      return {
+        ...healed,
+        healers: { ...healed.healers, [event.payload.doctor_id]: event.payload.target_wolf_id },
+      }
+    }
 
-    case 'doctor_healed':
-      return pushActivity(
+    case 'doctor_healed': {
+      // Patient recovers; the healer stands down (dimmed) and drops out of the active-heal map.
+      const { [event.payload.doctor_id]: _done, ...healers } = next.healers
+      const recovered = setWolf(
         setWolf(next, event.payload.target_wolf_id, { status: 'active' }),
+        event.payload.doctor_id, { status: 'done' },
+      )
+      return pushActivity(
+        { ...recovered, healers },
         event.seq, event.payload.target_wolf_id, event.payload.note_plain_english,
       )
+    }
 
     case 'boundary_warning':
       return {
@@ -305,13 +342,14 @@ export function huntReducer(state: HuntState, event: HuntEvent): HuntState {
         status: 'completed',
         final_artifact_id: event.payload.final_artifact_id,
         totals: event.payload.totals as Record<string, unknown>,
+        ended_at: event.ts,
       }
 
     case 'hunt_failed':
-      return { ...next, status: 'failed' }
+      return { ...next, status: 'failed', ended_at: event.ts }
 
     case 'hunt_stopped':
-      return { ...next, status: 'stopped' }
+      return { ...next, status: 'stopped', ended_at: event.ts }
 
     case 'benchmark_started':
       return next

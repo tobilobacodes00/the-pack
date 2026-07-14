@@ -54,3 +54,147 @@ describe('huntReducer fixture replay', () => {
     expect(state1).toEqual(state2)
   })
 })
+
+// --- Warden healing flow -----------------------------------------------------------------
+// The roaming Warden heals a faulted wolf. Events ride the frozen `doctor_*` types with the Warden's
+// id in `doctor_id` (see backend healing.py). Drives the arc: patient strays (grey) → Warden dispatched
+// (patient healing, healer→patient recorded) → healed (patient active, healer stands down + cleared).
+
+let seq = 0
+function ev(type: string, actor: string, payload: Record<string, unknown>) {
+  const raw = { event_id: `e${seq}`, hunt_id: 'h', seq: seq++, ts: '2026-07-12T00:00:00Z', actor, type, payload }
+  const parsed = HuntEventSchema.safeParse(raw)
+  if (!parsed.success) throw new Error(`bad event ${type}: ${parsed.error.message}`)
+  return parsed.data
+}
+function spawn(wolf_id: string, role: string) {
+  return ev('wolf_spawned', 'engine', { wolf_id, role, model_tier: 'flash', thinking: false, prompt_version: `${role}/v1` })
+}
+function apply(state: HuntState, ...events: ReturnType<typeof ev>[]): HuntState {
+  return events.reduce(huntReducer, state)
+}
+
+// --- Spend/time counter -----------------------------------------------------------------
+// tokens_spent SETS the hunt total from the event's authoritative cumulative_usd (never adds the
+// incremental cost_usd), so it's idempotent under stream replay/reconnect, follows backend refunds,
+// and agrees with boundary_warning (which sets the same absolute field). plan_approved anchors the
+// live clock via the server ts.
+
+describe('spend counter: tokens_spent is authoritative + idempotent', () => {
+  it('sets spent_usd from cumulative_usd, not the additive sum of cost_usd', () => {
+    seq = 0
+    let s = apply(initialHuntState, spawn('scout-1', 'scout'))
+    s = apply(s, ev('plan_approved', 'user', { mode: 'on_signal', boundary_usd: 1.0 }))
+    // cumulative jumps 0.10 → 0.25 → 0.40; each event's cost_usd is its increment.
+    s = apply(s, ev('tokens_spent', 'scout-1', { wolf_id: 'scout-1', model: 'm', in_tokens: 1, out_tokens: 1, cost_usd: 0.10, cumulative_usd: 0.10 }))
+    s = apply(s, ev('tokens_spent', 'scout-1', { wolf_id: 'scout-1', model: 'm', in_tokens: 1, out_tokens: 1, cost_usd: 0.15, cumulative_usd: 0.25 }))
+    s = apply(s, ev('tokens_spent', 'scout-1', { wolf_id: 'scout-1', model: 'm', in_tokens: 1, out_tokens: 1, cost_usd: 0.15, cumulative_usd: 0.40 }))
+    expect(s.boundary.spent_usd).toBeCloseTo(0.40, 6) // == last cumulative_usd
+    expect(s.boundary.pct).toBeCloseTo(0.40, 6) // recomputed against budget 1.0
+  })
+
+  it('follows a backend refund: a later, LOWER cumulative_usd lowers the total (additive could not)', () => {
+    seq = 0
+    let s = apply(initialHuntState, spawn('scout-1', 'scout'), ev('plan_approved', 'user', { mode: 'on_signal', boundary_usd: 1.0 }))
+    s = apply(s, ev('tokens_spent', 'scout-1', { wolf_id: 'scout-1', model: 'm', in_tokens: 1, out_tokens: 1, cost_usd: 0.30, cumulative_usd: 0.30 }))
+    // A failed call is refunded on the backend, so the NEXT event's cumulative is lower than before.
+    s = apply(s, ev('tokens_spent', 'scout-1', { wolf_id: 'scout-1', model: 'm', in_tokens: 0, out_tokens: 0, cost_usd: 0.05, cumulative_usd: 0.22 }))
+    expect(s.boundary.spent_usd).toBeCloseTo(0.22, 6)
+  })
+
+  it('is idempotent under replay: re-applying the same tokens_spent does not inflate the total', () => {
+    seq = 0
+    let s = apply(initialHuntState, spawn('scout-1', 'scout'), ev('plan_approved', 'user', { mode: 'on_signal', boundary_usd: 1.0 }))
+    const spend = ev('tokens_spent', 'scout-1', { wolf_id: 'scout-1', model: 'm', in_tokens: 1, out_tokens: 1, cost_usd: 0.20, cumulative_usd: 0.20 })
+    s = apply(s, spend)
+    s = apply(s, spend) // a reconnect/gap re-delivers the same event
+    expect(s.boundary.spent_usd).toBeCloseTo(0.20, 6) // NOT 0.40
+  })
+
+  it('boundary_warning and a following tokens_spent AGREE (both absolute) — no jump', () => {
+    seq = 0
+    let s = apply(initialHuntState, spawn('scout-1', 'scout'), ev('plan_approved', 'user', { mode: 'on_signal', boundary_usd: 1.0 }))
+    s = apply(s, ev('tokens_spent', 'scout-1', { wolf_id: 'scout-1', model: 'm', in_tokens: 1, out_tokens: 1, cost_usd: 0.70, cumulative_usd: 0.70 }))
+    // Boundary warns at 70% and sets the absolute cumulative — the SAME field tokens_spent sets.
+    s = apply(s, ev('boundary_warning', 'engine', { pct: 0.70, cumulative_usd: 0.70 }))
+    expect(s.boundary.spent_usd).toBeCloseTo(0.70, 6)
+    expect(s.boundary.status).toBe('warn')
+    // The next spend continues smoothly from the warned truth — no snap/jump.
+    s = apply(s, ev('tokens_spent', 'scout-1', { wolf_id: 'scout-1', model: 'm', in_tokens: 1, out_tokens: 1, cost_usd: 0.10, cumulative_usd: 0.80 }))
+    expect(s.boundary.spent_usd).toBeCloseTo(0.80, 6)
+  })
+
+  it('plan_approved anchors the live clock with the server ts', () => {
+    seq = 0
+    const approve = ev('plan_approved', 'user', { mode: 'on_signal', boundary_usd: 1.0 })
+    const s = apply(initialHuntState, approve)
+    expect(s.status).toBe('running')
+    expect(s.started_at).toBe(approve.ts)
+    // Replaying the same approval re-sets the identical anchor (reconnect-safe).
+    const s2 = apply(s, approve)
+    expect(s2.started_at).toBe(approve.ts)
+  })
+})
+
+describe('Warden healing flow', () => {
+  it('a Warden heals a faulted scout: grey → healing → active, healer map set then cleared', () => {
+    seq = 0
+    let s = apply(initialHuntState, spawn('scout-1', 'scout'))
+    // fault: the scout strays and greys out
+    s = apply(s, ev('stray_detected', 'engine', { wolf_id: 'scout-1', pattern: 'timeout', evidence_ref: 'art_x' }))
+    expect(s.wolves['scout-1'].status).toBe('strayed')
+
+    // the Warden roams in and is dispatched to the patient
+    s = apply(s, spawn('warden', 'warden'))
+    s = apply(s, ev('doctor_dispatched', 'warden', { doctor_id: 'warden', target_wolf_id: 'scout-1', reason: 'timeout' }))
+    expect(s.wolves['scout-1'].status).toBe('healing')
+    expect(s.wolves['warden'].status).toBe('active')
+    expect(s.healers['warden']).toBe('scout-1')
+
+    // healed: patient recovers, healer stands down and leaves the active-heal map
+    s = apply(s, ev('doctor_healed', 'warden', {
+      doctor_id: 'warden', target_wolf_id: 'scout-1', action: 'reroute',
+      note_plain_english: 'warden patched scout-1 after it stalled.',
+    }))
+    expect(s.wolves['scout-1'].status).toBe('active')
+    expect(s.wolves['warden'].status).toBe('done')
+    expect(s.healers['warden']).toBeUndefined()
+    expect(s.activity.some((a) => a.text.includes('warden'))).toBe(true)
+  })
+
+  it('two faults at once → two Wardens, each mapped to its own patient (parallel)', () => {
+    seq = 0
+    let s = apply(initialHuntState, spawn('scout-1', 'scout'), spawn('scout-2', 'scout'))
+    s = apply(s,
+      spawn('warden', 'warden'),
+      ev('doctor_dispatched', 'warden', { doctor_id: 'warden', target_wolf_id: 'scout-1', reason: 'timeout' }),
+      spawn('warden-2', 'warden'),
+      ev('doctor_dispatched', 'warden-2', { doctor_id: 'warden-2', target_wolf_id: 'scout-2', reason: 'repeat_fail' }),
+    )
+    expect(s.healers).toEqual({ warden: 'scout-1', 'warden-2': 'scout-2' })
+    // healing one clears only that healer
+    s = apply(s, ev('doctor_healed', 'warden', {
+      doctor_id: 'warden', target_wolf_id: 'scout-1', action: 'reroute', note_plain_english: 'warden patched scout-1.',
+    }))
+    expect(s.healers).toEqual({ 'warden-2': 'scout-2' })
+  })
+})
+
+describe('plan_proposed carries adaptive depth', () => {
+  const proposed = (depth?: string) => ev('plan_proposed', 'beta', {
+    steps: [], wolves: ['scout-1'], pattern: 'parallel_then_merge', assumptions: [],
+    est_cost: 0.7, est_time: 220, ...(depth ? { depth } : {}),
+  })
+
+  it('lands the depth on the plan when present', () => {
+    seq = 0
+    const s = apply(initialHuntState, proposed('deep'))
+    expect(s.plan?.depth).toBe('deep')
+  })
+
+  it('leaves depth undefined when the event omits it (back-compat)', () => {
+    seq = 0
+    const s = apply(initialHuntState, proposed())
+    expect(s.plan?.depth).toBeUndefined()
+  })
+})

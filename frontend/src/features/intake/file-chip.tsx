@@ -26,15 +26,15 @@ export function FileCard({ file, onRemove }: Props) {
         <button
           onClick={() => onRemove(file.localId)}
           className="absolute -top-1.5 -right-1.5 w-5 h-5 rounded-full flex items-center justify-center"
-          style={{ backgroundColor: '#3a3a3a' }}
+          style={{ backgroundColor: '#1a1a1a' }}
           aria-label={`Remove ${file.name}`}
         >
           <X size={9} className="text-white" />
         </button>
       </div>
       <span
-        className="text-xs text-center truncate"
-        style={{ color: '#888', width: 72, display: 'block' }}
+        className="text-xs text-center truncate text-ink-500"
+        style={{ width: 72, display: 'block' }}
       >
         {file.name}
       </span>

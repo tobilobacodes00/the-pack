@@ -52,8 +52,8 @@ export function AgentNode({ data }: NodeProps<AgentNodeType>) {
             top: '50%',
             transform: 'translateY(-50%)',
             marginLeft: 10,
-            background: '#1a1a1a',
-            border: '1px solid #404040',
+            background: '#ffffff',
+            border: '1px solid #dcdcd8',
             borderRadius: 8,
             padding: '9px 13px',
             width: 240,
@@ -61,11 +61,11 @@ export function AgentNode({ data }: NodeProps<AgentNodeType>) {
             zIndex: 1000,
           }}
         >
-          <p style={{ fontSize: 14, fontWeight: 600, color: '#fff', textTransform: 'capitalize', margin: 0 }}>
+          <p style={{ fontSize: 14, fontWeight: 600, color: '#1a1a1a', textTransform: 'capitalize', margin: 0 }}>
             {data.role}
           </p>
           {/* While the hunt runs, show what this agent is doing right now; otherwise its role blurb. */}
-          <p style={{ fontSize: 12.5, color: '#9a9a9a', margin: '3px 0 0', lineHeight: 1.45 }}>
+          <p style={{ fontSize: 12.5, color: '#4a4a4a', margin: '3px 0 0', lineHeight: 1.45 }}>
             {data.live ? wolfActivity(data.live) : (ROLE_DESC[data.role] ?? '')}
           </p>
         </div>

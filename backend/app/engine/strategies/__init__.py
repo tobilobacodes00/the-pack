@@ -15,6 +15,8 @@ from app.engine.strategies.base import (
     Finding,
     Merged,
     Strategy,
+    drop_empty,
+    keep_findings,
 )
 from app.engine.strategies.critique import CritiqueStrategy
 from app.engine.strategies.deep_dive import DeepDiveStrategy
@@ -50,6 +52,8 @@ __all__ = [
     "Finding",
     "Merged",
     "Strategy",
+    "drop_empty",
+    "keep_findings",
     "get_strategy",
     "strategy_catalog",
     "DEFAULT_STRATEGY",

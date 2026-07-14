@@ -1,12 +1,11 @@
-import { Clock, Pause, Play, Plus, Square, X } from 'lucide-react'
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { Mic, Pause, Play, Plus, Square, X } from 'lucide-react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { MessageBubble, type ChatMessage } from '../intake/message-bubble'
 import { FileCard } from '../intake/file-chip'
 import { useMicRecorder } from '../intake/use-mic-recorder'
 import type { AttachedFile } from '../intake/use-intake'
 import { WolfActivityLine } from '../territory/wolf-activity-line'
 import type { ActivityItem } from '@/events/schema'
-import StarBorder from '@/ui/star-border'
 
 const AUDIO_EXTS = new Set(['mp3', 'wav', 'ogg', 'aac', 'flac', 'm4a', 'webm'])
 function isAudio(name: string) {
@@ -14,6 +13,7 @@ function isAudio(name: string) {
 }
 
 function formatTime(s: number): string {
+  if (!Number.isFinite(s) || s < 0) return '0:00' // MediaRecorder webm blobs can report Infinity/NaN
   const m = Math.floor(s / 60)
   const sec = Math.floor(s % 60)
   return `${m}:${sec.toString().padStart(2, '0')}`
@@ -32,8 +32,9 @@ function Bar({ h, color, fixed = false }: { h: number; color: string; fixed?: bo
   )
 }
 
-// Live bars during recording — reacts to real mic levels at ~60fps
-function LiveBars({ getLiveBars }: { getLiveBars: () => number[] }) {
+// Live bars during recording — reacts to real mic levels at ~60fps. `tintRgb` tints the bars in
+// navy ink so they read on the cream/white composer.
+function LiveBars({ getLiveBars, tintRgb = '26,26,26' }: { getLiveBars: () => number[]; tintRgb?: string }) {
   const [bars, setBars] = useState<number[]>(() => Array(40).fill(0))
   const rafRef = useRef<number>(0)
 
@@ -49,7 +50,7 @@ function LiveBars({ getLiveBars }: { getLiveBars: () => number[] }) {
   return (
     <div className="flex-1 flex items-center gap-[3px] h-9 overflow-hidden">
       {bars.map((h, i) => (
-        <Bar key={i} h={h} color={`rgba(255,255,255,${0.25 + h * 0.75})`} />
+        <Bar key={i} h={h} color={`rgba(${tintRgb},${0.25 + h * 0.75})`} />
       ))}
     </div>
   )
@@ -66,20 +67,19 @@ export interface ChatColumnProps {
   isPending: boolean
   send: () => void | Promise<void>
   pickFiles: () => void
-  fileInputRef: React.RefObject<HTMLInputElement>
-  textareaRef: React.RefObject<HTMLTextAreaElement>
-  messagesEndRef: React.RefObject<HTMLDivElement>
   handleKeyDown: (e: React.KeyboardEvent<HTMLTextAreaElement>) => void
   /** Rendered between the message list and the composer (e.g. the plan card). */
   footer?: React.ReactNode
   /** Hide the composer entirely — e.g. once the plan card takes over the bottom. */
   hideComposer?: boolean
-  /** The pack's live beats, rendered as inline replies after the conversation (territory only). */
+  /** The pack's live beats, rendered as the pack's own narration inside the feed (territory only). */
   activity?: ActivityItem[]
+  /** Index into `messages` where intake ends: turns before it are the intake convo, the pack's
+   *  activity renders next, and turns from here on are post-hunt follow-up Q&A (so they sit below
+   *  the report, not back up in the intake thread). null/undefined = no hunt yet (all intake). */
+  launchIndex?: number | null
   /** Composer placeholder override (state-aware — e.g. "Ask Alpha anything about this plan…"). */
   placeholder?: string
-  /** Territory header history button → open Chat History (the Den). Omit to hide it. */
-  onHistory?: () => void
 }
 
 /**
@@ -90,11 +90,36 @@ export interface ChatColumnProps {
 export function ChatColumn(props: ChatColumnProps) {
   const {
     variant, messages, input, setInput, attachedFiles, removeFile, addFiles,
-    isPending, send, pickFiles, fileInputRef, textareaRef, messagesEndRef,
-    handleKeyDown, footer, hideComposer, activity, placeholder, onHistory,
+    isPending, send, pickFiles,
+    handleKeyDown, footer, hideComposer, activity, launchIndex, placeholder,
   } = props
 
   const isTerritory = variant === 'territory'
+
+  // These refs belong to THIS ChatColumn instance. The door→territory morph remounts ChatColumn
+  // (AnimatePresence popLayout, different keys), so a ref shared from the parent hook would get
+  // nulled when the exiting instance unmounts. Owning them here keeps autosize/scroll/focus alive.
+  const textareaRef = useRef<HTMLTextAreaElement>(null)
+  const messagesEndRef = useRef<HTMLDivElement>(null)
+
+  // Auto-grow the composer with its content (capped), following `input`.
+  useEffect(() => {
+    const el = textareaRef.current
+    if (!el) return
+    el.style.height = 'auto'
+    el.style.height = `${Math.min(el.scrollHeight, 120)}px`
+  }, [input])
+
+  // The composer is shared and warm-brutalist (cream + navy ink) in both variants.
+  const textCls = 'text-ink-900 placeholder:text-ink-400'
+  const ghostBtn = 'text-ink-500 hover:text-ink-900'
+  const mutedBtn = 'text-ink-500 hover:text-ink-900'
+  const timeCls = 'text-ink-400'
+  const sendBtn =
+    'w-9 h-9 rounded-full bg-white border-[2px] border-ink-900 shadow-chunk-sm flex items-center justify-center disabled:opacity-30 hover:-translate-y-0.5 transition-all shrink-0'
+  const waveRgb = '26,26,26'
+  const waveActive = 'rgba(26,26,26,0.9)'
+  const waveIdle = 'rgba(26,26,26,0.22)'
 
   // Voice recorder + playback state
   const [voicePeaks, setVoicePeaks] = useState<number[]>([])
@@ -115,14 +140,18 @@ export function ChatColumn(props: ChatColumnProps) {
   const audioFile = attachedFiles.find((f) => isAudio(f.name))
   const docFiles = attachedFiles.filter((f) => !isAudio(f.name))
 
-  const audioUrl = useMemo(() => {
-    if (!audioFile) return null
-    return URL.createObjectURL(audioFile.file)
-  }, [audioFile])
-
+  // Object URLs are a side effect — mint in an effect (not in render) so a discarded/StrictMode
+  // render can't leak a URL the cleanup never revokes.
+  const [audioUrl, setAudioUrl] = useState<string | null>(null)
   useEffect(() => {
-    return () => { if (audioUrl) URL.revokeObjectURL(audioUrl) }
-  }, [audioUrl])
+    if (!audioFile) {
+      setAudioUrl(null)
+      return
+    }
+    const u = URL.createObjectURL(audioFile.file)
+    setAudioUrl(u)
+    return () => URL.revokeObjectURL(u)
+  }, [audioFile])
 
   // Reset all voice state when the audio file is removed
   useEffect(() => {
@@ -163,7 +192,8 @@ export function ChatColumn(props: ChatColumnProps) {
 
   const handleSeek = useCallback((e: React.MouseEvent<HTMLDivElement>) => {
     const el = audioRef.current
-    if (!el || !el.duration) return
+    // Bail on a non-finite duration (webm blobs) — el.currentTime = ratio * Infinity throws.
+    if (!el || !Number.isFinite(el.duration) || el.duration <= 0) return
     const rect = e.currentTarget.getBoundingClientRect()
     const ratio = Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width))
     el.currentTime = ratio * el.duration
@@ -180,6 +210,18 @@ export function ChatColumn(props: ChatColumnProps) {
   }, [audioFile, removeFile])
 
   const acts = activity ?? []
+  // One feed, in time order: intake conversation → the pack narrating what they're doing → any
+  // post-hunt follow-up Q&A. `launchIndex` marks where intake ends; before a hunt it's all intake.
+  const cut = launchIndex ?? messages.length
+  const intakeMsgs = messages.slice(0, cut)
+  const followMsgs = messages.slice(cut)
+
+  // Follow the latest turn AND the latest pack action — keep the newest thing in view as it streams.
+  const lastMsgText = messages[messages.length - 1]?.text
+  useEffect(() => {
+    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth', block: 'end' })
+  }, [messages.length, acts.length, lastMsgText, messagesEndRef])
+
   const messageList = (messages.length > 0 || acts.length > 0) && (
     <div
       className={
@@ -188,21 +230,15 @@ export function ChatColumn(props: ChatColumnProps) {
           : 'flex flex-col gap-5 overflow-y-auto max-h-[40vh] min-h-0'
       }
     >
-      {messages.map((m, i) => <MessageBubble key={m.id ?? i} message={m} />)}
+      {intakeMsgs.map((m, i) => <MessageBubble key={m.id ?? i} message={m} />)}
       {acts.map((a) => <WolfActivityLine key={`act-${a.seq}`} item={a} />)}
+      {followMsgs.map((m, i) => <MessageBubble key={m.id ?? `f-${i}`} message={m} />)}
       <div ref={messagesEndRef} />
     </div>
   )
 
-  const composer = (
-    <StarBorder
-      as="div"
-      color="white"
-      speed="5s"
-      className={`shrink-0 ${isTerritory ? 'm-3' : 'w-full'} cursor-text focus-within:ring-2 focus-within:ring-white/20 transition-shadow duration-200`}
-      innerClassName="relative z-1 flex flex-col rounded-[20px] px-5 pt-4 pb-3 bg-[#111111]"
-      onClick={() => textareaRef.current?.focus()}
-    >
+  const composerBody = (
+    <>
       {docFiles.length > 0 && (
         <div className="flex gap-3 flex-wrap mb-4">
           {docFiles.map((f) => (
@@ -218,20 +254,7 @@ export function ChatColumn(props: ChatColumnProps) {
         onChange={(e) => setInput(e.target.value)}
         onKeyDown={handleKeyDown}
         rows={1}
-        className="w-full bg-transparent resize-none outline-none text-sm text-white
-                   placeholder:text-[#555] max-h-[120px] overflow-y-auto leading-relaxed"
-      />
-
-      <input
-        ref={fileInputRef}
-        type="file"
-        multiple
-        hidden
-        accept=".pdf,.csv,.txt,.md,.docx,.mp3,.wav,.ogg,.aac,.flac,.m4a"
-        onChange={(e) => {
-          if (e.target.files) addFiles(e.target.files)
-          e.target.value = ''
-        }}
+        className={`w-full bg-transparent resize-none outline-none text-sm ${textCls} max-h-[120px] overflow-y-auto leading-relaxed`}
       />
 
       {isRecording ? (
@@ -239,14 +262,14 @@ export function ChatColumn(props: ChatColumnProps) {
         <div className="flex items-center gap-3 mt-3">
           <div className="flex items-center gap-2 shrink-0">
             <div className="w-2 h-2 rounded-full bg-red-500 animate-pulse" />
-            <span className="text-red-400 text-sm font-mono tabular-nums">
+            <span className="text-red-500 text-sm font-mono tabular-nums">
               {formatTime(recordingSeconds)}
             </span>
           </div>
-          <LiveBars getLiveBars={getLiveBars} />
+          <LiveBars getLiveBars={getLiveBars} tintRgb={waveRgb} />
           <button
             onClick={toggleMic}
-            className="text-muted hover:text-white transition-colors shrink-0"
+            className={`${mutedBtn} transition-colors shrink-0`}
             aria-label="Stop recording"
           >
             <Square size={16} />
@@ -264,13 +287,23 @@ export function ChatColumn(props: ChatColumnProps) {
               setPlayProgress(0)
             }}
             onLoadedMetadata={(e) => {
-              setPlayDuration((e.target as HTMLAudioElement).duration)
+              const el = e.target as HTMLAudioElement
+              if (Number.isFinite(el.duration)) setPlayDuration(el.duration)
+              // MediaRecorder webm/ogg blobs report duration === Infinity (no metadata). Nudge the
+              // playhead to the end to force the browser to compute the real length → durationchange.
+              else el.currentTime = 1e7
+            }}
+            onDurationChange={(e) => {
+              const el = e.target as HTMLAudioElement
+              if (!Number.isFinite(el.duration)) return
+              setPlayDuration(el.duration)
+              if (el.currentTime > el.duration) el.currentTime = 0 // undo the 1e7 nudge
             }}
           />
           <div className="flex items-center gap-3 mt-3">
             <button
               onClick={togglePlay}
-              className="text-muted hover:text-white transition-colors shrink-0"
+              className={`${mutedBtn} transition-colors shrink-0`}
               aria-label={isPlaying ? 'Pause' : 'Play'}
             >
               {isPlaying ? <Pause size={16} /> : <Play size={16} />}
@@ -285,20 +318,18 @@ export function ChatColumn(props: ChatColumnProps) {
                   key={i}
                   h={h}
                   fixed
-                  color={i / voicePeaks.length <= playProgress
-                    ? 'rgba(255,255,255,0.9)'
-                    : 'rgba(255,255,255,0.18)'}
+                  color={i / voicePeaks.length <= playProgress ? waveActive : waveIdle}
                 />
               ))}
             </div>
 
-            <span className="text-[#555] text-xs font-mono tabular-nums shrink-0">
+            <span className={`${timeCls} text-xs font-mono tabular-nums shrink-0`}>
               {formatTime(Math.floor(playProgress * playDuration))} / {formatTime(Math.floor(playDuration))}
             </span>
 
             <button
               onClick={discardVoiceMemo}
-              className="text-[#666] hover:text-white transition-colors shrink-0"
+              className={`${mutedBtn} transition-colors shrink-0`}
               aria-label="Delete recording"
             >
               <X size={16} />
@@ -307,8 +338,7 @@ export function ChatColumn(props: ChatColumnProps) {
             <button
               onClick={() => void send()}
               disabled={isPending}
-              className="w-9 h-9 rounded-full bg-white flex items-center justify-center
-                         disabled:opacity-30 hover:bg-gray-200 transition-colors shrink-0"
+              className={sendBtn}
               aria-label="Send"
             >
               {isPending
@@ -323,7 +353,7 @@ export function ChatColumn(props: ChatColumnProps) {
         <div className="flex items-center gap-3 mt-3">
           <button
             onClick={pickFiles}
-            className="text-[#666] hover:text-white transition-colors shrink-0"
+            className={`${ghostBtn} transition-colors shrink-0`}
             aria-label="Attach files"
           >
             <Plus size={18} />
@@ -333,17 +363,16 @@ export function ChatColumn(props: ChatColumnProps) {
 
           <button
             onClick={toggleMic}
-            className="text-muted hover:text-white transition-colors shrink-0"
+            className={`${mutedBtn} transition-colors shrink-0`}
             aria-label="Record voice"
           >
-            <img src="/icon-mic.svg" className="w-5 h-5" alt="" />
+            {isTerritory ? <img src="/icon-mic.svg" className="w-5 h-5" alt="" /> : <Mic size={18} />}
           </button>
 
           <button
             onClick={() => void send()}
             disabled={isPending || (input.trim() === '' && attachedFiles.length === 0)}
-            className="w-9 h-9 rounded-full bg-white flex items-center justify-center
-                       disabled:opacity-30 hover:bg-gray-200 transition-colors shrink-0"
+            className={sendBtn}
             aria-label="Send"
           >
             {isPending
@@ -353,27 +382,24 @@ export function ChatColumn(props: ChatColumnProps) {
           </button>
         </div>
       )}
-    </StarBorder>
+    </>
+  )
+
+  // Warm-brutalist composer: chunky navy-ink outline + offset shadow on cream/white — shared by both variants.
+  const composer = (
+    <div
+      className={`shrink-0 flex flex-col cursor-text rounded-[20px] px-5 pt-4 pb-3 bg-white border-[2.5px] border-ink-900 shadow-chunk transition-shadow focus-within:shadow-chunk-lg ${isTerritory ? 'm-3' : 'w-full'}`}
+      onClick={() => textareaRef.current?.focus()}
+    >
+      {composerBody}
+    </div>
   )
 
   if (isTerritory) {
     return (
       <div className="flex flex-col h-full min-h-0">
-        <div
-          className="flex items-center justify-between px-4 h-[52px] shrink-0"
-          style={{ borderBottom: '1px solid #404040' }}
-        >
-          <span className="text-[13px] font-semibold text-white">Chat session</span>
-          {onHistory && (
-            <button
-              onClick={onHistory}
-              aria-label="Chat history"
-              title="Chat history"
-              className="-mr-1 p-1 text-text-dim hover:text-text transition-colors"
-            >
-              <Clock size={15} />
-            </button>
-          )}
+        <div className="flex items-center justify-between px-4 h-[52px] shrink-0 border-b border-border">
+          <span className="text-[13px] font-semibold text-ink-900">Chat session</span>
         </div>
         {messageList || <div className="flex-1" />}
         {footer}

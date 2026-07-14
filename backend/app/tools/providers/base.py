@@ -16,6 +16,7 @@ import html as _html
 import re as _re
 from dataclasses import dataclass, field
 from typing import Any, Protocol
+from urllib.parse import urlsplit, urlunsplit
 
 import httpx
 
@@ -52,6 +53,78 @@ def _strip_html(raw: str) -> str:
     without_blocks = _BLOCK_TAGS.sub(" ", raw or "")
     text = _ANY_TAG.sub(" ", without_blocks)
     return _html.unescape(_re.sub(r"\s+", " ", text)).strip()
+
+
+# Tracking/junk query params that never change page identity — dropped before dedup so the same
+# article shared with different UTM tags collapses to one source.
+_TRACKING_PARAMS = frozenset(
+    {
+        "utm_source",
+        "utm_medium",
+        "utm_campaign",
+        "utm_term",
+        "utm_content",
+        "fbclid",
+        "gclid",
+        "mc_eid",
+        "mc_cid",
+        "igshid",
+        "ref",
+        "ref_src",
+        "spm",
+    }
+)
+# Small, high-confidence junk-domain blocklist (link shorteners). Kept tiny on purpose — an
+# over-aggressive blocklist is worse than the disease. Extend via settings.search_blocked_hosts_extra.
+_BLOCKED_HOSTS = frozenset({"t.co", "bit.ly", "buff.ly", "ow.ly", "tinyurl.com", "goo.gl"})
+
+
+def host_key(url: str) -> str:
+    """The lowercased host minus a leading www. — a cheap domain key for dedup-diversity and the
+    blocklist. Treats a.example.com / b.example.com as DISTINCT (no eTLD+1 / PSL dependency)."""
+    try:
+        host = urlsplit(url).hostname or ""
+    except ValueError:
+        return ""
+    host = host.lower()
+    return host[4:] if host.startswith("www.") else host
+
+
+def canonical_url(url: str) -> str:
+    """A deterministic dedup KEY for a URL (never for display — the original url is kept for the
+    reader chain). Collapses http/https, www./m./amp./mobile. host prefixes, trailing slash + /amp,
+    and tracking params (survivors re-sorted so param order can't defeat dedup); drops #fragments but
+    keeps #! hashbangs. Non-http(s) schemes (e.g. lib://) are returned UNCHANGED. Fail-open: any parse
+    error returns the input untouched — never lose a source to a canonicalizer bug."""
+    try:
+        parts = urlsplit(url)
+    except ValueError:
+        return url
+    scheme = parts.scheme.lower()
+    if scheme not in ("http", "https"):
+        return url  # lib://, mailto:, data:, … — leave identity intact
+    host = (parts.hostname or "").lower()
+    for prefix in ("www.", "m.", "amp.", "mobile."):
+        if host.startswith(prefix):
+            host = host[len(prefix) :]
+            break
+    if parts.port:
+        host = f"{host}:{parts.port}"
+    path = _re.sub(r"//+", "/", parts.path)
+    path = _re.sub(r"(?:/amp|\.amp)$", "", path)
+    if len(path) > 1:
+        path = path.rstrip("/")
+    kept = sorted(
+        f"{k}={v}"
+        for k, v in (
+            pair.split("=", 1) if "=" in pair else (pair, "")
+            for pair in parts.query.split("&")
+            if pair
+        )
+        if k.lower() not in _TRACKING_PARAMS
+    )
+    fragment = parts.fragment if parts.fragment.startswith("!") else ""
+    return urlunsplit(("https", host, path, "&".join(kept), fragment))
 
 
 @dataclass

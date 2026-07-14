@@ -55,6 +55,9 @@ const SettingsPage   = lazy(() => import('@/features/settings/settings-page'))
 
 export const router = createBrowserRouter([
   { path: '/',                          element: wrap(DoorScoped) },
+  // Cosmetic target for the door→territory morph before a real hunt exists (see door-page.tsx). A
+  // refresh here renders the same fresh intake door as '/'.
+  { path: '/new',                       element: wrap(DoorScoped) },
   { path: '/hunts/:huntId',             element: wrap(TerritoryScoped) },
   { path: '/den',                       element: wrap(DenPage) },
   { path: '/hunts/:huntId/den',         element: wrap(DenPage) },

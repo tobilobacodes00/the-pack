@@ -15,16 +15,44 @@ ROLE_SPEC: dict[str, tuple[str, bool, float]] = {
     "alpha": ("max", True, 0.15),
     "beta": ("plus", True, 0.10),
     "scout": ("flash", False, 0.10),
-    "tracker": ("plus", True, 0.15),
+    "tracker": ("plus", True, 0.30),  # v3: deep_dive merges twice + find_gaps = 3 plus calls
     "sentinel": ("max", True, 0.20),
-    "howler": ("plus", False, 0.15),
+    "howler": (
+        "plus",
+        False,
+        0.40,
+    ),  # v3: headroom for a comprehensive deep draft (single dispatch)
     "elder": ("flash", False, 0.05),  # v2 memory agent — wired in Phase 2.6
-    "doctor": ("flash", False, 0.05),  # v2 field medic — heals faulted agents (Phase 2.5)
+    "doctor": ("flash", False, 0.05),  # v2 field medic — retired, superseded by the Warden
+    "warden": ("flash", False, 0.05),  # v3 roaming healer — spawned on-demand to heal faults
 }
+
+# v3: the scout tier scales with the brief's depth — a deep hunt does real fact-extraction with
+# reasoning (plus + thinking), not snippet-skimming on flash. brief/standard are absent on purpose so
+# they fall through to ROLE_SPEC["scout"] at CALL time (a test monkeypatch of that entry still governs
+# them). Resolved at spawn (post-approve), never baked into the team (which stays depth-agnostic).
+SCOUT_DEPTH_SPEC: dict[str, tuple[str, bool, float]] = {"deep": ("plus", True, 0.15)}
+
+
+def scout_spec(depth: str) -> tuple[str, bool, float]:
+    """(tier, thinking, budget) for a scout at this depth. Deep → plus+thinking+0.15; brief/standard
+    fall through to ROLE_SPEC['scout'] read live (so a monkeypatch of it still governs). The budget is
+    never lowered below the base cap (tier + cap move together — a plus scout can't spawn flash-sized)."""
+    base = ROLE_SPEC["scout"]
+    override = SCOUT_DEPTH_SPEC.get(depth)
+    if override is None:
+        return base
+    tier, thinking, budget = override
+    return (tier, thinking, max(budget, base[2]))
+
 
 # Canvas order: leads → the variable scouts → support (incl. the v2 Elder, the memory agent).
 LEAD_ROLES = ["alpha", "beta"]
 SUPPORT_ROLES = ["tracker", "sentinel", "howler", "elder"]
+# v3: the Warden (field-medic) is a STANDING member of every pack — always ×1, on the canvas from the
+# start, idle until an agent faults (then it roams to heal). It is FIXED (like the leads): the user
+# can't remove or clone it in the editor, but the engine still auto-clones it for simultaneous faults.
+FIXED_ROLES = ["warden"]
 DEFAULT_SCOUTS = 3
 MIN_SCOUTS = 1
 MAX_SCOUTS = 5
@@ -43,17 +71,18 @@ def wolf_ids(role: str, count: int) -> list[str]:
 def build_team(parsed: dict) -> list[dict]:
     """Beta proposes the SHAPE (mainly scout count); expand to the canonical team — each role's
     tier/thinking/budget filled from ROLE_SPEC. Alpha + Beta always lead (×1); scouts vary 1..5;
-    support roles default to 1 but honor a higher requested count (a cloned tracker, 1..3)."""
+    support roles default to 1 but honor a higher requested count (a cloned tracker, 1..3); the
+    Warden is a FIXED ×1 standing medic (always present, not user-editable)."""
     proposed = {
         str(e.get("role")): int(e.get("count") or 0)
         for e in (parsed.get("team") or [])
         if isinstance(e, dict)
     }
     team: list[dict] = []
-    for role in [*LEAD_ROLES, "scout", *SUPPORT_ROLES]:
+    for role in [*LEAD_ROLES, "scout", *SUPPORT_ROLES, *FIXED_ROLES]:
         tier, thinking, budget = ROLE_SPEC[role]
-        if role in LEAD_ROLES:
-            count = 1
+        if role in LEAD_ROLES or role in FIXED_ROLES:
+            count = 1  # leads + the Warden are locked at exactly one
         elif role == "scout":
             want = proposed.get("scout", DEFAULT_SCOUTS) or DEFAULT_SCOUTS
             count = max(MIN_SCOUTS, min(MAX_SCOUTS, want))

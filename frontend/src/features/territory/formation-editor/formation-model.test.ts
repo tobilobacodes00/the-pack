@@ -31,7 +31,7 @@ describe('wolfIds', () => {
 })
 
 describe('buildTeam', () => {
-  it('always yields the canonical 7 roles with leads at 1 and clamped counts', () => {
+  it('always yields the canonical roles with leads + Warden at 1 and clamped counts', () => {
     const team = buildTeam({ scout: 99, tracker: 0 })
     expect(team.map((t) => t.role)).toEqual([
       'alpha',
@@ -41,10 +41,12 @@ describe('buildTeam', () => {
       'sentinel',
       'howler',
       'elder',
+      'warden', // v3: the standing field-medic, fixed ×1
     ])
     expect(team.find((t) => t.role === 'alpha')!.count).toBe(1)
     expect(team.find((t) => t.role === 'scout')!.count).toBe(5) // clamped to MAX_SCOUTS
     expect(team.find((t) => t.role === 'tracker')!.count).toBe(1) // 0 → default 1
+    expect(team.find((t) => t.role === 'warden')!.count).toBe(1) // fixed, never editable
   })
 })
 

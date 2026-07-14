@@ -26,6 +26,19 @@ export const PACK_SLOTS: PackSlot[] = [
   { role: 'howler', sx: 0.62, sy: 0.36, scale: 0.6, z: 1 },
 ]
 
+// Per-role colour for the "meet the pack" captions on the cream page — `ink` colours the role name
+// (a darker shade for legible text), `ring` the glyph ring (the role hue), `wash` the faint chip behind
+// its note. Matches ROLE_COLOR so an agent's colour is the same on the landing and the canvas.
+export const PACK_ACCENT: Record<string, { ink: string; ring: string; wash: string }> = {
+  alpha:    { ink: '#9a5e12', ring: '#e0912b', wash: '#fbf1de' }, // amber — the lead
+  beta:     { ink: '#4a3ab0', ring: '#6c5ce7', wash: '#ecebfb' }, // indigo — the planner
+  elder:    { ink: '#156a94', ring: '#1e88c4', wash: '#e6f2fa' }, // cerulean — the counsel
+  scout:    { ink: '#1f5a99', ring: '#2d7dd2', wash: '#e8f1fb' }, // blue — ranges ahead
+  tracker:  { ink: '#b02f22', ring: '#e14434', wash: '#fceae7' }, // red — reads the trail
+  sentinel: { ink: '#46525f', ring: '#5c6b7a', wash: '#eef0f2' }, // slate — the challenger
+  howler:   { ink: '#8a3170', ring: '#b24592', wash: '#f8eaf4' }, // magenta — the voice
+}
+
 // Clip-space → model scale. Kept compact so the whole triangle sits with clear margin on every
 // side (never edge-to-edge). Alpha at its slot (scale 1) → ~26vh tall; back row ~15vh.
 export const BASE_SCALE = 0.34

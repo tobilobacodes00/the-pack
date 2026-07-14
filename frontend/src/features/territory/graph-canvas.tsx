@@ -15,13 +15,19 @@ const nodeTypes = { agentNode: AgentNode }
 // only the scouts share a tier (they spread horizontally).
 const TIER: Record<string, number> = {
   alpha: 0, beta: 1, scout: 2, tracker: 3, hunter: 3,
-  sentinel: 4, howler: 5, elder: 6, doctor: 6,
+  sentinel: 4, howler: 5, elder: 6, doctor: 6, warden: 6,
 }
+
+// Roles that aren't part of the plan formation but roam onto the canvas mid-hunt to heal a faulted
+// agent. They get a transient node (positioned beside their patient) that isn't in `planRoleList`.
+const TRANSIENT_HEALER_ROLES = new Set(['warden'])
 
 export const NODE = 80
 const CENTER_X = 300
 const Y_STEP = 150
 const X_SPREAD = 230
+// How far a roaming healer (Warden) sits from the wolf it's tending (px, to the right).
+const HEALER_OFFSET = NODE + 24
 
 /** Map a live wolf's status to a canvas tone. Absent wolf (idle/plan states) → grey idle. */
 function wolfTone(w?: WolfState): AgentTone {
@@ -39,6 +45,7 @@ function wolfTone(w?: WolfState): AgentTone {
 export function buildGraph(
   roles: string[],
   wolves?: Record<string, WolfState>,
+  healers?: Record<string, string>,
 ): {
   nodes: Node<AgentNodeData>[]
   edges: Edge[]
@@ -54,9 +61,12 @@ export function buildGraph(
   })
   const idToRole = new Map(items.map((it) => [it.id, it.role]))
 
-  // Elder is the memory/advisor — it sits BESIDE Alpha (its "tap"), not down the execution spine.
-  const spine = items.filter((it) => it.role !== 'elder')
+  // Two agents sit OFF the execution spine: the Elder (memory/advisor) beside Alpha, and the Warden
+  // (the roaming medic) apart on its own, below the pack — it's not part of the research flow, it
+  // just watches and heals. Everything else forms the vertical spine.
+  const spine = items.filter((it) => it.role !== 'elder' && it.role !== 'warden')
   const elders = items.filter((it) => it.role === 'elder')
+  const wardens = items.filter((it) => it.role === 'warden')
 
   // Group the spine ids by tier so same-tier peers (the scouts) spread horizontally.
   const tierGroups: Record<number, string[]> = {}
@@ -80,14 +90,31 @@ export function buildGraph(
   const alphaPos = (alpha && pos.get(alpha.id)) || { x: CENTER_X - NODE / 2, y: 0 }
   elders.forEach(({ id }, i) => pos.set(id, { x: alphaPos.x + (i + 1) * X_SPREAD, y: alphaPos.y }))
 
-  const nodes: Node<AgentNodeData>[] = items.map(({ role, id }) => ({
-    id,
-    type: 'agentNode',
-    position: pos.get(id) ?? { x: CENTER_X - NODE / 2, y: 0 },
-    data: { role, wolfId: id, tone: wolfTone(wolves?.[id]), live: wolves?.[id] },
-    selectable: false,
-    draggable: false,
-  }))
+  // The standing Warden sits ALONE, set apart from the formation: off to the right and below the
+  // deepest spine tier, so it reads as the lone medic on watch. (When healing it roams from here to
+  // its patient; see the node builder below.)
+  const deepestTier = Math.max(0, ...spine.map((it) => TIER[it.role] ?? 6))
+  wardens.forEach(({ id }, i) =>
+    pos.set(id, { x: CENTER_X + 1.6 * X_SPREAD - NODE / 2, y: (deepestTier + 1) * Y_STEP + i * Y_STEP }),
+  )
+
+  const nodes: Node<AgentNodeData>[] = items.map(({ role, id }) => {
+    // The standing Warden is a formation node, but when it's actively healing it ROAMS to its patient
+    // (from `healers`) and returns to its home slot afterward — the `.warden-roam` transition glides it.
+    const patientId = TRANSIENT_HEALER_ROLES.has(role) ? healers?.[id] : undefined
+    const patientPos = patientId ? pos.get(patientId) : undefined
+    const home = pos.get(id) ?? { x: CENTER_X - NODE / 2, y: 0 }
+    const position = patientPos ? { x: patientPos.x + HEALER_OFFSET, y: patientPos.y } : home
+    return {
+      id,
+      type: 'agentNode',
+      position,
+      data: { role, wolfId: id, tone: wolfTone(wolves?.[id]), live: wolves?.[id] },
+      selectable: false,
+      draggable: false,
+      ...(TRANSIENT_HEALER_ROLES.has(role) ? { className: 'warden-roam' } : {}),
+    }
+  })
 
   // Dashed spine: connect each populated tier to the next; plus Elder → Alpha (the advisor tap). An
   // edge lights up in the source agent's colour once it's working (animated) or done (solid).
@@ -95,7 +122,7 @@ export function buildGraph(
   const pushEdge = (src: string, tgt: string, handles?: { sourceHandle: string; targetHandle: string }) => {
     const tone = wolfTone(wolves?.[src])
     const lit = tone === 'active' || tone === 'done'
-    const color = lit ? ROLE_COLOR[idToRole.get(src) ?? ''] ?? '#404040' : '#404040'
+    const color = lit ? ROLE_COLOR[idToRole.get(src) ?? ''] ?? '#9a9a9a' : '#9a9a9a'
     edges.push({
       id: `e-${src}-${tgt}`,
       source: src,
@@ -122,6 +149,33 @@ export function buildGraph(
   // horizontal straight line (not the diagonal a bottom→top edge would draw).
   if (alpha) for (const e of elders) pushEdge(e.id, alpha.id, { sourceHandle: 'ls', targetHandle: 'rt' })
 
+  // OVERFLOW Wardens: the standing Warden (a formation node, handled above) roams to its patient, but
+  // when SEVERAL agents fault at once the engine clones extra Wardens (warden-2, warden-3) that aren't
+  // in the formation. Render one transient node per clone, positioned BESIDE its own patient (from
+  // `healers`) so the `.warden-roam` CSS transition glides it across the canvas. Cleared automatically
+  // when the heal completes and the clone leaves `wolves`.
+  if (wolves) {
+    const formationIds = new Set(items.map((it) => it.id))
+    for (const [wid, w] of Object.entries(wolves)) {
+      if (!TRANSIENT_HEALER_ROLES.has(w.role) || formationIds.has(wid)) continue
+      const patientId = healers?.[wid]
+      const patientPos = patientId ? pos.get(patientId) : undefined
+      // Beside the patient once assigned; otherwise idle at Alpha's shoulder (the spawn point).
+      const p = patientPos
+        ? { x: patientPos.x + HEALER_OFFSET, y: patientPos.y }
+        : { x: alphaPos.x + X_SPREAD, y: alphaPos.y - Y_STEP }
+      nodes.push({
+        id: wid,
+        type: 'agentNode',
+        position: p,
+        data: { role: w.role, wolfId: wid, tone: wolfTone(w), live: w },
+        selectable: false,
+        draggable: false,
+        className: 'warden-roam',
+      })
+    }
+  }
+
   return { nodes, edges }
 }
 
@@ -134,10 +188,15 @@ export function GraphCanvas({ huntState }: GraphCanvasProps) {
   // is what keeps every icon/tier/colour correct. Idle → the default pack.
   const roles = useMemo(() => planRoleList(huntState.plan), [huntState.plan])
   const wolves = huntState.wolves
+  const healers = huntState.healers
   const forming = huntState.status === 'planning'
 
-  // Recompute when the roster changes OR any wolf's live state changes (colours the spine).
-  const { nodes, edges } = useMemo(() => buildGraph(roles, wolves), [roles, wolves])
+  // Recompute when the roster changes, any wolf's live state changes (colours the spine), or a heal
+  // starts/ends (adds/moves/clears a roaming Warden node).
+  const { nodes, edges } = useMemo(
+    () => buildGraph(roles, wolves, healers),
+    [roles, wolves, healers],
+  )
 
   const wrapRef = useRef<HTMLDivElement>(null)
   const rf = useRef<ReactFlowInstance<Node<AgentNodeData>, Edge> | null>(null)
@@ -159,6 +218,14 @@ export function GraphCanvas({ huntState }: GraphCanvasProps) {
 
   return (
     <div ref={wrapRef} style={{ flex: 1, background: color.canvas, position: 'relative' }}>
+      {/* A roaming Warden glides to its patient: ReactFlow sets transform:translate(x,y) on the node
+          wrapper, so a transform transition animates the move across the canvas (GPU-composited, so it
+          survives ReactFlow's per-render transform writes). A gentle fade-in as it appears. */}
+      <style>{`
+        .react-flow__node.warden-roam { transition: transform 900ms cubic-bezier(0.22, 1, 0.36, 1); }
+        @keyframes warden-appear { from { opacity: 0 } to { opacity: 1 } }
+        .react-flow__node.warden-roam { animation: warden-appear 300ms ease-out; }
+      `}</style>
       {/* Gentle breathing while Alpha forms the pack, so the canvas doesn't read as dead. */}
       <div className={forming ? 'animate-pulse' : undefined} style={{ width: '100%', height: '100%' }}>
         <ReactFlow
@@ -177,7 +244,7 @@ export function GraphCanvas({ huntState }: GraphCanvasProps) {
           elementsSelectable={false}
           nodesDraggable={false}
           proOptions={{ hideAttribution: true }}
-          colorMode="dark"
+          colorMode="light"
         />
       </div>
 
@@ -186,8 +253,8 @@ export function GraphCanvas({ huntState }: GraphCanvasProps) {
           style={{
             position: 'absolute', top: 16, left: '50%', transform: 'translateX(-50%)', zIndex: 5,
             display: 'flex', alignItems: 'center', gap: 8, background: color.surface,
-            border: '1px solid #404040', borderRadius: 20, padding: '8px 16px',
-            boxShadow: '0 4px 16px rgba(0,0,0,0.4)',
+            border: '1px solid #dcdcd8', borderRadius: 20, padding: '8px 16px',
+            boxShadow: '0 4px 16px rgba(26,26,26,0.12)',
           }}
         >
           <Loader2 size={14} className="animate-spin" color="#A3A3A3" />

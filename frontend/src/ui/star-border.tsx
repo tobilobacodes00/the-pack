@@ -13,8 +13,8 @@ type StarBorderProps<T extends React.ElementType> = React.ComponentPropsWithoutR
 export const StarBorder = <T extends React.ElementType = 'button'>({
   as,
   className = '',
-  innerClassName = 'relative z-1 bg-gradient-to-b from-black to-gray-900 border border-gray-800 text-white text-center text-[16px] py-[16px] px-[26px] rounded-[20px]',
-  color = 'white',
+  innerClassName = 'relative z-1 bg-white border border-ink-900 text-ink-900 text-center text-[16px] py-[16px] px-[26px] rounded-[20px]',
+  color = '#1a1a1a',
   speed = '6s',
   thickness = 1,
   children,

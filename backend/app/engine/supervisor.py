@@ -53,6 +53,7 @@ from app.engine.roster import (
 from app.engine.search_query import FACETS, broaden, facet_query, plain_query
 from app.engine.strategies import Conflict, CritiqueResult, Finding, Merged, get_strategy
 from app.engine.strategies.base import (
+    CONFLICT_DECIDE_SCHEMA,
     CRITIQUE_SCHEMA,
     DISTILL_SCHEMA,
     DRAFT_SCHEMA,
@@ -60,6 +61,8 @@ from app.engine.strategies.base import (
     GAPS_SCHEMA,
     MERGE_SCHEMA,
     PLAN_SCHEMA,
+    STANDOFF_JUDGE_SCHEMA,
+    StandoffOutcome,
 )
 from app.engine.stray import StrayDetector
 from app.engine.wolves import Wolf
@@ -171,6 +174,11 @@ class Supervisor:
         self._blocks: list[dict] = []  # v3: Howler's tagged blocks [{text, source_ids}] for trace
         self._kb_picks: list[dict] = []  # v4.2: your-library docs injected as sources this hunt
         self._kb_absorbed = False  # v4.2: absorb the KB once, not per merge() (deep_dive/critique)
+        # Alpha's lead node (s0-lead) is opened in _open_pack and closed in finish(); on an abnormal
+        # terminal exit (stop/fail) it must ALSO settle so it doesn't hang "active" forever. Two flags
+        # so we never emit an orphan close (stop before _open_pack) or close during a resumable halt.
+        self._lead_opened = False
+        self._lead_closed = False
         self._boundary = Boundary(boundary_usd=0.0)
         self._stray = StrayDetector()
         self._warned = False
@@ -211,6 +219,7 @@ class Supervisor:
             await self._strategy.execute(self)
         except StopHunt:
             with contextlib.suppress(Exception):
+                await self._close_lead_if_open()  # settle Alpha's node on a stop
                 await self._emit("hunt_stopped", "user", {"by": "user"})
                 await self._repo.set_hunt_state(self._hunt_id, "stopped_by_user")
         except BoundaryHalt:
@@ -220,6 +229,7 @@ class Supervisor:
         except Exception as exc:  # noqa: BLE001 - a hunt must fail as an event, not a crash
             logging.getLogger("pack").exception("hunt %s failed", self._hunt_id)  # keep the trace
             with contextlib.suppress(Exception):
+                await self._close_lead_if_open()  # settle Alpha's node on a failure
                 await self._emit(
                     "hunt_failed",
                     "engine",
@@ -254,6 +264,7 @@ class Supervisor:
             await self._strategy.execute(self)
         except StopHunt:
             with contextlib.suppress(Exception):
+                await self._close_lead_if_open()
                 await self._emit("hunt_stopped", "user", {"by": "user"})
                 await self._repo.set_hunt_state(self._hunt_id, "stopped_by_user")
         except BoundaryHalt:
@@ -263,6 +274,7 @@ class Supervisor:
         except Exception as exc:  # noqa: BLE001 - resume must fail as an event, not a crash
             logging.getLogger("pack").exception("resume of hunt %s failed", self._hunt_id)
             with contextlib.suppress(Exception):
+                await self._close_lead_if_open()
                 await self._emit(
                     "hunt_failed", "engine", {"reason_plain_english": f"Resume failed: {exc}"}
                 )
@@ -677,6 +689,8 @@ class Supervisor:
             "alpha",
             {"step_id": "s0-lead", "wolf_id": "alpha", "summary": "Leading the hunt"},
         )
+        self._lead_opened = True
+        self._lead_closed = False  # a resume re-opens the lead → allow it to close again
         await self._emit(
             "step_started",
             "beta",
@@ -707,6 +721,25 @@ class Supervisor:
                 "wolf_id": "elder",
                 "output_ref": f"art_{self._hunt_id}_memory",
                 "confidence": 0.9,
+            },
+        )
+
+    async def _close_lead_if_open(self) -> None:
+        """Settle Alpha's s0-lead node on a genuinely-terminal exit (stop/fail) so it doesn't hang
+        'active' forever. No-op if the lead never opened (a stop DURING plan approval, before
+        _open_pack) or was already closed by finish() — never emit an orphan or double close. NOT
+        called on a BoundaryHalt: that's a pause, the hunt resumes and re-opens the lead."""
+        if not self._lead_opened or self._lead_closed:
+            return
+        self._lead_closed = True
+        await self._emit(
+            "step_completed",
+            "alpha",
+            {
+                "step_id": "s0-lead",
+                "wolf_id": "alpha",
+                "output_ref": f"art_{self._hunt_id}_lead",
+                "confidence": 0.0,
             },
         )
 
@@ -1028,9 +1061,11 @@ class Supervisor:
         self._kb_picks = select_relevant(docs, self.task, self.depth)
         return list(self._kb_picks)
 
-    async def resolve_conflict(self, conflict: Conflict) -> str:
-        """Open a Hold for the human and block until they decide — unless the Packmaster set the
-        leash to On Wild, in which case Alpha takes his own recommended call and keeps running."""
+    async def resolve_conflict(self, conflict: Conflict, sources: list[dict]) -> str:
+        """Open a Hold for the human and block until they decide — unless the Packmaster set the leash
+        to On Wild, in which case ALPHA actually reasons about the conflict (weighs the options against
+        the numbered sources, via a real boundary-gated model call) and records WHY it chose. It used
+        to just echo Tracker's `recommended` with Alpha's name on it and no rationale."""
         hold_id = new_hold_id()
         await self._emit(
             "hold_opened",
@@ -1044,15 +1079,26 @@ class Supervisor:
             },
         )
         if self._mode == "wild":
-            resolution = conflict.recommended
+            resolution, why = await self._alpha_decides_conflict(conflict, sources)
             await self._emit(
                 "hold_resolved",
                 "alpha",
-                {"hold_id": hold_id, "resolution": resolution, "auto": True},
+                {"hold_id": hold_id, "resolution": resolution, "auto": True, "rationale": why},
             )
             return resolution
         await self._repo.set_hunt_state(self._hunt_id, "holding")
-        cmd = await self._await_command("resolve_hold")
+        try:
+            cmd = await self._await_command("resolve_hold")
+        except StopHunt:
+            # A stop during the human Hold must still pair the open hold_resolved (no dangling Hold),
+            # then let the stop unwind.
+            with contextlib.suppress(Exception):
+                await self._emit(
+                    "hold_resolved",
+                    "user",
+                    {"hold_id": hold_id, "resolution": "Stopped by the Packmaster"},
+                )
+            raise
         resolution = str(cmd.get("resolution") or conflict.recommended)
         await self._emit(
             "hold_resolved",
@@ -1061,6 +1107,49 @@ class Supervisor:
         )
         await self._repo.set_hunt_state(self._hunt_id, "hunting")
         return resolution
+
+    async def _alpha_decides_conflict(
+        self, conflict: Conflict, sources: list[dict]
+    ) -> tuple[str, str]:
+        """Wild mode: Alpha weighs the options against the numbered sources and returns (choice,
+        rationale). Falls back to Tracker's `recommended` (with an honest note) when Alpha can't be
+        reached / times out / returns an off-menu choice — never a blank or a hallucinated option."""
+        fallback = (
+            conflict.recommended,
+            "Auto-resolved to the recommended option — Alpha's call could not be completed.",
+        )
+        alpha = self._wolves.get("alpha")
+        if alpha is None:
+            return fallback
+        _, registry = prompt_context.numbered_sources(sources)
+        context = (
+            f"Conflict: {conflict.question}\nOptions:\n"
+            + "\n".join(f"- {o}" for o in conflict.options)
+            + (f"\n\nSources on the table:\n{registry}" if registry else "")
+        )
+        try:
+            res = await asyncio.wait_for(
+                self._dispatch(
+                    alpha,
+                    "conflict_decide",
+                    context=context,
+                    phase="thinking",
+                    response_schema=CONFLICT_DECIDE_SCHEMA,
+                ),
+                timeout=self._step_timeout,
+            )
+        except TimeoutError:
+            return fallback
+        if res.model in ("(faulted)", "(relieved)"):
+            return fallback
+        parsed = res.parsed or {}
+        choice = str(parsed.get("choice") or "").strip()
+        rationale = str(parsed.get("rationale") or res.text or "").strip()
+        # Membership check — Alpha must pick one of the OFFERED options; an off-menu paraphrase falls
+        # back to the recommended (never ship an option that wasn't on the table).
+        if choice in conflict.options and rationale:
+            return choice, rationale
+        return fallback
 
     async def find_gaps(self, merged: Merged) -> list[str]:
         """Tracker names what's still missing — the queries for a second deep-dive round."""
@@ -1094,19 +1183,53 @@ class Supervisor:
             {"step_id": "s-critique", "wolf_id": "sentinel", "summary": "Verifying the claims"},
         )
         await self.progress("sentinel", "critiquing", "Checking every claim carries a source")
-        try:
-            res = await asyncio.wait_for(
-                self._dispatch(
-                    sentinel,
-                    "critique",
-                    context=self._merged_context(merged, sources=merged.sources),
-                    phase="critiquing",
-                    response_schema=CRITIQUE_SCHEMA,
-                ),
-                timeout=self._step_timeout,
+
+        # A critique that didn't actually run must read as UNVERIFIED, not passed. The old code
+        # returned ok=True on timeout (blanket approval) and — worse — on a faulted/oversize dispatch
+        # (parsed=None) it fell through to ok=bool({}.get("ok", True))=True with confidence 0.9: a
+        # false clean bill. Both now return an honest "did not complete" verdict at confidence 0.0.
+        # The critique carries the whole merge context (all claims + registry), so it gets the same
+        # synthesis budget + one retry as merge/draft.
+        def _unverified() -> CritiqueResult:
+            # Empty `claim` so apply_critique flags the STATE (ok=False opens the standoff) without
+            # matching — and thus dropping — every claim in the brief.
+            return CritiqueResult(
+                ok=False,
+                issues=[
+                    {
+                        "claim": "",
+                        "problem": "verification did not complete — claims are unverified",
+                    }
+                ],
             )
-        except TimeoutError:
-            await self._stray_event("sentinel", "timeout", None)
+
+        res = None
+        for attempt in range(settings.synthesis_retries + 1):
+            try:
+                res = await asyncio.wait_for(
+                    self._dispatch(
+                        sentinel,
+                        "critique",
+                        context=self._merged_context(merged, sources=merged.sources),
+                        phase="critiquing",
+                        response_schema=CRITIQUE_SCHEMA,
+                    ),
+                    timeout=self._synthesis_timeout,
+                )
+                break
+            except TimeoutError:
+                if attempt < settings.synthesis_retries:
+                    await self.progress(
+                        "sentinel", "critiquing", "Still verifying — one more pass…"
+                    )
+                    continue
+                res = None
+        # Faulted/relieved dispatch returns a CompletionResult with parsed=None + empty text (no raise).
+        faulted = res is not None and res.parsed is None and not (res.text or "").strip()
+        if res is None or faulted:
+            await self._stray_event(
+                "sentinel", "timeout" if res is None else "provider_error", None
+            )
             await self._emit(
                 "step_completed",
                 "sentinel",
@@ -1117,7 +1240,7 @@ class Supervisor:
                     "confidence": 0.0,
                 },
             )
-            return CritiqueResult(ok=True, issues=[])
+            return _unverified()
         parsed = res.parsed or {}
         issues = [i for i in (parsed.get("issues") or []) if isinstance(i, dict)]
         await self._emit(
@@ -1132,11 +1255,21 @@ class Supervisor:
         )
         return CritiqueResult(ok=bool(parsed.get("ok", True)), issues=issues)
 
-    async def apply_critique(self, merged: Merged, verdict: CritiqueResult) -> Merged:
+    async def apply_critique(
+        self,
+        merged: Merged,
+        verdict: CritiqueResult,
+        *,
+        ruling: StandoffOutcome | None = None,
+    ) -> Merged:
         """Give Sentinel's verdict TEETH: deterministically drop the flagged claims from the merge
         before it reaches the draft. Pure, no model call — Sentinel's own bar is 'every claim carries
         a real, supporting source', so enforcing it in code is honest and can never invent a fact.
         Without this the verdict was theatre: a flagged claim shipped to the brief unchanged.
+
+        When Alpha adjudicated a standoff (`ruling`), its call is HONORED: a `keep`/`qualify` verdict
+        exempts the challenged claim from the drop (Alpha overruled Sentinel with a real ruling); a
+        `drop`/`unresolved`/no-ruling leaves Sentinel's deterministic removal in force.
 
         Never empties a non-empty brief — if every claim is flagged, keep the sourced ones (or the
         single strongest) so a thin-but-real hunt still drafts instead of collapsing to nothing."""
@@ -1149,10 +1282,20 @@ class Supervisor:
         if not flagged:
             return merged
         task_stop = _content_tokens(self.task)  # strip the hunt's own topic words from the match
+        # Alpha ruled to KEEP/QUALIFY the challenged claim → it is exempt from Sentinel's drop.
+        spared = (
+            ruling.claim
+            if ruling is not None and ruling.verdict in ("keep", "qualify") and ruling.claim
+            else None
+        )
         claims_src = merged.claims_src or [[] for _ in merged.claims]
         kept: list[str] = []
         kept_src: list[list[int]] = []
         for claim, src in zip(merged.claims, claims_src, strict=False):
+            if spared is not None and _claim_matches(spared, claim, task_stop):
+                kept.append(claim)  # Alpha overruled Sentinel — keep it
+                kept_src.append(src)
+                continue
             if any(_claim_matches(f, claim, task_stop) for f in flagged):
                 continue  # Sentinel flagged this one — drop it
             kept.append(claim)
@@ -1175,18 +1318,25 @@ class Supervisor:
         return replace(merged, claims=kept, claims_src=kept_src)
 
     def standoff_evidence(self, merged: Merged, issue: dict) -> str:
-        """Ground the standoff in the ACTUAL flagged claim + its backing sources, not just the
-        abstract rationale — so the challenger presses a concrete claim ("X, cited to [2]") rather
-        than a vague "a claim needs a source." Matches the flagged claim to the merge by text so the
-        real source numbers ride along; falls back to the issue's own text when no match is found."""
+        """Ground the standoff in the ACTUAL flagged claim + its backing sources + the numbered source
+        registry — so every debater presses/answers/judges a concrete claim ("X, cited to [2]") with
+        the real sources in front of it, not an abstract "a claim needs a source." Matches the flagged
+        claim to the merge (token-overlap, paraphrase-tolerant) so the real source numbers ride along;
+        falls back to the issue's own text when no match is found."""
         flagged = str(issue.get("claim") or "").strip()
+        task_stop = _content_tokens(self.task)
+        claim_line = f"The claim under challenge: {flagged}" if flagged else ""
         for claim, ids in zip(merged.claims, merged.claims_src or [], strict=False):
-            # The Sentinel echoes (a slice of) the claim it's challenging — match on containment
-            # either way so a paraphrase or a truncation still lands on the right claim.
-            if flagged and (flagged in claim or claim in flagged):
+            if flagged and _claim_matches(flagged, claim, task_stop):
                 cite = f" [cited to {', '.join(map(str, ids))}]" if ids else " [no source cited]"
-                return f"The claim under challenge: {claim}{cite}"
-        return f"The claim under challenge: {flagged}" if flagged else ""
+                claim_line = f"The claim under challenge: {claim}{cite}"
+                break
+        if not claim_line:
+            return ""
+        _, registry = prompt_context.numbered_sources(merged.sources)
+        if registry:
+            return f"{claim_line}\n\nSources on the table:\n{registry}"
+        return claim_line
 
     async def standoff(
         self,
@@ -1196,10 +1346,13 @@ class Supervisor:
         rationale: str,
         *,
         evidence: str = "",
-    ) -> None:
+        claim: str | None = None,
+    ) -> StandoffOutcome:
         """A real, bounded debate over a weak claim: the challenger presses it, the defendant
         answers, Alpha adjudicates — each a model call, each boundary-gated. `evidence`, when given,
-        grounds the challenger in the specific flagged claim + its sources (see standoff_evidence)."""
+        grounds the challenger in the specific flagged claim + its sources (see standoff_evidence).
+        Returns Alpha's RULING (keep/drop/qualify) so it actually decides the claim's fate — not just
+        narration. `claim` is the challenged claim text, threaded to apply_critique's keep-exemption."""
         sid = new_standoff_id()
         await self._repo.set_hunt_state(self._hunt_id, "standoff")
         await self._emit(
@@ -1240,16 +1393,19 @@ class Supervisor:
             {"standoff_id": sid, "turn_no": 1, "argument_summary": chal_text[:140]},
         )
 
-        # Turn 2 — the defendant answers.
+        # Turn 2 — the defendant answers, with the same evidence in front of it.
         def_text = "Fair — I'll back it with a second source."
         def_wolf = self._wolves.get(defendant)
         if def_wolf is not None:
+            defend_ctx = f"The challenge to answer: {chal_text}"
+            if evidence:
+                defend_ctx = f"{evidence}\n\n{defend_ctx}"
             try:
                 res = await asyncio.wait_for(
                     self._dispatch(
                         def_wolf,
                         "standoff_defend",
-                        context=f"The challenge to answer: {chal_text}",
+                        context=defend_ctx,
                         phase="thinking",
                     ),
                     timeout=self._step_timeout,
@@ -1263,29 +1419,56 @@ class Supervisor:
             {"standoff_id": sid, "turn_no": 2, "argument_summary": def_text[:140]},
         )
 
-        # Alpha adjudicates.
+        # Alpha adjudicates — with the evidence, the challenge, and the defense — and returns a
+        # STRUCTURED keep/drop/qualify verdict so the ruling is load-bearing (apply_critique honors it)
+        # instead of being prose the engine ignores. `judged` stays False unless Alpha actually ruled
+        # (a timeout/faulted/relieved call leaves no real verdict → "unresolved", never a fake alpha_call).
         rationale_out = "Keep the claim only once a second source backs it."
+        judged = False
+        verdict_out: str | None = None
         alpha = self._wolves.get("alpha")
         if alpha is not None:
+            judge_ctx = f"Challenge: {chal_text}\nDefense: {def_text}"
+            if evidence:
+                judge_ctx = f"{evidence}\n\n{judge_ctx}"
             try:
                 res = await asyncio.wait_for(
                     self._dispatch(
                         alpha,
                         "standoff_judge",
-                        context=f"Challenge: {chal_text}\nDefense: {def_text}",
+                        context=judge_ctx,
                         phase="thinking",
+                        response_schema=STANDOFF_JUDGE_SCHEMA,
                     ),
                     timeout=self._step_timeout,
                 )
-                rationale_out = res.text or rationale_out
+                parsed = res.parsed or {}
+                v = str(parsed.get("verdict") or "").strip().lower()
+                if res.model not in ("(faulted)", "(relieved)") and v in (
+                    "keep",
+                    "drop",
+                    "qualify",
+                ):
+                    verdict_out = v
+                    rationale_out = str(parsed.get("rationale") or res.text or rationale_out)
+                    judged = True
             except TimeoutError:
-                pass  # rationale_out stays as fallback
+                pass  # judged stays False → outcome "unresolved" below
+        if judged:
+            outcome, rationale = "alpha_call", rationale_out
+        else:
+            # Alpha never actually ruled — say so honestly and treat the claim as unverified rather
+            # than rendering a debate that looks adjudicated. (apply_critique still drops it.)
+            outcome = "unresolved"
+            rationale = "Standoff could not be adjudicated — the claim is treated as unverified."
+            await self._stray_event("alpha", "timeout", None)
         await self._emit(
             "standoff_resolved",
             "alpha",
-            {"standoff_id": sid, "outcome": "alpha_call", "rationale": rationale_out[:200]},
+            {"standoff_id": sid, "outcome": outcome, "rationale": rationale[:200]},
         )
         await self._repo.set_hunt_state(self._hunt_id, "hunting")
+        return StandoffOutcome(outcome=outcome, verdict=verdict_out, claim=claim)
 
     async def _confirm_draft(self) -> None:
         """On Command only: Alpha checks in before the final write-up so the Packmaster can add
@@ -1581,6 +1764,7 @@ class Supervisor:
                 "confidence": 0.95,
             },
         )
+        self._lead_closed = True
         # The Elder distills ONE durable, typed lesson for next time. This is a real Elder model call
         # (its prompt drives the lesson), run UNGATED — like recall, it sits outside the hunt Boundary
         # so the pack always learns something, even on a hunt that spent its budget. Best-effort: any

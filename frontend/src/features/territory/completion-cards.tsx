@@ -5,13 +5,14 @@ import type { ArtifactMeta } from '@/api/hunts'
 import { useCreateInstinct } from '@/api/instincts'
 import { buildInstinctPayload } from '../reward/lib/instinct-spec'
 import { useHuntStore } from '@/store/hunt-store'
+import { toast } from '@/store/toast-store'
 import { ChoiceCard } from './choice-card'
 import { color } from '@/lib/theme'
 
-// The design's picker is a subset of the Forge's real exports (docx == "Docs").
+// The design's picker is a subset of the Forge's real exports (docx == "Docs"). PNG deliberately
+// excluded — a flattened image of a text brief isn't a format anyone wants to "receive their result" as.
 const PICKER: Array<{ kind: string; label: string }> = [
   { kind: 'pdf', label: 'PDF' },
-  { kind: 'png', label: 'PNG' },
   { kind: 'docx', label: 'Docs' },
 ]
 
@@ -21,13 +22,13 @@ function MenuItem({ icon, label, onClick }: { icon: React.ReactNode; label: stri
       onClick={onClick}
       style={{
         display: 'flex', alignItems: 'center', gap: 10, width: '100%', textAlign: 'left',
-        background: 'none', border: 'none', color: '#D4D4D4', fontSize: 13, padding: '8px 10px',
+        background: 'none', border: 'none', color: '#4a4a4a', fontSize: 13, padding: '8px 10px',
         borderRadius: 7, cursor: 'pointer',
       }}
-      onMouseEnter={(e) => (e.currentTarget.style.background = 'rgba(255,255,255,0.05)')}
+      onMouseEnter={(e) => (e.currentTarget.style.background = 'rgba(26,26,26,0.05)')}
       onMouseLeave={(e) => (e.currentTarget.style.background = 'none')}
     >
-      <span style={{ color: '#888', display: 'flex' }}>{icon}</span>
+      <span style={{ color: '#6b6b6b', display: 'flex' }}>{icon}</span>
       {label}
     </button>
   )
@@ -39,7 +40,7 @@ function MenuItem({ icon, label, onClick }: { icon: React.ReactNode; label: stri
  * full reading view (provenance + sources) opens on demand via the reward modal.
  */
 export function CompletionCards({ huntId, onOpenReward }: { huntId: string; onOpenReward: () => void }) {
-  const { data: artifacts } = useHuntArtifacts(huntId, true)
+  const { data: artifacts, isLoading: artifactsLoading } = useHuntArtifacts(huntId, true)
   const { data: brief } = useHuntBrief(huntId, true)
   const { data: snap } = useHuntSnapshot(huntId, true)
   const download = useDownloadArtifact(huntId)
@@ -56,12 +57,25 @@ export function CompletionCards({ huntId, onOpenReward }: { huntId: string; onOp
   const title = (snap?.task ?? 'Your brief').slice(0, 48)
 
   if (stage === 'pick') {
+    // Only advance past the picker once the download is actually underway — a missing/not-yet-loaded
+    // artifact used to silently no-op and still flip to the result stage, discarding the picker with
+    // no file and no way back. Now it stays put and says why, so the Packmaster can pick another
+    // format (the Forge renders each export independently — a hunt can genuinely be missing one).
     const submit = () => {
-      if (sel != null) {
-        const art = artFor(PICKER[sel].kind)
-        if (art) download.mutate(art)
+      if (sel == null) {
+        setStage('result')
+        return
       }
-      setStage('result')
+      if (artifactsLoading) {
+        toast({ title: 'Still finishing up the exports — try again in a moment.', variant: 'warn' })
+        return
+      }
+      const art = artFor(PICKER[sel].kind)
+      if (!art) {
+        toast({ title: `No ${PICKER[sel].label} export for this hunt — try another format.`, variant: 'warn' })
+        return
+      }
+      download.mutate(art, { onSuccess: () => setStage('result') })
     }
     return (
       <ChoiceCard
@@ -96,7 +110,7 @@ export function CompletionCards({ huntId, onOpenReward }: { huntId: string; onOp
 
   return (
     <div style={{ margin: 12 }}>
-      <p style={{ margin: '0 0 10px', fontSize: 13, color: '#D4D4D4', lineHeight: 1.6 }}>
+      <p style={{ margin: '0 0 10px', fontSize: 13, color: '#4a4a4a', lineHeight: 1.6 }}>
         The hunt is done. Here's what the pack brought back.
       </p>
 
@@ -111,7 +125,7 @@ export function CompletionCards({ huntId, onOpenReward }: { huntId: string; onOp
           padding: '12px 14px', display: 'flex', alignItems: 'center', gap: 12, cursor: 'pointer',
         }}
         onMouseEnter={(e) => (e.currentTarget.style.borderColor = '#5a5a5a')}
-        onMouseLeave={(e) => (e.currentTarget.style.borderColor = '#404040')}
+        onMouseLeave={(e) => (e.currentTarget.style.borderColor = '#dcdcd8')}
       >
         <span
           style={{
@@ -125,11 +139,11 @@ export function CompletionCards({ huntId, onOpenReward }: { huntId: string; onOp
           <p style={{ margin: 0, fontSize: 14, fontWeight: 600, color: color.text, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
             {title}
           </p>
-          <p style={{ margin: '2px 0 0', fontSize: 12, color: '#888' }}>Open to read the full brief →</p>
+          <p style={{ margin: '2px 0 0', fontSize: 12, color: '#6b6b6b' }}>Open to read the full brief →</p>
         </div>
         <button
           onClick={(e) => { e.stopPropagation(); setMenuOpen((v) => !v) }}
-          style={{ background: 'none', border: 'none', color: '#888', cursor: 'pointer', padding: 4, display: 'flex' }}
+          style={{ background: 'none', border: 'none', color: '#6b6b6b', cursor: 'pointer', padding: 4, display: 'flex' }}
           aria-label="More"
         >
           <MoreVertical size={18} />
@@ -146,7 +160,7 @@ export function CompletionCards({ huntId, onOpenReward }: { huntId: string; onOp
               style={{
                 position: 'absolute', top: '100%', right: 8, marginTop: 4, background: color.borderSubtle,
                 border: `1px solid ${color.border}`, borderRadius: 10, padding: 4, minWidth: 156, zIndex: 20,
-                boxShadow: '0 8px 24px rgba(0,0,0,0.5)',
+                boxShadow: '0 8px 24px rgba(26,26,26,0.14)',
               }}
             >
               <MenuItem icon={<Download size={14} />} label="Download" onClick={doDownload} />

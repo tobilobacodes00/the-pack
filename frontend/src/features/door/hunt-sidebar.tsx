@@ -23,8 +23,8 @@ function RowMenu({ items, onClose }: { items: Array<{ label: string; danger?: bo
       <div
         style={{
           position: 'absolute', top: '100%', right: 8, marginTop: 2, zIndex: 41,
-          background: color.borderSubtle, border: '1px solid #404040', borderRadius: 10, padding: 4,
-          minWidth: 150, boxShadow: '0 8px 24px rgba(0,0,0,0.5)',
+          background: color.borderSubtle, border: `1px solid ${color.border}`, borderRadius: 10, padding: 4,
+          minWidth: 150, boxShadow: '0 8px 24px rgba(26,26,26,0.14)',
         }}
       >
         {items.map((it) => (
@@ -33,10 +33,10 @@ function RowMenu({ items, onClose }: { items: Array<{ label: string; danger?: bo
             onClick={(e) => { e.stopPropagation(); it.onClick(); onClose() }}
             style={{
               display: 'flex', width: '100%', textAlign: 'left', background: 'none', border: 'none',
-              color: it.danger ? '#EF4444' : '#D4D4D4', fontSize: 13, padding: '8px 10px',
+              color: it.danger ? '#EF4444' : '#3a3a3a', fontSize: 13, padding: '8px 10px',
               borderRadius: 7, cursor: 'pointer',
             }}
-            onMouseEnter={(e) => (e.currentTarget.style.background = 'rgba(255,255,255,0.05)')}
+            onMouseEnter={(e) => (e.currentTarget.style.background = 'rgba(26,26,26,0.05)')}
             onMouseLeave={(e) => (e.currentTarget.style.background = 'none')}
           >
             {it.label}
@@ -56,9 +56,9 @@ function Header({ onCollapse }: { onCollapse: () => void }) {
         className="flex items-center gap-3 flex-1 text-left hover:opacity-80 transition-opacity"
       >
         <img src="/pack-logo.svg" className="w-[20px] h-[24px]" alt="Pack" />
-        <span className="text-sm font-semibold text-white tracking-wide">The Pack</span>
+        <span className="text-sm font-semibold text-ink-900 tracking-wide">A Pack</span>
       </button>
-      <button onClick={onCollapse} className="p-1 opacity-70 hover:opacity-100 transition-opacity text-text-dim hover:text-white" aria-label="Collapse sidebar">
+      <button onClick={onCollapse} className="p-1 opacity-70 hover:opacity-100 transition-opacity text-text-dim hover:text-ink-900" aria-label="Collapse sidebar">
         <PanelLeft size={18} />
       </button>
     </div>
@@ -76,7 +76,7 @@ function Tabs({ tab, setTab }: { tab: 'hunts' | 'instincts'; setTab: (t: 'hunts'
           style={
             tab === t
               ? { background: color.raised, color: color.text }
-              : { background: 'none', color: '#7A7A7A' }
+              : { background: 'none', color: '#6b6b6b' }
           }
         >
           {t === 'hunts' ? 'Past Hunts' : 'Saved instincts'}
@@ -115,13 +115,13 @@ export function HuntSidebar({ onCollapse }: Props) {
   const hunts = huntData?.hunts ?? []
 
   return (
-    <div className="w-[300px] h-full flex flex-col min-h-0" style={{ background: color.surface, borderRight: '1px solid #404040' }}>
+    <div className="w-[300px] h-full flex flex-col min-h-0" style={{ background: color.surface, borderRight: `1px solid ${color.border}` }}>
       <Header onCollapse={onCollapse} />
       
       <div className="px-3 pt-4 pb-1">
         <button
           onClick={() => navigate('/')}
-          className="w-full flex items-center gap-2.5 rounded-lg px-3 py-2 text-[13.5px] font-medium text-text bg-[rgba(255,255,255,0.04)] hover:bg-[rgba(255,255,255,0.08)] transition-colors border"
+          className="w-full flex items-center gap-2.5 rounded-lg px-3 py-2 text-[13.5px] font-medium text-text bg-[rgba(26,26,26,0.04)] hover:bg-[rgba(26,26,26,0.08)] transition-colors border"
           style={{ borderColor: color.border }}
         >
           <SquarePen size={16} className="text-text-dim" />
@@ -130,7 +130,7 @@ export function HuntSidebar({ onCollapse }: Props) {
       </div>
 
       <Tabs tab={tab} setTab={setTab} />
-      <div className="h-px mx-3" style={{ background: '#282828' }} />
+      <div className="h-px mx-3" style={{ background: color.border }} />
 
       {tab === 'hunts' ? (
         hunts.length === 0 && !huntsLoading ? (
@@ -142,11 +142,11 @@ export function HuntSidebar({ onCollapse }: Props) {
               <div
                 key={h.hunt_id}
                 onClick={() => navigate(`/hunts/${h.hunt_id}`)}
-                className="group relative flex items-center gap-2 rounded-lg px-2.5 py-2 cursor-pointer transition-colors hover:bg-[rgba(255,255,255,0.05)]"
+                className="group relative flex items-center gap-2 rounded-lg px-2.5 py-2 cursor-pointer transition-colors hover:bg-cream-100"
               >
                 <div className="min-w-0 flex-1">
                   <p className="truncate text-[13.5px] font-medium text-text">{h.title}</p>
-                  <p className="text-[11.5px] text-[#7A7A7A]">
+                  <p className="text-[11.5px] text-ink-500">
                     {formatRelative(h.created_at)} · {spent(h.cost_usd)} spent
                   </p>
                 </div>
@@ -193,7 +193,7 @@ export function HuntSidebar({ onCollapse }: Props) {
           {(instincts ?? []).map((it) => (
             <div
               key={it.instinct_id}
-              className="group relative flex items-center gap-2 rounded-lg px-2.5 py-2 transition-colors hover:bg-[rgba(255,255,255,0.05)]"
+              className="group relative flex items-center gap-2 rounded-lg px-2.5 py-2 transition-colors hover:bg-cream-100"
             >
               <p className="min-w-0 flex-1 truncate text-[13.5px] font-medium text-text">{it.label}</p>
               <button
@@ -203,7 +203,7 @@ export function HuntSidebar({ onCollapse }: Props) {
                     { onSuccess: (r) => navigate(`/hunts/${r.hunt_id}`) },
                   )
                 }
-                className="shrink-0 rounded-full border px-2.5 py-1 text-[11.5px] text-[#D4D4D4] hover:text-white"
+                className="shrink-0 rounded-full border px-2.5 py-1 text-[11.5px] text-ink-700 hover:text-ink-900"
                 style={{ borderColor: color.border }}
               >
                 Use This
@@ -223,13 +223,13 @@ export function HuntSidebar({ onCollapse }: Props) {
       <div className="mt-auto border-t px-2 py-2 flex flex-col gap-0.5" style={{ borderColor: color.border }}>
         <button
           onClick={() => navigate('/instincts')}
-          className="flex items-center gap-3 rounded-lg px-3 py-2 text-[13px] text-[#D4D4D4] hover:bg-[rgba(255,255,255,0.05)] transition-colors"
+          className="flex items-center gap-3 rounded-lg px-3 py-2 text-[13px] text-ink-700 hover:bg-cream-100 transition-colors"
         >
           <Bookmark size={16} className="text-muted" /> Saved Instincts
         </button>
         <button
           onClick={() => navigate('/settings')}
-          className="flex items-center gap-3 rounded-lg px-3 py-2 text-[13px] text-[#D4D4D4] hover:bg-[rgba(255,255,255,0.05)] transition-colors"
+          className="flex items-center gap-3 rounded-lg px-3 py-2 text-[13px] text-ink-700 hover:bg-cream-100 transition-colors"
         >
           <Settings size={16} className="text-muted" /> App Settings
         </button>

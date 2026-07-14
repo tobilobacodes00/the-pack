@@ -1,5 +1,3 @@
-import { color } from '@/lib/theme'
-
 export type ChatMessage = {
   id?: string
   role: 'user' | 'alpha'
@@ -18,7 +16,7 @@ function ThinkingDots() {
         <span
           key={i}
           className="w-1.5 h-1.5 rounded-full animate-pulse"
-          style={{ backgroundColor: '#555', animationDelay: `${i * 200}ms` }}
+          style={{ backgroundColor: '#9a9a9a', animationDelay: `${i * 200}ms` }}
         />
       ))}
     </div>
@@ -33,21 +31,15 @@ export function MessageBubble({ message }: Props) {
     return message.isThinking ? (
       <ThinkingDots />
     ) : (
-      <p
-        className="text-sm leading-relaxed whitespace-pre-wrap"
-        style={{ color: '#c8c8c8' }}
-      >
+      <p className="text-sm leading-relaxed whitespace-pre-wrap text-ink-700">
         {message.text}
       </p>
     )
   }
 
-  // User turns sit in a bordered bubble.
+  // User turns sit in a warm chunky bubble — reads on cream in both intake and territory.
   return (
-    <div
-      className="rounded-xl px-3.5 py-2.5 text-sm leading-relaxed whitespace-pre-wrap"
-      style={{ backgroundColor: color.surface, border: '1px solid #262626', color: '#f0f0f0' }}
-    >
+    <div className="rounded-2xl px-3.5 py-2.5 text-sm leading-relaxed whitespace-pre-wrap bg-cream-100 border-[1.5px] border-ink-900 text-ink-900">
       {message.text}
     </div>
   )

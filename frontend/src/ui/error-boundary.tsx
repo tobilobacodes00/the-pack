@@ -45,7 +45,7 @@ function Fallback({ error, onReset }: { error: Error; onReset: () => void }) {
         </button>
         <button
           onClick={() => window.location.assign('/')}
-          className="rounded-full bg-text px-4 py-1.5 text-xs font-medium text-canvas"
+          className="rounded-full bg-brand-500 px-4 py-1.5 text-xs font-medium text-white"
         >
           Go home
         </button>

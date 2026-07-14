@@ -12,20 +12,26 @@ from __future__ import annotations
 
 import re
 
-_MAX_DOCS = 3
-_PER_DOC = 1200  # chars of a doc injected
-_BUDGET = 3000  # total chars across all injected docs (keeps context bounded)
+from app.engine.prompt_context import depth_mult
+
+_MAX_DOCS = 4  # standard base — scaled by depth in select_relevant
+_PER_DOC = 1800  # chars of a doc injected
+_BUDGET = 5000  # total chars across all injected docs (keeps context bounded), standard base
 
 
 def _words(text: str) -> set[str]:
     return {w for w in re.split(r"[^a-z0-9]+", (text or "").lower()) if len(w) > 2}
 
 
-def select_relevant(docs: list[dict], task: str) -> list[dict]:
-    """Pick the docs sharing keywords with the task; return them as injectable source dicts."""
+def select_relevant(docs: list[dict], task: str, depth: str = "standard") -> list[dict]:
+    """Pick the docs sharing keywords with the task; return them as injectable source dicts. Deeper
+    hunts carry more library ground (more docs, larger budget)."""
     task_words = _words(task)
     if not task_words:
         return []
+    # int() cast is mandatory — depth_mult returns a float and a float slice/count is a TypeError.
+    max_docs = max(1, int(_MAX_DOCS * depth_mult(depth)))
+    budget = int(_BUDGET * depth_mult(depth))
     scored: list[tuple[int, dict]] = []
     for d in docs:
         overlap = len(task_words & _words(str(d.get("text") or "")))
@@ -35,10 +41,10 @@ def select_relevant(docs: list[dict], task: str) -> list[dict]:
 
     out: list[dict] = []
     used = 0
-    for _score, d in scored[:_MAX_DOCS]:
+    for _score, d in scored[:max_docs]:
         excerpt = str(d.get("text") or "")[:_PER_DOC]
-        if used + len(excerpt) > _BUDGET:
-            excerpt = excerpt[: max(0, _BUDGET - used)]
+        if used + len(excerpt) > budget:
+            excerpt = excerpt[: max(0, budget - used)]
         if not excerpt:
             break
         used += len(excerpt)

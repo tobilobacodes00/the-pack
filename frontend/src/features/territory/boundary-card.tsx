@@ -30,7 +30,7 @@ export function BoundaryCard({ huntId, boundary }: { huntId: string; boundary: B
           step={1}
           value={amount}
           onChange={(e) => setAmount(Number(e.target.value))}
-          style={{ width: 90, background: '#111', border: `1px solid ${color.border}`, borderRadius: 8, color: '#fff', fontSize: 13, padding: '6px 10px', outline: 'none' }}
+          style={{ width: 90, background: '#ffffff', border: `1px solid ${color.border}`, borderRadius: 8, color: '#1a1a1a', fontSize: 13, padding: '6px 10px', outline: 'none' }}
         />
       </div>
 

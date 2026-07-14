@@ -15,10 +15,15 @@ export function useHuntStream(huntId: string | null, options?: UseHuntStreamOpti
   const store = useHuntStoreApi()
   const dispatch = useHuntStore((s) => s.dispatch)
   const lastSeqRef = useRef(-1)
-  const { onStatus } = options ?? {}
+  // Read the LATEST onStatus via a ref, not the effect's dep array — an inline arrow function passed
+  // as `options.onStatus` (e.g. `useHuntStream(id, { onStatus: (s) => setStatus(s) })`) is a new
+  // reference every render; putting it in deps would tear down and reconnect the socket every render.
+  const onStatusRef = useRef(options?.onStatus)
+  onStatusRef.current = options?.onStatus
 
   useEffect(() => {
     if (!huntId) return
+    const onStatus = (s: Status) => onStatusRef.current?.(s)
     // If the store already holds THIS hunt (e.g. returning from the Den), resume from its last seq
     // instead of replaying from 0 — a full replay re-runs hunt_created→idle→…→done and flashes the
     // idle pack. A fresh/other hunt (no match) still replays from the top.
@@ -82,5 +87,5 @@ export function useHuntStream(huntId: string | null, options?: UseHuntStreamOpti
       if (timer !== null) clearTimeout(timer)
       ws?.close(1000)
     }
-  }, [huntId, dispatch, onStatus, store])
+  }, [huntId, dispatch, store])
 }

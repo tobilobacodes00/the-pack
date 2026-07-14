@@ -1,4 +1,4 @@
-// Reusable scroll-parallax primitive for The Pack's window-scrolled landing.
+// Reusable scroll-parallax primitive for A Pack's window-scrolled landing.
 // framer-motion v11. Compositor-only: translateY / opacity / scale — no layout/paint per frame.
 // PURE PASS-THROUGH NO-OP when useReducedMotion() is true: no motion values attach, so every layer
 // renders at its natural CSS resting position (translate 0, class opacity).

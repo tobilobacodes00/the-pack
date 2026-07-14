@@ -10,7 +10,7 @@ import {
 import { IdleGlyph } from '@/features/territory/agent-glyph'
 import { ROLE_DESC } from '@/features/territory/roles'
 import { PackCanvas, type PackDrive } from './pack-canvas'
-import { PACK_SLOTS, BASE_SCALE, PHASE, slotScreen, spreadAt, lerp, smoothstep } from './pack-formation'
+import { PACK_SLOTS, PACK_ACCENT, BASE_SCALE, PHASE, slotScreen, spreadAt, lerp, smoothstep } from './pack-formation'
 
 /**
  * PackReveal — ONE wolf's journey, a fixed full-viewport scene driven by continuous scroll.
@@ -37,6 +37,7 @@ const USE_CASES = [
 function Caption({ role, capOpacity }: { role: string; capOpacity: MotionValue<number> }) {
   const slot = PACK_SLOTS.find((s) => s.role === role)!
   const { leftPct, topPct } = slotScreen(slot)
+  const accent = PACK_ACCENT[role]
   const headVh = slot.scale * BASE_SCALE * 0.76 * 100
   // Clear breathing room above the head (icon) and below it (note) — never crowding the face.
   const badgeTop = topPct - (headVh / 2 + 4.5)
@@ -49,14 +50,18 @@ function Caption({ role, capOpacity }: { role: string; capOpacity: MotionValue<n
         className="pointer-events-none absolute -translate-x-1/2"
         style={{ left: `${leftPct}%`, top: `${badgeTop}vh`, opacity: capOpacity }}
       >
-        <IdleGlyph role={role} tone="active" size={badgeSize} />
+        <IdleGlyph role={role} tone="active" size={badgeSize} accent={accent?.ring} outline />
       </motion.div>
       <motion.div
         className="pointer-events-none absolute w-[190px] -translate-x-1/2 text-center"
         style={{ left: `${leftPct}%`, top: `${noteTop}vh`, opacity: capOpacity }}
       >
-        <p className="text-[13px] font-semibold capitalize tracking-wide text-text">{role}</p>
-        <p className="mt-1 text-[11.5px] leading-snug text-text-faint">{ROLE_DESC[role]}</p>
+        <p className="text-[13px] font-bold capitalize tracking-wide font-display" style={{ color: accent?.ink }}>
+          {role}
+        </p>
+        <p className="mx-auto mt-1.5 inline-block rounded-lg px-2 py-1 text-[11.5px] leading-snug text-ink-700" style={{ backgroundColor: accent?.wash }}>
+          {ROLE_DESC[role]}
+        </p>
       </motion.div>
     </>
   )
@@ -69,7 +74,7 @@ function UseCase({ text, valueMv, i }: { text: string; valueMv: MotionValue<numb
   const y = useTransform(valueMv, [from, from + 0.4], [26, 0])
   return (
     <motion.p
-      className="text-3xl font-semibold leading-[1.1] tracking-tight text-text md:text-[2.7rem]"
+      className="text-3xl font-bold leading-[1.1] tracking-tight text-ink-900 font-display md:text-[2.7rem]"
       style={{ opacity, y, willChange: 'transform, opacity' }}
     >
       {text}
@@ -99,8 +104,8 @@ function StageInner({
 
       {/* Section kicker — introduces the pack while it's on show. */}
       <motion.div className="absolute left-1/2 top-[3vh] z-20 -translate-x-1/2 px-6 text-center" style={{ opacity: kickerOpacity }}>
-        <p className="text-[11px] font-semibold uppercase tracking-[0.28em] text-text-faint">Meet the pack</p>
-        <h2 className="mt-3 text-3xl font-semibold tracking-tight text-text md:text-4xl">One request. A whole team on it.</h2>
+        <p className="text-[11px] font-semibold uppercase tracking-[0.28em] text-ink-500">Meet the pack</p>
+        <h2 className="mt-3 text-3xl font-extrabold tracking-tight font-display text-ink-900 md:text-4xl">One request. A whole team on it.</h2>
       </motion.div>
 
       {/* Floating role icons + notes, over each wolf. */}
@@ -112,7 +117,7 @@ function StageInner({
       <div className="absolute inset-y-0 right-0 flex w-full items-center justify-end pr-6 md:w-[52%] md:pr-16">
         <div className="max-w-xl">
           <motion.p
-            className="mb-8 text-[11px] font-semibold uppercase tracking-[0.28em] text-accent"
+            className="mb-8 text-[11px] font-semibold uppercase tracking-[0.28em] text-brand-600"
             style={{ opacity: valueKickerOpacity }}
           >
             What you can use it for
@@ -130,18 +135,23 @@ function StageInner({
 
 /** Static, fully-legible layout for reduced-motion: the triangle + the use-cases, in flow. */
 function StaticFallback() {
-  const Head = ({ role, size = 96 }: { role: string; size?: number }) => (
-    <div className="flex w-[200px] flex-col items-center">
-      <IdleGlyph role={role} tone="active" size={size} />
-      <p className="mt-3 text-[13px] font-semibold capitalize text-text">{role}</p>
-      <p className="mt-1 text-center text-[11.5px] leading-snug text-text-faint">{ROLE_DESC[role]}</p>
-    </div>
-  )
+  const Head = ({ role, size = 96 }: { role: string; size?: number }) => {
+    const accent = PACK_ACCENT[role]
+    return (
+      <div className="flex w-[200px] flex-col items-center">
+        <IdleGlyph role={role} tone="active" size={size} accent={accent?.ring} outline />
+        <p className="mt-3 text-[13px] font-bold capitalize font-display" style={{ color: accent?.ink }}>{role}</p>
+        <p className="mt-1.5 rounded-lg px-2 py-1 text-center text-[11.5px] leading-snug text-ink-700" style={{ backgroundColor: accent?.wash }}>
+          {ROLE_DESC[role]}
+        </p>
+      </div>
+    )
+  }
   const rows: string[][] = [['alpha'], ['beta', 'elder'], ['scout', 'tracker', 'sentinel', 'howler']]
   return (
     <div className="mx-auto max-w-6xl px-6 py-24">
-      <p className="text-[11px] font-semibold uppercase tracking-[0.28em] text-text-faint">The pack</p>
-      <h2 className="mt-3 text-3xl font-semibold tracking-tight text-text md:text-4xl">One request. A whole team on it.</h2>
+      <p className="text-[11px] font-semibold uppercase tracking-[0.28em] text-ink-500">The pack</p>
+      <h2 className="mt-3 text-3xl font-extrabold tracking-tight text-ink-900 font-display md:text-4xl">One request. A whole team on it.</h2>
       <div className="mt-14 flex flex-col items-center gap-12">
         {rows.map((row, i) => (
           <div key={i} className="flex flex-wrap justify-center gap-x-8 gap-y-10">
@@ -152,10 +162,10 @@ function StaticFallback() {
         ))}
       </div>
       <div className="mt-20">
-        <p className="text-[11px] font-semibold uppercase tracking-[0.28em] text-accent">What you can use it for</p>
+        <p className="text-[11px] font-semibold uppercase tracking-[0.28em] text-brand-600">What you can use it for</p>
         <div className="mt-6 flex flex-col gap-4">
           {USE_CASES.map((t) => (
-            <p key={t} className="text-3xl font-semibold leading-tight tracking-tight text-text md:text-4xl">
+            <p key={t} className="text-3xl font-bold leading-tight tracking-tight text-ink-900 font-display md:text-4xl">
               {t}
             </p>
           ))}
@@ -168,7 +178,7 @@ function StaticFallback() {
 export function PackReveal(): ReactNode {
   const reduce = useReducedMotion() ?? false
   const trackRef = useRef<HTMLDivElement>(null)
-  const driveRef = useRef<PackDrive>({ spread: 0, presence: 0.34, alphaX: 0, alphaY: 0, alphaScaleMul: 1 })
+  const driveRef = useRef<PackDrive>({ spread: 0, presence: 0.34, alphaX: 0, alphaY: 0, alphaScaleMul: 1, warm: 1 })
   const valueMv = useMotionValue(0)
   const { scrollYProgress } = useScroll({ target: trackRef, offset: ['start start', 'end end'] })
 
@@ -189,6 +199,7 @@ export function PackReveal(): ReactNode {
       let alphaY = 0
       let alphaScaleMul = 1
       let value = 0
+      // The whole door is cream now, so every wolf renders as a forest-ink emblem (warm = 1).
       if (past <= 0) {
         // Hero: a big, faint lone wolf, centred.
         spread = 0
@@ -212,7 +223,7 @@ export function PackReveal(): ReactNode {
         alphaScaleMul = lerp(0.8, 0.22, rt) // shrink to logo size
         presence = 0.95 * (1 - smoothstep(0.45, 1, rt))
       }
-      driveRef.current = { spread, presence: clamp01(presence), alphaX, alphaY, alphaScaleMul }
+      driveRef.current = { spread, presence: clamp01(presence), alphaX, alphaY, alphaScaleMul, warm: 1 }
       valueMv.set(clamp01(value))
     }
     const onScroll = () => {
@@ -232,8 +243,9 @@ export function PackReveal(): ReactNode {
   }, [reduce, valueMv])
 
   if (reduce) {
+    // No scroll driver: a static cream section (the page itself is cream via door-page).
     return (
-      <section className="cv-auto border-t border-border-subtle">
+      <section className="cv-auto border-t border-ink-900/10 bg-cream-50">
         <StaticFallback />
       </section>
     )
@@ -241,7 +253,7 @@ export function PackReveal(): ReactNode {
 
   return (
     <>
-      <section ref={trackRef} data-pack-reveal aria-hidden className="relative border-t border-border-subtle" style={{ height: '440vh' }} />
+      <section ref={trackRef} data-pack-reveal aria-hidden className="relative border-t border-ink-900/10" style={{ height: '440vh' }} />
       <div className="pointer-events-none fixed inset-0 z-0">
         <StageInner progress={scrollYProgress} valueMv={valueMv} driveRef={driveRef} observeRef={trackRef} />
       </div>

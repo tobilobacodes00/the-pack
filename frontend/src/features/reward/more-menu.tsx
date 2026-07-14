@@ -22,7 +22,7 @@ function Item({
   return (
     <DropdownMenu.Item
       onSelect={onSelect}
-      className="flex cursor-pointer items-center gap-2.5 rounded-lg px-2.5 py-2 text-[13px] text-[#D8D8D8] outline-none data-[highlighted]:bg-[#2A2A2A] data-[highlighted]:text-text"
+      className="flex cursor-pointer items-center gap-2.5 rounded-lg px-2.5 py-2 text-[13px] text-ink-700 outline-none data-[highlighted]:bg-cream-100 data-[highlighted]:text-text"
     >
       <span className="text-muted">{icon}</span>
       {label}
@@ -42,12 +42,12 @@ export function MoreMenu({ onSaveInstinct, onScorecard, onTracks, onRefine }: Pr
         <DropdownMenu.Content
           align="end"
           sideOffset={6}
-          className="z-[70] min-w-[184px] rounded-xl border border-[#2E2E2E] bg-[#1C1C1C] p-1.5 shadow-[0_16px_48px_rgba(0,0,0,0.5)]"
+          className="z-[70] min-w-[184px] rounded-xl border border-border bg-white p-1.5 shadow-soft"
         >
           <Item icon={<Bookmark size={15} />} label="Save as Instinct" onSelect={onSaveInstinct} />
           <Item icon={<BarChart3 size={15} />} label="Scorecard" onSelect={onScorecard} />
           <Item icon={<ListTree size={15} />} label="Tracks" onSelect={onTracks} />
-          <DropdownMenu.Separator className="my-1 h-px bg-[#2A2A2A]" />
+          <DropdownMenu.Separator className="my-1 h-px bg-border" />
           <Item icon={<Sparkles size={15} />} label="Refine" onSelect={onRefine} />
         </DropdownMenu.Content>
       </DropdownMenu.Portal>

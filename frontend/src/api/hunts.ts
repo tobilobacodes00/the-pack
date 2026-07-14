@@ -100,6 +100,8 @@ export function useApprovePlan(huntId: string) {
     mutationFn: async (body: {
       mode: 'wild' | 'on_signal' | 'on_command'
       boundary_usd: number
+      // v3: the user's depth choice from the plan card (brief|standard|deep). Omitted → keep Beta's.
+      depth?: 'brief' | 'standard' | 'deep'
       // Formation edits from the Edit panel — the backend `_apply_edits` seam. `team` respawns the
       // pack; `notes` is a per-wolf handler note keyed by wolf_id (scout-4, tracker-2, …).
       edits?: {

@@ -17,9 +17,9 @@ export function TracksTimeline({ items }: Props) {
             style={{ background: it.color }}
           />
           <div className="min-w-0">
-            <p className="text-[13px] font-semibold text-[#EDEDED]">{it.title}</p>
+            <p className="text-[13px] font-semibold text-ink-900">{it.title}</p>
             {it.detail && (
-              <p className="mt-0.5 text-[12.5px] leading-snug text-[#9A9A9A]">{it.detail}</p>
+              <p className="mt-0.5 text-[12.5px] leading-snug text-ink-500">{it.detail}</p>
             )}
           </div>
         </div>

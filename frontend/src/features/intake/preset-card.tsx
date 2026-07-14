@@ -35,12 +35,11 @@ export function PresetCard({ preset, onClick }: Props) {
   return (
     <button
       onClick={onClick}
-      className="text-left rounded-xl px-4 py-3.5 cursor-pointer transition-colors
-                 border border-[rgba(255,255,255,0.08)] hover:border-[rgba(255,255,255,0.15)]"
-      style={{ backgroundColor: '#111111' }}
+      className="text-left rounded-2xl px-4 py-3.5 cursor-pointer bg-white border-[2.5px] border-ink-900
+                 shadow-chunk-sm transition-all hover:-translate-y-0.5 hover:shadow-chunk"
     >
-      <p className="text-sm font-medium text-white">{preset.title}</p>
-      <p className="text-xs mt-1 leading-snug" style={{ color: '#666' }}>{preset.desc}</p>
+      <p className="text-sm font-bold font-display text-ink-900">{preset.title}</p>
+      <p className="text-xs mt-1 leading-snug text-ink-500">{preset.desc}</p>
     </button>
   )
 }

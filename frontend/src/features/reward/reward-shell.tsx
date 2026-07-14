@@ -32,7 +32,7 @@ export function RewardShell({ open, onClose, header, children, drawer, overlay }
                 animate={{ opacity: 1 }}
                 exit={{ opacity: 0 }}
                 transition={{ duration: 0.2 }}
-                className="fixed inset-0 z-50 bg-black/70 backdrop-blur-sm"
+                className="fixed inset-0 z-50 bg-[rgba(26,26,26,0.45)] backdrop-blur-sm"
               />
             </RadixDialog.Overlay>
             <RadixDialog.Content asChild forceMount aria-describedby={undefined}>
@@ -41,7 +41,7 @@ export function RewardShell({ open, onClose, header, children, drawer, overlay }
                 animate={{ opacity: 1, scale: 1, y: 0 }}
                 exit={{ opacity: 0, scale: 0.98, y: 10 }}
                 transition={{ duration: 0.28, ease: EASE }}
-                className="fixed left-1/2 top-1/2 z-50 flex h-[min(88vh,880px)] w-[min(1040px,94vw)] -translate-x-1/2 -translate-y-1/2 flex-col overflow-hidden rounded-2xl border border-[#242424] bg-[#161616] shadow-[0_24px_80px_rgba(0,0,0,0.6)]"
+                className="fixed left-1/2 top-1/2 z-50 flex h-[min(88vh,880px)] w-[min(1040px,94vw)] -translate-x-1/2 -translate-y-1/2 flex-col overflow-hidden rounded-2xl border border-border bg-white shadow-soft"
               >
                 <RadixDialog.Title className="sr-only">The Reward</RadixDialog.Title>
                 {header}

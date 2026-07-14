@@ -41,9 +41,9 @@ export function AgentPalette({ ed }: { ed: FormationEditorApi }) {
               <IdleGlyph role={role} size={40} />
               <div style={{ flex: 1, minWidth: 0 }}>
                 <p style={{ margin: 0, fontSize: 14, fontWeight: 600, color: color.text, textTransform: 'capitalize' }}>
-                  {role} <span style={{ color: '#727272', fontWeight: 500 }}>{cap.count}/{cap.max}</span>
+                  {role} <span style={{ color: '#6b6b6b', fontWeight: 500 }}>{cap.count}/{cap.max}</span>
                 </p>
-                <p style={{ margin: '2px 0 0', fontSize: 11, color: '#888', lineHeight: 1.4, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                <p style={{ margin: '2px 0 0', fontSize: 11, color: '#6b6b6b', lineHeight: 1.4, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                   {ROLE_DESC[role] ?? ''}
                 </p>
               </div>
@@ -75,14 +75,14 @@ export function AgentPalette({ ed }: { ed: FormationEditorApi }) {
       {/* Selected-agent inspector */}
       <div style={{ borderTop: `1px solid ${color.border}`, padding: 16, minHeight: 132 }}>
         {!info ? (
-          <p style={{ margin: 0, fontSize: 13, color: '#727272', lineHeight: 1.5 }}>
+          <p style={{ margin: 0, fontSize: 13, color: '#6b6b6b', lineHeight: 1.5 }}>
             Select an added agent on the canvas to write its note.
           </p>
         ) : info.added ? (
           <>
             <p style={{ margin: '0 0 8px', fontSize: 13, color: color.text }}>
               Note for <span style={{ fontWeight: 600, textTransform: 'capitalize' }}>{info.role}</span>{' '}
-              <span style={{ color: '#727272' }}>({info.wolfId})</span>
+              <span style={{ color: '#6b6b6b' }}>({info.wolfId})</span>
             </p>
             <textarea
               value={info.note}
@@ -90,8 +90,8 @@ export function AgentPalette({ ed }: { ed: FormationEditorApi }) {
               placeholder="e.g. focus on primary sources from the last 6 months"
               rows={3}
               style={{
-                width: '100%', resize: 'none', background: '#111111', border: `1px solid ${color.border}`,
-                borderRadius: 10, color: '#fff', fontSize: 13, padding: '8px 10px', outline: 'none',
+                width: '100%', resize: 'none', background: '#ffffff', border: `1px solid ${color.border}`,
+                borderRadius: 10, color: '#1a1a1a', fontSize: 13, padding: '8px 10px', outline: 'none',
                 fontFamily: 'inherit', lineHeight: 1.4,
               }}
             />

@@ -46,11 +46,11 @@ type Badge = { label: string; color: string; bg: string; border: string; spinner
 function statusBadge(status: HuntStatus): Badge | null {
   switch (status) {
     case 'idle':
-      return { label: 'Ready to hunt', color: '#A3A3A3', bg: '#272727', border: '#404040' }
+      return { label: 'Ready to hunt', color: '#6b6b6b', bg: '#f2f2f0', border: '#dcdcd8' }
     case 'planning':
-      return { label: 'Forming the pack…', color: '#A3A3A3', bg: '#272727', border: '#404040', spinner: true }
+      return { label: 'Forming the pack…', color: '#6b6b6b', bg: '#f2f2f0', border: '#dcdcd8', spinner: true }
     case 'plan_ready':
-      return { label: 'Ready to hunt', color: '#A3A3A3', bg: '#272727', border: '#404040' }
+      return { label: 'Ready to hunt', color: '#6b6b6b', bg: '#f2f2f0', border: '#dcdcd8' }
     case 'running':
     case 'hold':
     case 'standoff':
@@ -61,7 +61,7 @@ function statusBadge(status: HuntStatus): Badge | null {
     case 'failed':
       return { label: 'Hunt failed', color: '#F87171', bg: 'rgba(239,68,68,0.13)', border: 'rgba(239,68,68,0.35)' }
     case 'stopped':
-      return { label: 'Stopped', color: '#A3A3A3', bg: '#272727', border: '#404040' }
+      return { label: 'Stopped', color: '#6b6b6b', bg: '#f2f2f0', border: '#dcdcd8' }
     default:
       return null
   }
@@ -69,7 +69,7 @@ function statusBadge(status: HuntStatus): Badge | null {
 
 const cardBase: React.CSSProperties = {
   background: color.surface,
-  border: '1px solid #404040',
+  border: '1px solid #dcdcd8',
   borderRadius: 16,
   display: 'flex',
   flexDirection: 'column',
@@ -78,7 +78,7 @@ const cardBase: React.CSSProperties = {
 }
 
 const iconBtn: React.CSSProperties = {
-  background: 'none', border: 'none', cursor: 'pointer', color: '#888', padding: 0, display: 'flex',
+  background: 'none', border: 'none', cursor: 'pointer', color: '#6b6b6b', padding: 0, display: 'flex',
 }
 
 export function LeftPanel({ huntState }: LeftPanelProps) {
@@ -113,13 +113,13 @@ export function LeftPanel({ huntState }: LeftPanelProps) {
           alignItems: 'center',
           gap: 10,
           padding: '16px 16px 12px',
-          borderBottom: '1px solid #404040',
+          borderBottom: '1px solid #dcdcd8',
         }}
       >
         <button onClick={() => navigate('/')} style={iconBtn} title="Back">
           <ChevronLeft size={18} />
         </button>
-        <span style={{ flex: 1, fontSize: 15, fontWeight: 600, color: '#fff' }}>The Pack</span>
+        <span style={{ flex: 1, fontSize: 15, fontWeight: 600, color: '#1a1a1a' }}>A Pack</span>
         <button onClick={() => setCollapsed(true)} style={{ ...iconBtn, color: '#555' }} title="Collapse">
           <PanelLeftClose size={17} />
         </button>
@@ -134,18 +134,18 @@ export function LeftPanel({ huntState }: LeftPanelProps) {
             display: 'flex',
             alignItems: 'center',
             gap: '10px',
-            background: 'rgba(255,255,255,0.04)',
+            background: 'rgba(26,26,26,0.05)',
             border: `1px solid ${color.border}`,
             borderRadius: '8px',
             padding: '8px 12px',
-            color: '#D4D4D4',
+            color: '#4a4a4a',
             fontSize: '13.5px',
             fontWeight: 500,
             cursor: 'pointer',
             transition: 'background 0.2s',
           }}
-          onMouseEnter={(e) => e.currentTarget.style.background = 'rgba(255,255,255,0.08)'}
-          onMouseLeave={(e) => e.currentTarget.style.background = 'rgba(255,255,255,0.04)'}
+          onMouseEnter={(e) => e.currentTarget.style.background = 'rgba(26,26,26,0.07)'}
+          onMouseLeave={(e) => e.currentTarget.style.background = 'rgba(26,26,26,0.05)'}
         >
           <SquarePen size={16} color="#A3A3A3" />
           New Hunt
@@ -190,13 +190,13 @@ export function LeftPanel({ huntState }: LeftPanelProps) {
                   margin: '10px 0 0',
                   fontSize: 15,
                   fontWeight: 600,
-                  color: '#fff',
+                  color: '#1a1a1a',
                   textTransform: 'capitalize',
                 }}
               >
                 {role}
               </p>
-              <p style={{ margin: '4px 0 0', fontSize: 13, color: '#888', lineHeight: 1.5 }}>
+              <p style={{ margin: '4px 0 0', fontSize: 13, color: '#6b6b6b', lineHeight: 1.5 }}>
                 {describe(role, count)}
               </p>
             </div>

@@ -22,6 +22,15 @@ export function composerVisible(status: string): boolean {
   return status === 'idle' || status === 'completed' || status === 'failed' || status === 'stopped'
 }
 
+/** Terminal-state composer placeholder — a completed hunt invites questions about the findings
+ *  (Alpha answers grounded in the delivered brief), a dead one invites a retry. One source of
+ *  truth for the live door AND the standalone territory. */
+export function composerPlaceholder(status: string): string | undefined {
+  if (status === 'completed') return 'Ask Alpha anything about what the pack found…'
+  if (status === 'failed' || status === 'stopped') return 'Ask Alpha what happened, or line up the next hunt…'
+  return undefined
+}
+
 function StatusMessage({ title, body, tone }: { title: string; body: string; tone: 'fail' | 'idle' }) {
   return (
     <div style={{ padding: '4px 16px 12px' }}>

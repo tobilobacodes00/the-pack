@@ -13,7 +13,7 @@ interface Props {
 function Row({ lone, label, pack }: { lone: ReactNode; label: string; pack: ReactNode }) {
   return (
     <div className="grid grid-cols-[1fr_auto_1fr] items-center gap-4 py-3">
-      <div className="text-right text-[15px] text-[#C7C7C7] tabular-nums">{lone}</div>
+      <div className="text-right text-[15px] text-ink-700 tabular-nums">{lone}</div>
       <div className="w-[112px] text-center text-[12px] text-muted">{label}</div>
       <div className="text-left text-[15px] font-medium text-text tabular-nums">{pack}</div>
     </div>
@@ -34,13 +34,13 @@ export function ScorecardPanel({ scorecard, loading, onCancel, onExport }: Props
       <div className="flex h-full flex-col">
         <div className="flex flex-1 items-center justify-center px-8 text-center">
           <div>
-            <p className="text-[15px] font-semibold text-[#EDEDED]">No benchmark yet</p>
+            <p className="text-[15px] font-semibold text-ink-900">No benchmark yet</p>
             <p className="mx-auto mt-1.5 max-w-[320px] text-[13px] leading-relaxed text-muted">
               Run “Lone Wolf vs the Pack” from the hunt to see how the pack compares.
             </p>
           </div>
         </div>
-        <footer className="flex shrink-0 justify-end border-t border-[#242424] px-6 py-4">
+        <footer className="flex shrink-0 justify-end border-t border-border px-6 py-4">
           <button
             onClick={onCancel}
             className="rounded-full px-4 py-2 text-[13px] text-text-dim transition-colors hover:text-text"
@@ -65,12 +65,12 @@ export function ScorecardPanel({ scorecard, loading, onCancel, onExport }: Props
           </div>
 
           <div className="mt-5 grid grid-cols-[1fr_auto_1fr] items-center gap-4">
-            <p className="text-right text-[15px] font-semibold text-[#D8D8D8]">Lone Wolf</p>
+            <p className="text-right text-[15px] font-semibold text-ink-700">Lone Wolf</p>
             <p className="text-[12px] uppercase tracking-wide text-text-faint">Vs</p>
-            <p className="text-left text-[15px] font-semibold text-text">The Pack</p>
+            <p className="text-left text-[15px] font-semibold text-text">A Pack</p>
           </div>
 
-          <div className="mt-6 flex flex-col divide-y divide-[#242424] border-y border-[#242424]">
+          <div className="mt-6 flex flex-col divide-y divide-border border-y border-border">
             <Row lone={lone.sources} label="Sources found" pack={pack.sources} />
             <Row lone={`${accuracyPct(lone)}%`} label="Accuracy" pack={`${accuracyPct(pack)}%`} />
             <Row lone={hms(lone.time_s)} label="Time" pack={hms(pack.time_s)} />
@@ -83,7 +83,7 @@ export function ScorecardPanel({ scorecard, loading, onCancel, onExport }: Props
         </div>
       </div>
 
-      <footer className="flex shrink-0 items-center justify-end gap-2 border-t border-[#242424] px-6 py-4">
+      <footer className="flex shrink-0 items-center justify-end gap-2 border-t border-border px-6 py-4">
         <button
           onClick={onCancel}
           className="rounded-full px-4 py-2 text-[13px] text-text-dim transition-colors hover:text-text"
@@ -92,7 +92,7 @@ export function ScorecardPanel({ scorecard, loading, onCancel, onExport }: Props
         </button>
         <button
           onClick={onExport}
-          className="rounded-full bg-[#FAFAFA] px-5 py-2 text-[13px] font-semibold text-[#0F0F0F]"
+          className="rounded-full bg-brand-500 px-5 py-2 text-[13px] font-semibold text-white transition-colors hover:bg-brand-600"
         >
           Export
         </button>

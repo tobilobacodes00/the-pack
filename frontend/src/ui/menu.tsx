@@ -22,7 +22,7 @@ export function MenuContent({
         align={align}
         sideOffset={6}
         className={cn(
-          'z-50 min-w-[168px] rounded-xl border border-border bg-surface-raised p-1 shadow-[0_8px_24px_rgba(0,0,0,0.5)]',
+          'z-50 min-w-[168px] rounded-xl border border-border bg-surface-raised p-1 shadow-soft',
           className,
         )}
       >
@@ -48,7 +48,7 @@ export function MenuItem({
       onSelect={onSelect}
       className={cn(
         'flex cursor-pointer items-center gap-2.5 rounded-lg px-2.5 py-2 text-[13px] outline-none',
-        'data-[highlighted]:bg-white/5 data-[highlighted]:text-text',
+        'data-[highlighted]:bg-[rgba(26,26,26,0.06)] data-[highlighted]:text-text',
         danger ? 'text-danger' : 'text-text-dim',
       )}
     >

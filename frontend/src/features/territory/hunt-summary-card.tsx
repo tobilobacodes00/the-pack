@@ -60,7 +60,7 @@ export function HuntSummaryCard({
             >
               {i + 1}
             </span>
-            <span style={{ fontSize: 14, color: '#D4D4D4' }}>{r}</span>
+            <span style={{ fontSize: 14, color: '#4a4a4a' }}>{r}</span>
           </div>
         ))}
       </div>
@@ -75,8 +75,8 @@ export function HuntSummaryCard({
             value={boundary}
             onChange={(e) => setBoundary(Math.max(1, Number(e.target.value) || 1))}
             style={{
-              width: 100, background: '#111111', border: `1px solid ${color.border}`, borderRadius: 8,
-              color: '#fff', fontSize: 13, padding: '6px 10px', outline: 'none',
+              width: 100, background: '#ffffff', border: `1px solid ${color.border}`, borderRadius: 8,
+              color: '#1a1a1a', fontSize: 13, padding: '6px 10px', outline: 'none',
             }}
           />
           <button

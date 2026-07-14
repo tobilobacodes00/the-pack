@@ -17,7 +17,7 @@ export function Toast({ variant = 'default', title, description, className, ...p
   return (
     <RadixToast.Root
       className={cn(
-        'pointer-events-auto flex w-full items-start gap-3 rounded-lg border p-4 shadow-lg',
+        'pointer-events-auto flex w-full items-start gap-3 rounded-lg border p-4 shadow-soft',
         'data-[state=open]:animate-in data-[state=closed]:animate-out',
         'data-[state=closed]:fade-out-80 data-[state=open]:fade-in-0',
         'data-[state=closed]:slide-out-to-right-full data-[state=open]:slide-in-from-right-full',

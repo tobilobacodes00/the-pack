@@ -103,7 +103,19 @@ def _offline_result(intent: str, task: str) -> tuple[str, dict | None]:
     if intent == "standoff_defend":
         return "Fair point — I'll pull a corroborating source before it goes in the brief.", None
     if intent == "standoff_judge":
-        return "Alpha's call: keep the claim, but only once a second source backs it.", None
+        # Structured verdict so Alpha's ruling is load-bearing. "drop" keeps the offline flagged
+        # claim removed → the offline brief is unchanged by the ruling being honored.
+        return (
+            "Alpha's call: drop — no second source stands this claim up.",
+            {"verdict": "drop", "rationale": "No source on the table backs the claim."},
+        )
+    if intent == "conflict_decide":
+        # Alpha's wild-mode conflict decision (offline never actually hits this — FakeQwen's merge
+        # returns conflict=None — but keep it structured for the unit tests that drive it directly).
+        return (
+            f"Alpha weighs the options on {task} and takes the better-sourced call.",
+            {"choice": "", "rationale": "The evidence best supports this option."},
+        )
     if intent == "lone":
         text = (
             f"# {task}\n\nA single-pass briefing on {task}. One researcher, one read: the broad "

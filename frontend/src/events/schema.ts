@@ -48,6 +48,7 @@ const PlanProposed = base.extend({
     est_time: z.number(),
     queries: z.array(z.string()).optional(),
     strategy: z.string().optional(),
+    depth: z.enum(['brief', 'standard', 'deep']).optional(),
     team: z.array(z.unknown()).optional(),
     edges: z.array(z.unknown()).optional(),
   }),
@@ -63,6 +64,7 @@ const PlanApproved = base.extend({
   payload: z.object({
     mode: z.enum(['wild', 'on_signal', 'on_command']),
     boundary_usd: z.number(),
+    depth: z.enum(['brief', 'standard', 'deep']).optional(),
   }),
 })
 
@@ -71,7 +73,7 @@ const WolfSpawned = base.extend({
   type: z.literal('wolf_spawned'),
   payload: z.object({
     wolf_id: z.string(),
-    role: z.enum(['alpha', 'beta', 'scout', 'tracker', 'howler', 'sentinel', 'hunter', 'elder', 'doctor']),
+    role: z.enum(['alpha', 'beta', 'scout', 'tracker', 'howler', 'sentinel', 'hunter', 'elder', 'doctor', 'warden']),
     model_tier: z.enum(['max', 'plus', 'flash']),
     thinking: z.boolean(),
     prompt_version: z.string(),
@@ -171,6 +173,8 @@ const HoldResolved = base.extend({
     hold_id: z.string(),
     resolution: z.string(),
     edited_text: z.string().nullable().optional(),
+    auto: z.boolean().optional(),
+    rationale: z.string().nullable().optional(),
   }),
 })
 
@@ -198,7 +202,7 @@ const StandoffResolved = base.extend({
   type: z.literal('standoff_resolved'),
   payload: z.object({
     standoff_id: z.string(),
-    outcome: z.enum(['agreement', 'alpha_call', 'hold_opened']),
+    outcome: z.enum(['agreement', 'alpha_call', 'hold_opened', 'unresolved']),
     rationale: z.string(),
   }),
 })
@@ -363,7 +367,7 @@ export const HuntEventSchema = z.discriminatedUnion('type', [
 
 export type HuntEvent = z.infer<typeof HuntEventSchema>
 
-export type WolfRole = 'alpha' | 'beta' | 'scout' | 'tracker' | 'howler' | 'sentinel' | 'hunter' | 'elder' | 'doctor'
+export type WolfRole = 'alpha' | 'beta' | 'scout' | 'tracker' | 'howler' | 'sentinel' | 'hunter' | 'elder' | 'doctor' | 'warden'
 export type ModelTier = 'max' | 'plus' | 'flash'
 export type WolfPhase = 'thinking' | 'searching' | 'reading' | 'merging' | 'writing' | 'critiquing' | 'forge'
 
@@ -404,7 +408,7 @@ export type StandoffState = {
   defendant: string
   claim_ref: string
   turns: Array<{ turn_no: number; argument_summary: string }>
-  outcome: 'agreement' | 'alpha_call' | 'hold_opened' | null
+  outcome: 'agreement' | 'alpha_call' | 'hold_opened' | 'unresolved' | null
 }
 
 export type PlanState = {
@@ -419,7 +423,12 @@ export type PlanState = {
   est_time: number
   queries?: string[]
   strategy?: string
+  /** v3: adaptive research depth Beta proposed / the user chose (drives the plan-card toggle). */
+  depth?: PlanDepth
 }
+
+/** v3: how comprehensive the brief should be — scaled to the task. */
+export type PlanDepth = 'brief' | 'standard' | 'deep'
 
 export type ArtifactRef = {
   artifact_id: string
@@ -455,7 +464,21 @@ export type HuntState = {
   final_artifact_id: string | null
   scorecard: { lone_wolf: unknown; pack: unknown } | null
   totals: Record<string, unknown> | null
+  /** Wall-clock (ISO) when the hunt started *running* — the `plan_approved` event's server `ts`.
+   *  This is the live spend/time counter's anchor: it matches the backend's measured `totals.time_s`
+   *  window (both begin at approval, excluding the human approval-wait), it's derived from event data
+   *  so the reducer stays pure, and it's identical across every client and across a stream reconnect
+   *  (replaying `plan_approved` re-sets the same value). Null before the plan is approved. */
+  started_at: string | null
+  /** Wall-clock (ISO) when the hunt reached a terminal state (`hunt_completed`/`_failed`/`_stopped`'s
+   *  server `ts`). The elapsed-time ceiling for a done hunt with no measured `totals.time_s` (failed/
+   *  stopped never set totals) — without it, a client computing "now - started_at" on a page loaded
+   *  long after the hunt ended would read the WHOLE wall-clock gap as runtime. Null until terminal. */
+  ended_at: string | null
   /** Live log of the pack's beats (step summaries + handoffs), rendered as inline chat replies. */
   activity: ActivityItem[]
+  /** Active heals: roaming-healer wolf_id → the patient (target) wolf_id it's tending. Drives the
+   *  transient Warden node's position beside its patient; cleared when the heal completes. */
+  healers: Record<string, string>
   last_seq: number
 }

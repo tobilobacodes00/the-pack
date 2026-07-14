@@ -57,7 +57,7 @@ function EditorCanvas({ plan, onSave, onCancel }: Props) {
         onNodeClick={(_, node) => ed.selectWolf((node.data as EditableNodeData).wolfId)}
         onPaneClick={() => ed.selectWolf(null)}
         proOptions={{ hideAttribution: true }}
-        colorMode="dark"
+        colorMode="light"
       >
         {/* Plain black canvas (design) — no dot-grid. */}
       </ReactFlow>

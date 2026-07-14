@@ -33,20 +33,24 @@ class CritiqueStrategy(Strategy):
         # Sentinel couldn't stand up never reaches the brief (the old re-merge ran on identical
         # findings and changed nothing — the verify stage was theatre).
         verdict = await engine.critique(merged)
+        ruling = None
         if not verdict.ok and verdict.issues:
             issue = verdict.issues[0]
-            await engine.standoff(
+            ruling = await engine.standoff(
                 challenger="sentinel",
                 defendant="tracker",
                 claim_ref=merged.output_ref or f"art_{engine.task[:8]}_merge",
                 rationale=issue.get("problem") or "A claim needs a stronger source.",
                 evidence=engine.standoff_evidence(merged, issue),
+                claim=issue.get("claim") or None,
             )
-        merged = await engine.apply_critique(merged, verdict)
+        # Alpha's ruling decides the challenged claim's fate: apply_critique drops the flagged claims
+        # UNLESS Alpha ruled keep/qualify on the debated one.
+        merged = await engine.apply_critique(merged, verdict, ruling=ruling)
 
         decision = None
         if merged.conflict:
-            decision = await engine.resolve_conflict(merged.conflict)
+            decision = await engine.resolve_conflict(merged.conflict, merged.sources)
 
         draft = await engine.draft(merged, decision)
         await engine.finish(draft, merged)

@@ -46,7 +46,15 @@ class _RecordingEngine:
     async def critique(self, merged: Merged) -> CritiqueResult:
         return CritiqueResult(ok=True, issues=[])
 
-    async def resolve_conflict(self, conflict: object) -> str:
+    async def apply_critique(
+        self, merged: Merged, verdict: CritiqueResult, *, ruling: object | None = None
+    ) -> Merged:
+        return merged
+
+    def standoff_evidence(self, merged: Merged, issue: dict) -> str:
+        return ""
+
+    async def resolve_conflict(self, conflict: object, sources: list[dict]) -> str:
         return "decided"
 
     async def draft(self, merged: Merged, decision: str | None = None, step_id: str = "s3") -> str:

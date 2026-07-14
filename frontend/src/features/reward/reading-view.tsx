@@ -39,7 +39,7 @@ export function ReadingView({ brief, dateISO, projectName }: Props) {
         <div className="mt-2.5 flex items-center gap-2">
           <p className="text-[13px] text-muted">{formatByline(dateISO, projectName)}</p>
           {view.refined && (
-            <span className="rounded-full border border-[#8B5CF6]/40 px-2 py-0.5 text-[11px] font-medium text-[#B79BF5]">
+            <span className="rounded-full border border-brand-500/40 px-2 py-0.5 text-[11px] font-medium text-brand-600">
               Refined
             </span>
           )}
@@ -52,7 +52,7 @@ export function ReadingView({ brief, dateISO, projectName }: Props) {
 
       <div className="max-w-[600px]">
         {view.noSources ? (
-          <p className="mt-9 border-t border-[#242424] pt-6 text-[13px] italic text-[#7A7A7A]">
+          <p className="mt-9 border-t border-border pt-6 text-[13px] italic text-ink-500">
             No sources — this was drafted from the provided context.
           </p>
         ) : (

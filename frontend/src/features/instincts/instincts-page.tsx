@@ -33,7 +33,7 @@ function Chips({ items }: { items: string[] }) {
   return (
     <div className="flex flex-wrap gap-1.5">
       {items.map((f) => (
-        <span key={f} className="rounded-md px-2 py-0.5 text-[11px] font-medium text-[#C7C7C7]" style={{ background: '#2A2A2A' }}>
+        <span key={f} className="rounded-md px-2 py-0.5 text-[11px] font-medium text-ink-700" style={{ background: '#f2f2f0' }}>
           {f}
         </span>
       ))}
@@ -45,7 +45,7 @@ function UseThis({ onClick }: { onClick: () => void }) {
   return (
     <button
       onClick={onClick}
-      className="shrink-0 rounded-full border px-3.5 py-1.5 text-[12.5px] text-[#D4D4D4] transition-colors hover:text-white"
+      className="shrink-0 rounded-full border px-3.5 py-1.5 text-[12.5px] text-ink-700 transition-colors hover:text-ink-900"
       style={{ borderColor: color.border }}
     >
       Use This
@@ -55,7 +55,7 @@ function UseThis({ onClick }: { onClick: () => void }) {
 
 function Tabs({ tab, setTab }: { tab: 'builtin' | 'yours'; setTab: (t: 'builtin' | 'yours') => void }) {
   return (
-    <div className="flex gap-1 border-b pb-3" style={{ borderColor: '#242424' }}>
+    <div className="flex gap-1 border-b pb-3" style={{ borderColor: '#dcdcd8' }}>
       {(['builtin', 'yours'] as const).map((t) => (
         <button
           key={t}
@@ -104,11 +104,11 @@ export default function InstinctsPage() {
           {/* Header */}
           <div className="flex items-start gap-3">
             {!sidebarOpen && (
-              <button onClick={() => setSidebarOpen(true)} className="mt-1.5 p-1 text-text-dim hover:text-white transition-opacity" aria-label="Open sidebar">
+              <button onClick={() => setSidebarOpen(true)} className="mt-1.5 p-1 text-text-dim hover:text-ink-900 transition-opacity" aria-label="Open sidebar">
                 <img src="/icon-menu.svg" className="w-5 h-5" alt="Menu" />
               </button>
             )}
-            <button onClick={() => navigate(-1)} className="mt-1 p-1 text-text-dim hover:text-white" aria-label="Back">
+            <button onClick={() => navigate(-1)} className="mt-1 p-1 text-text-dim hover:text-ink-900" aria-label="Back">
             <ChevronLeft size={20} />
           </button>
           <div>
@@ -131,11 +131,11 @@ export default function InstinctsPage() {
                   <h3 className="text-[15px] font-semibold text-text">{b.title}</h3>
                   <UseThis onClick={() => applyBuiltin(b)} />
                 </div>
-                <p className="text-[13.5px] leading-relaxed text-[#9A9A9A]">{b.desc}</p>
+                <p className="text-[13.5px] leading-relaxed text-ink-500">{b.desc}</p>
                 <div className="flex items-center justify-between gap-4">
                   <div className="flex items-center gap-2">
                     <span className="text-[11px] uppercase tracking-wide text-text-faint">In</span>
-                    <span className="rounded-md px-2 py-0.5 text-[11.5px] text-[#C7C7C7]" style={{ background: '#2A2A2A' }}>{b.inHint}</span>
+                    <span className="rounded-md px-2 py-0.5 text-[11.5px] text-ink-700" style={{ background: '#f2f2f0' }}>{b.inHint}</span>
                   </div>
                   <div className="flex items-center gap-2">
                     <span className="text-[11px] uppercase tracking-wide text-text-faint">Out</span>
@@ -163,24 +163,24 @@ export default function InstinctsPage() {
                       <UseThis onClick={() => applyInstinct(it.instinct_id)} />
                       <button
                         onClick={() => setMenuId(menuId === it.instinct_id ? null : it.instinct_id)}
-                        className="p-1 text-muted hover:text-white"
+                        className="p-1 text-muted hover:text-ink-900"
                         aria-label="More"
                       >
                         <MoreVertical size={18} />
                       </button>
                     </div>
                   </div>
-                  {task && <p className="text-[13.5px] leading-relaxed text-[#9A9A9A]">{task}</p>}
+                  {task && <p className="text-[13.5px] leading-relaxed text-ink-500">{task}</p>}
                   {menuId === it.instinct_id && (
                     <>
                       <div className="fixed inset-0 z-40" onClick={() => setMenuId(null)} />
                       <div
                         className="absolute right-0 top-12 z-[41] rounded-lg p-1"
-                        style={{ background: color.borderSubtle, border: '1px solid #404040', boxShadow: '0 8px 24px rgba(0,0,0,0.5)' }}
+                        style={{ background: color.borderSubtle, border: '1px solid #dcdcd8', boxShadow: '0 10px 24px rgba(26,26,26,0.12)' }}
                       >
                         <button
                           onClick={() => { deleteInstinct.mutate(it.instinct_id); setMenuId(null) }}
-                          className="rounded-md px-3 py-1.5 text-[13px] text-[#EF4444] hover:bg-[rgba(255,255,255,0.05)]"
+                          className="rounded-md px-3 py-1.5 text-[13px] text-[#EF4444] hover:bg-[rgba(26,26,26,0.05)]"
                         >
                           Delete
                         </button>

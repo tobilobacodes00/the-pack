@@ -8,14 +8,20 @@ from __future__ import annotations
 from app.engine.core import Emitter
 from app.engine.forge import MIME, forge
 from app.engine.ids import new_artifact_id
+from app.engine.prompt_context import coerce_source_ids
 from app.engine.strategies.base import DRAFT_SCHEMA
 from app.qwen.client import QwenClient
 from app.qwen.types import CallSpec
 from app.storage import store_forged_content
 
+# NOTE: refine re-drafts from the STORED claims + sources only (NO re-scout), and finish() strips the
+# full page/library `text` from sources before persisting — so Howler has no fresh material to expand
+# into. This path can re-frame/reorganize/preserve depth, but true DEEPENING would require a re-scout
+# (deferred). Hence the wording is comprehensiveness-PRESERVING, not shrinking.
 _REFINE_SYSTEM = (
-    "You are Howler, the Pack's writer. Re-draft the briefing tighter and clearer, honoring the "
-    "Packmaster's instruction. Cite ONLY the listed sources by number."
+    "You are Howler, the Pack's writer. Re-draft the briefing to honor the Packmaster's instruction "
+    "while keeping it comprehensive — preserve every sourced point, never drop real sourced detail. "
+    "Cite ONLY the listed sources by number."
 )
 
 
@@ -32,12 +38,8 @@ def _blocks_from(parsed: dict | None, text: str, sources: list[dict]) -> list[di
         body = str(b.get("text") or "").strip()
         if not body:
             continue
-        ids = [
-            int(i)
-            for i in (b.get("source_ids") or [])
-            if isinstance(i, int | float) and 1 <= int(i) <= len(sources)
-        ]
-        out.append({"text": body, "source_ids": sorted(set(ids))})
+        ids = coerce_source_ids(b.get("source_ids"), len(sources))
+        out.append({"text": body, "source_ids": ids})
     if not any(b["text"] and not b["text"].startswith("# ") for b in out):
         out.append({"text": (text or "").strip(), "source_ids": list(range(1, len(sources) + 1))})
     return out
@@ -56,7 +58,7 @@ async def refine_brief(repo, client: QwenClient, hunt_id: str, instruction: str)
         f"[{i + 1}] {s.get('title') or s.get('url') or ''}" for i, s in enumerate(sources)
     )
     user = (
-        f"Refine this briefing. {instruction or 'Tighten it and sharpen the framing.'}\n\n"
+        f"Refine this briefing. {instruction or 'Sharpen the framing and keep every sourced point.'}\n\n"
         + ("Claims:\n" + "\n".join(f"- {c}" for c in claims) + "\n\n" if claims else "")
         + f"Sources (cite each block by number):\n{numbered}\n\n"
         "Respond with ONLY JSON: a `title` and `blocks` array of {text, source_ids}."

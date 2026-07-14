@@ -9,8 +9,8 @@ const buttonVariants = cva(
     variants: {
       variant: {
         default: 'bg-accent text-white hover:bg-accent-dim',
-        // The design's signature white "pill" action (bg #FAFAFA / text #0F0F0F).
-        primary: 'bg-text text-canvas font-semibold hover:opacity-90',
+        // The design's signature primary "pill" action — dark-brown brand fill.
+        primary: 'bg-brand-500 text-white font-semibold hover:opacity-90',
         ghost: 'hover:bg-surface-raised text-text-dim hover:text-text',
         outline: 'border border-border hover:bg-surface-raised text-text-dim hover:text-text',
         danger: 'bg-danger text-white hover:opacity-90',

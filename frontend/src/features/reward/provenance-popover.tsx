@@ -24,7 +24,7 @@ function Field({ label, value, valueClass }: { label: string; value: string; val
   return (
     <div className="mt-3">
       <p className="text-[11px] uppercase tracking-wide text-text-faint">{label}</p>
-      <p className={cn('mt-0.5 text-[13px] text-[#D8D8D8]', valueClass)}>{value}</p>
+      <p className={cn('mt-0.5 text-[13px] text-ink-700', valueClass)}>{value}</p>
     </div>
   )
 }
@@ -67,7 +67,7 @@ export function ProvenancePopover({ top, left, sources, onClose }: Props) {
     <div
       ref={ref}
       style={{ top, left }}
-      className="absolute z-[60] w-[300px] max-w-[86%] rounded-xl border border-[#2E2E2E] bg-[#1C1C1C] p-4 shadow-[0_16px_48px_rgba(0,0,0,0.5)]"
+      className="absolute z-[60] w-[300px] max-w-[86%] rounded-xl border border-border bg-white p-4 shadow-soft"
     >
       <div className="flex items-center gap-2">
         <span className="h-2 w-2 shrink-0 rounded-full" style={{ background: w.color }} />
@@ -83,7 +83,7 @@ export function ProvenancePopover({ top, left, sources, onClose }: Props) {
       <Field
         label="Verification status"
         value={primary.verified ? 'Sentinel verified · No challenges' : 'Flagged as unverified'}
-        valueClass={primary.verified ? 'text-[#8FBF8F]' : 'text-[#C79A2E]'}
+        valueClass={primary.verified ? 'text-brand-600' : 'text-[#C79A2E]'}
       />
 
       {primary.url && (
@@ -91,14 +91,14 @@ export function ProvenancePopover({ top, left, sources, onClose }: Props) {
           href={primary.url}
           target="_blank"
           rel="noreferrer"
-          className="mt-3 inline-flex items-center gap-1 text-[12px] text-accent transition-colors hover:text-[#B79BF5]"
+          className="mt-3 inline-flex items-center gap-1 text-[12px] text-accent transition-colors hover:text-brand-600"
         >
           Open source <ExternalLink size={12} />
         </a>
       )}
 
       {rest.length > 0 && (
-        <div className="mt-3 border-t border-[#2A2A2A] pt-2.5">
+        <div className="mt-3 border-t border-border pt-2.5">
           <p className="text-[11px] uppercase tracking-wide text-text-faint">Also cited</p>
           {rest.map((s, i) => {
             const rw = wolfLabel(s.by)

@@ -3,19 +3,20 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Pack</title>
+    <title>A Pack</title>
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin="" />
-    <!-- Non-blocking font load: first paint uses system-ui immediately, Inter swaps in when
-         ready (display=swap). The print→all trick keeps the CSS fetch off the critical path. -->
+    <!-- Non-blocking font load: first paint uses system-ui immediately, the webfonts swap in when
+         ready (display=swap). The print→all trick keeps the CSS fetch off the critical path.
+         Outfit = body, Nunito = display (warm-brutalist landing); Inter kept as a fallback. -->
     <link
-      href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap"
+      href="https://fonts.googleapis.com/css2?family=Nunito:wght@700;800&family=Outfit:wght@400;500;600;700&family=Inter:wght@400;500;600;700&display=swap"
       rel="stylesheet"
       media="print"
       onload="this.media='all'"
     />
     <noscript>
-      <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet" />
+      <link href="https://fonts.googleapis.com/css2?family=Nunito:wght@700;800&family=Outfit:wght@400;500;600;700&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet" />
     </noscript>
   </head>
   <body>

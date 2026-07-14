@@ -47,7 +47,7 @@ def _title_and_paras(blocks: list[dict], title: str = "") -> tuple[str, list[str
             title = text.lstrip("# ").strip()
             continue
         paras.append(text.lstrip("# ").strip() if text.startswith("# ") else text)
-    return (title or "The Pack's brief"), paras
+    return (title or "A Pack's brief"), paras
 
 
 def _src_rows(sources: list[dict] | None) -> list[tuple[int, str, str, str]]:

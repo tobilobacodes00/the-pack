@@ -26,9 +26,9 @@ export function TracksDrawer({ open, onClose, events, loading, totals }: Props) 
           animate={{ x: 0, opacity: 1 }}
           exit={{ x: 340, opacity: 0 }}
           transition={{ duration: 0.25, ease: EASE }}
-          className="flex h-full w-[340px] shrink-0 flex-col border-l border-[#242424] bg-[#141414]"
+          className="flex h-full w-[340px] shrink-0 flex-col border-l border-border bg-cream-50"
         >
-          <div className="flex h-[52px] shrink-0 items-center justify-between border-b border-[#242424] px-4">
+          <div className="flex h-[52px] shrink-0 items-center justify-between border-b border-border px-4">
             <p className="text-[14px] font-semibold text-text">Tracks</p>
             <button
               onClick={onClose}
@@ -38,7 +38,7 @@ export function TracksDrawer({ open, onClose, events, loading, totals }: Props) 
               <X size={16} />
             </button>
           </div>
-          <div className="shrink-0 border-b border-[#242424] px-4 py-3 text-[12px] text-[#9A9A9A]">
+          <div className="shrink-0 border-b border-border px-4 py-3 text-[12px] text-ink-500">
             {stats.costLabel} · {stats.timeLabel}
           </div>
           <div className="min-h-0 flex-1 overflow-y-auto">

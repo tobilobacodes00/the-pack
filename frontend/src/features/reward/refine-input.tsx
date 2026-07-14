@@ -10,7 +10,7 @@ interface Props {
 export function RefineInput({ pending, onSubmit, onCancel }: Props) {
   const [text, setText] = useState('')
   return (
-    <div className="absolute left-1/2 top-4 z-[55] w-[min(560px,90%)] -translate-x-1/2 rounded-xl border border-[#2E2E2E] bg-[#1C1C1C] p-4 shadow-[0_16px_48px_rgba(0,0,0,0.5)]">
+    <div className="absolute left-1/2 top-4 z-[55] w-[min(560px,90%)] -translate-x-1/2 rounded-xl border border-border bg-white p-4 shadow-soft">
       <p className="text-[13px] font-semibold text-text">Refine the brief</p>
       <p className="mt-1 text-[12px] text-muted">
         Re-draft from the same sources — tell Howler how to re-angle or tighten it.
@@ -22,7 +22,7 @@ export function RefineInput({ pending, onSubmit, onCancel }: Props) {
         placeholder="e.g. Lead with the CBN figure and cut the repetition"
         rows={2}
         disabled={pending}
-        className="mt-3 w-full resize-none rounded-lg border border-[#333] bg-[#141414] px-3 py-2 text-[13px] text-[#EDEDED] placeholder:text-[#5F5F5F] focus:border-[#8B5CF6]/60 focus:outline-none"
+        className="mt-3 w-full resize-none rounded-lg border border-border bg-cream-50 px-3 py-2 text-[13px] text-ink-900 placeholder:text-ink-400 focus:border-brand-500 focus:outline-none"
       />
       <div className="mt-3 flex justify-end gap-2">
         <button
@@ -35,7 +35,7 @@ export function RefineInput({ pending, onSubmit, onCancel }: Props) {
         <button
           onClick={() => onSubmit(text)}
           disabled={pending}
-          className="rounded-full bg-[#FAFAFA] px-4 py-1.5 text-[13px] font-semibold text-[#0F0F0F] transition-opacity disabled:opacity-50"
+          className="rounded-full bg-brand-500 px-4 py-1.5 text-[13px] font-semibold text-white transition-colors hover:bg-brand-600 disabled:opacity-50"
         >
           {pending ? 'Refining…' : 'Refine'}
         </button>

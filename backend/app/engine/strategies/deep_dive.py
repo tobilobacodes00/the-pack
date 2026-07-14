@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import asyncio
 
-from app.engine.strategies.base import Engine, Strategy
+from app.engine.strategies.base import Engine, Strategy, drop_empty, keep_findings
 
 
 class DeepDiveStrategy(Strategy):
@@ -25,9 +25,9 @@ class DeepDiveStrategy(Strategy):
         results = await asyncio.gather(
             *(engine.scout(w, q) for w, q in zip(ids, queries, strict=False))
         )
-        findings = [f for f in results if f]
+        findings = drop_empty(results)
 
-        merged = await engine.merge(findings)
+        merged = await engine.merge(keep_findings(findings))
 
         # The iterative core: name the gaps, then range again (in parallel) to close them.
         gaps = await engine.find_gaps(merged)
@@ -35,22 +35,21 @@ class DeepDiveStrategy(Strategy):
             await engine.progress(
                 "alpha", "thinking", f"Found {len(gaps)} gaps — sending the pack back in."
             )
+            # find_gaps already caps the count by depth — range on all of them.
             extra = await asyncio.gather(
-                *(
-                    engine.scout(ids[i % len(ids)], gap, step_id="s1b")
-                    for i, gap in enumerate(gaps[:2])
-                )
+                *(engine.scout(ids[i % len(ids)], gap, step_id="s1b") for i, gap in enumerate(gaps))
             )
-            findings.extend(f for f in extra if f)
-            merged = await engine.merge(findings, step_id="s2b")
+            findings.extend(drop_empty(extra))
+            merged = await engine.merge(keep_findings(findings), step_id="s2b")
 
-        # Sentinel verifies every claim carries a real source before we draft — a real check that
-        # also wakes the Sentinel node on the canvas (this strategy used to skip it).
-        await engine.critique(merged)
+        # Sentinel verifies every claim carries a real source before we draft, and the verdict is
+        # ENFORCED — apply_critique drops any claim Sentinel couldn't stand up.
+        verdict = await engine.critique(merged)
+        merged = await engine.apply_critique(merged, verdict)
 
         decision = None
         if merged.conflict:
-            decision = await engine.resolve_conflict(merged.conflict)
+            decision = await engine.resolve_conflict(merged.conflict, merged.sources)
 
         draft = await engine.draft(merged, decision)
         await engine.finish(draft, merged)

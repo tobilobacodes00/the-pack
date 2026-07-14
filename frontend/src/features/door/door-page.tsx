@@ -1,21 +1,22 @@
 import { lazy, Suspense, useEffect, useMemo, useState } from 'react'
-import { useLocation, useNavigate } from 'react-router-dom'
+import { useLocation } from 'react-router-dom'
 import { AnimatePresence, motion } from 'framer-motion'
 import { ChevronDown } from 'lucide-react'
 import { useDoorLogic } from '../intake/use-intake'
 import { PresetCard, PRESETS } from '../intake/preset-card'
 import { FileDropOverlay } from '../intake/file-drop-overlay'
 import { LeftPanel } from '../territory/left-panel'
-import { TerritoryFooter, composerVisible } from '../territory/territory-footer'
+import { TerritoryFooter, composerVisible, composerPlaceholder } from '../territory/territory-footer'
 import { useReward } from '../reward/use-reward'
 import { useHuntToast } from '../territory/use-hunt-toast'
 import { ChatColumn } from './chat-column'
+import { HiddenFileInput } from './hidden-file-input'
 import { HuntSidebar } from './hunt-sidebar'
 import { DoorLanding } from './door-landing'
 import { useHuntStore } from '@/store/hunt-store'
 import { useHuntStream } from '@/hooks/use-hunt-stream'
 import { useApprovePlan } from '@/api/hunts'
-import { color } from '@/lib/theme'
+import { color, warm } from '@/lib/theme'
 
 // Territory-only surfaces (and the fluid smoke) load on demand: keeps @xyflow/react and the
 // reward flow out of the landing bundle entirely, so the Door paints with chat+landing code only.
@@ -72,7 +73,6 @@ export default function DoorPage() {
     resetHunt()
   }, [resetHunt])
 
-  const navigate = useNavigate()
   // Seed the composer when arriving from a built-in Instinct's "Use This".
   const location = useLocation()
   useEffect(() => {
@@ -87,6 +87,17 @@ export default function DoorPage() {
 
   const isTerritory = phase === 'territory'
   const canEdit = huntState.status === 'plan_ready' && huntState.plan !== null
+
+  // The door morphs to territory on the first message, before any hunt exists. Reflect that in the
+  // URL so it doesn't look like nothing changed. Raw History API (not React Router nav) → no remount
+  // → the morph keeps animating. `!huntId` is load-bearing: once a real hunt is created, use-intake
+  // writes /hunts/<id> and sets huntId, so this never overwrites it (a bare replaceState doesn't
+  // update location.pathname, so huntId — not pathname — is the authoritative gate).
+  useEffect(() => {
+    if (isTerritory && !huntId && location.pathname === '/') {
+      window.history.replaceState(null, '', '/new')
+    }
+  }, [isTerritory, huntId, location.pathname])
 
   const planFooter = (
     <TerritoryFooter
@@ -103,7 +114,7 @@ export default function DoorPage() {
   return (
     <div
       className={isTerritory ? 'h-screen flex flex-col overflow-hidden' : 'min-h-screen flex flex-col'}
-      style={{ backgroundColor: color.canvas }}
+      style={{ backgroundColor: isTerritory ? color.canvas : warm.cream }}
       onDragEnter={onDragEnter}
       onDragOver={onDragOver}
       onDragLeave={onDragLeave}
@@ -129,13 +140,16 @@ export default function DoorPage() {
           COLOR_UPDATE_SPEED={10}
           SHADING={true}
           RAINBOW_MODE={false}
-          COLOR="#6b6b6b"
+          COLOR="#9a9a9a"
         />
         </Suspense>
       )}
 
-      {/* HERO — always exactly one viewport; the landing (intake only) scrolls in below it. */}
-      <div className={isTerritory ? 'flex-1 flex flex-col min-h-0 overflow-hidden' : 'relative h-screen flex flex-col'}>
+      {/* HERO — always exactly one viewport; the landing (intake only) scrolls in below it. On the
+          cream door it inherits the page's warm bg. `z-20` lifts the whole hero (nav + chat +
+          composer + presets + cue) above DoorLanding's z-10 layer so the fixed wolf sits BEHIND it
+          — the transparent hero lets the faint wolf show in the gaps but never over the composer. */}
+      <div className={isTerritory ? 'flex-1 flex flex-col min-h-0 overflow-hidden' : 'relative z-20 h-screen flex flex-col'}>
       {/* Top nav — intake only, and only while the sidebar is collapsed (the sidebar carries its own
           header). The roster carries the branding once we're in territory. */}
       <AnimatePresence>
@@ -146,15 +160,15 @@ export default function DoorPage() {
             transition={MORPH}
             className="h-[52px] flex items-stretch shrink-0 overflow-hidden"
           >
-            <div className="flex items-center gap-3 px-5" style={{ backgroundColor: color.surface }}>
+            <div className="flex items-center gap-3 px-5">
               <img src="/pack-logo.svg" className="w-[22px] h-[26px]" alt="Pack" />
-              <span className="text-sm font-semibold text-white tracking-wide">The Pack</span>
+              <span className="font-display text-base font-extrabold tracking-wide text-ink-900">A Pack</span>
               <button
                 onClick={() => setSidebarOpen(true)}
                 className="p-1 opacity-70 hover:opacity-100 transition-opacity"
                 aria-label="Open past hunts"
               >
-                <img src="/icon-menu.svg" className="w-5 h-5" alt="" />
+                <img src="/icon-menu.svg" className="w-5 h-5" alt="" style={{ filter: 'brightness(0) saturate(100%) opacity(0.75)' }} />
               </button>
             </div>
           </motion.nav>
@@ -222,7 +236,7 @@ export default function DoorPage() {
               exit={{ opacity: 0 }}
               transition={MORPH}
               className="absolute right-3 top-3 bottom-3 w-[320px] z-20 flex flex-col min-h-0 overflow-hidden"
-              style={{ background: color.surface, border: '1px solid #404040', borderRadius: 16 }}
+              style={{ background: color.surface, border: `1px solid ${color.border}`, borderRadius: 16 }}
             >
               <ChatColumn
                 variant="territory"
@@ -230,12 +244,7 @@ export default function DoorPage() {
                 footer={planFooter}
                 hideComposer={hideComposer}
                 activity={huntState.activity}
-                onHistory={() => navigate('/den', { state: { from: huntId ? `/hunts/${huntId}` : '/' } })}
-                placeholder={
-                  ['completed', 'failed', 'stopped'].includes(huntState.status)
-                    ? 'Ask Alpha anything about this plan…'
-                    : undefined
-                }
+                placeholder={composerPlaceholder(huntState.status)}
               />
             </motion.div>
           ) : (
@@ -248,7 +257,7 @@ export default function DoorPage() {
               className={`absolute top-0 bottom-0 right-0 ${sidebarOpen ? 'left-[300px]' : 'left-0'} flex flex-col items-center justify-center px-4 pb-10 min-h-0`}
             >
               <div className="w-full max-w-[700px] flex flex-col gap-6">
-                <h1 className="text-[30px] font-semibold text-white text-center leading-tight">
+                <h1 className="font-display text-[32px] font-extrabold text-ink-900 text-center leading-tight tracking-tight">
                   What should the pack hunt down?
                 </h1>
 
@@ -287,7 +296,7 @@ export default function DoorPage() {
             animate={{ opacity: pastHero ? 0 : 1, y: pastHero ? 0 : [0, 6, 0] }}
             transition={{ opacity: { duration: 0.4 }, y: pastHero ? { duration: 0.2 } : { duration: 1.8, repeat: Infinity, ease: 'easeInOut' } }}
             style={{ pointerEvents: pastHero ? 'none' : 'auto' }}
-            className="absolute bottom-5 left-1/2 -translate-x-1/2 z-[60] flex flex-col items-center gap-1 text-text-faint transition-colors hover:text-text-dim"
+            className="absolute bottom-5 left-1/2 -translate-x-1/2 z-[60] flex flex-col items-center gap-1 text-ink-500 transition-colors hover:text-ink-700"
             aria-label="Scroll to explore"
           >
             <span className="text-[11px] font-medium uppercase tracking-[0.2em]">Scroll to explore</span>
@@ -297,13 +306,16 @@ export default function DoorPage() {
       </div>
       {/* /hero */}
 
-      {!isTerritory && <DoorLanding door={door} />}
+      {!isTerritory && <DoorLanding setInput={door.setInput} />}
 
       {huntId && (
         <Suspense fallback={null}>
           <RewardModal huntId={huntId} open={reward.open} onClose={reward.close} />
         </Suspense>
       )}
+      {/* The composer's `+` file input lives here — in the stable DoorPage subtree, not inside
+          ChatColumn (which remounts at the morph and would detach the ref, breaking the `+`). */}
+      <HiddenFileInput inputRef={door.fileInputRef} onFiles={door.addFiles} />
       {isDragging && <FileDropOverlay />}
     </div>
   )

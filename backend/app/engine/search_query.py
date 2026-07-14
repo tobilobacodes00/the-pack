@@ -78,3 +78,22 @@ def broaden(task: str, query: str) -> str:
         if w.lower() not in have and w.lower() not in _BROADEN_STOP
     ][:3]
     return " ".join(subject + extra) or plain_query(query) or task
+
+
+# The canonical research facets — distinct angles a scout's fill-in / retry query rides. Lives here
+# (a low-level util) so strategies import DOWN from it, never the reverse. Each is a real angle, not
+# the old "{task} — angle N" placeholder that searched for the literal noise word "angle".
+FACETS = (
+    "overview and key facts",
+    "latest data and figures",
+    "risks and challenges",
+    "key players and context",
+    "outlook and what changes next",
+)
+
+
+def facet_query(task: str, n: int) -> str:
+    """The nth fill-in angle: the task's plain keywords + a real facet. Deterministic, model-free.
+    NEVER pass the result through broaden() — the facet words live in _BROADEN_STOP and would be
+    stripped to nothing."""
+    return f"{plain_query(task)} {FACETS[n % len(FACETS)]}"

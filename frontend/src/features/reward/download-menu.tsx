@@ -34,7 +34,7 @@ export function DownloadMenu({ artifacts, onDownload }: Props) {
         <DropdownMenu.Content
           align="end"
           sideOffset={6}
-          className="z-[70] min-w-[184px] rounded-xl border border-[#2E2E2E] bg-[#1C1C1C] p-1.5 shadow-[0_16px_48px_rgba(0,0,0,0.5)]"
+          className="z-[70] min-w-[184px] rounded-xl border border-border bg-white p-1.5 shadow-soft"
         >
           {items.length === 0 ? (
             <div className="px-2.5 py-2 text-[12px] text-muted">No files yet</div>
@@ -43,7 +43,7 @@ export function DownloadMenu({ artifacts, onDownload }: Props) {
               <DropdownMenu.Item
                 key={a.artifact_id}
                 onSelect={() => onDownload(a)}
-                className="flex cursor-pointer items-center justify-between gap-6 rounded-lg px-2.5 py-2 text-[13px] text-[#D8D8D8] outline-none data-[highlighted]:bg-[#2A2A2A] data-[highlighted]:text-text"
+                className="flex cursor-pointer items-center justify-between gap-6 rounded-lg px-2.5 py-2 text-[13px] text-ink-700 outline-none data-[highlighted]:bg-cream-100 data-[highlighted]:text-text"
               >
                 {FORMAT_LABEL[a.kind] ?? a.kind.toUpperCase()}
                 <span className="text-[11px] uppercase text-text-faint">.{a.kind}</span>

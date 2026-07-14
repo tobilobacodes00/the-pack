@@ -9,12 +9,13 @@ export type AgentTone = 'idle' | 'active' | 'done' | 'strayed' | 'healing'
 
 export const GLYPH_SIZE = 80
 
-// Glyph colour for a tone: idle grey, strayed amber, healing cyan, else the role colour.
+// Glyph colour for a tone: idle grey, strayed/sick grey (a faulted agent reads as dimmed/down until a
+// Warden reaches it), healing cyan, else the role colour.
 export function toneColor(role: string, tone: AgentTone): string {
-  if (tone === 'idle') return 'currentColor'
-  if (tone === 'strayed') return '#F59E0B'
-  if (tone === 'healing') return '#06B6D4'
-  return ROLE_COLOR[role] ?? '#A3A3A3'
+  if (tone === 'idle') return 'currentColor' // dormant — charcoal ink
+  if (tone === 'strayed') return '#9A9A9A' // down/faulted — dim grey
+  if (tone === 'healing') return '#22B8CF' // cyan — a Warden is reaching it
+  return ROLE_COLOR[role] ?? '#6B6B6B' // active / done — the role's colour
 }
 
 // Idle icons verbatim from the design; each viewBox centres on the glyph's ref point, so paths need no transform.
@@ -94,7 +95,8 @@ const ICONS: Record<string, IconDef> = {
 function iconFor(role: string): IconDef {
   if (ICONS[role]) return ICONS[role]
   if (role === 'hunter') return ICONS.tracker
-  if (role === 'doctor') return ICONS.elder
+  // The healers share the shield/medic mark (elder glyph) — the Warden supersedes the Doctor.
+  if (role === 'doctor' || role === 'warden') return ICONS.elder
   return ICONS.alpha
 }
 
@@ -104,21 +106,45 @@ function iconFor(role: string): IconDef {
  * roster, and the marketing landing so an inactive pack reads identically everywhere.
  * `size` only scales the render; the 80-unit viewBox (centred on the glyph) is preserved.
  */
-export function IdleGlyph({ role, size = GLYPH_SIZE, tone = 'idle' }: { role: string; size?: number; tone?: AgentTone }) {
+export function IdleGlyph({
+  role,
+  size = GLYPH_SIZE,
+  tone = 'idle',
+  accent,
+  outline = false,
+}: {
+  role: string
+  size?: number
+  tone?: AgentTone
+  /** Override the active colour (e.g. the landing's pastel per-role accent, tuned for cream). */
+  accent?: string
+  /** Draw a chunky forest-ink rim so the disc reads as a coin on the cream landing. */
+  outline?: boolean
+}) {
   const { cx, cy, icon } = iconFor(role)
   const viewBox = `${cx - GLYPH_SIZE / 2} ${cy - GLYPH_SIZE / 2} ${GLYPH_SIZE} ${GLYPH_SIZE}`
   const idle = tone === 'idle'
-  const color = toneColor(role, tone)
-  const ring = idle ? '#727272' : color
-  const halo = idle ? '#272727' : color
-  const discFill = '#1A1A1A'
+  // Charcoal coin (the logo grey) always; an idle agent's glyph is a dim grey, an ACTIVE one lights up
+  // in its role/state colour — so the pack carries colour while the chrome stays monochrome.
+  const tc = accent ?? toneColor(role, tone)
+  const color = idle ? '#8a8a8a' : tc
+  const ring = idle ? '#9a9a9a' : tc
+  const halo = idle ? '#ebeae6' : tc
+  const discFill = '#1a1a1a' // charcoal ink coin
 
   return (
     // `color` drives the glyph via currentColor; rings + faint halo pick up the role colour once active.
     <svg width={size} height={size} viewBox={viewBox} fill="none" style={{ display: 'block', color }}>
       <circle opacity={idle ? 0.1 : 0.18} cx={cx} cy={cy} r="39.75" fill={halo} stroke={ring} strokeWidth="0.5" />
       <circle opacity={idle ? 0.3 : 0.28} cx={cx} cy={cy} r="34.75" fill={halo} stroke={ring} strokeWidth="0.5" />
-      <circle cx={cx} cy={cy} r="29.75" fill={discFill} stroke={ring} strokeWidth={idle ? 0.5 : 1.5} />
+      <circle
+        cx={cx}
+        cy={cy}
+        r="29.75"
+        fill={discFill}
+        stroke={outline ? '#1A1A1A' : ring}
+        strokeWidth={outline ? 2.5 : idle ? 0.5 : 1.5}
+      />
       {icon}
     </svg>
   )

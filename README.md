@@ -1,4 +1,4 @@
-# The Pack
+# A Pack
 
 A multi-agent orchestrator you can **watch**. You give the pack a task; a team of AI wolves —
 Alpha (orchestrator), Beta (planner), Scouts (researchers), Tracker (analyst), Sentinel

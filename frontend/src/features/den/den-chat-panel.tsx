@@ -29,16 +29,16 @@ export function DenChatPanel() {
   const hunts = huntData?.hunts ?? []
 
   const shell = 'w-[340px] h-full flex flex-col min-h-0'
-  const shellStyle = { background: color.surface, border: '1px solid #404040', borderRadius: 16 } as const
+  const shellStyle = { background: color.surface, border: `1px solid ${color.border}`, borderRadius: 16 } as const
 
   if (selected) {
     return (
       <div className={shell} style={shellStyle}>
-        <div className="flex items-center gap-2 px-3 h-[52px] shrink-0" style={{ borderBottom: '1px solid #404040' }}>
-          <button onClick={() => setSelected(null)} className="p-1 text-text-dim hover:text-white" aria-label="Back to history">
+        <div className="flex items-center gap-2 px-3 h-[52px] shrink-0" style={{ borderBottom: `1px solid ${color.border}` }}>
+          <button onClick={() => setSelected(null)} className="p-1 text-text-dim hover:text-ink-900" aria-label="Back to history">
             <ChevronLeft size={18} />
           </button>
-          <span className="flex-1 text-[13px] font-semibold text-white">Chat session</span>
+          <span className="flex-1 text-[13px] font-semibold text-ink-900">Chat session</span>
           <Clock size={14} className="text-text-dim" />
         </div>
         <div className="flex-1 overflow-y-auto min-h-0 px-4 py-4 flex flex-col gap-4">
@@ -52,8 +52,7 @@ export function DenChatPanel() {
         <div className="p-3 shrink-0 border-t" style={{ borderColor: color.border }}>
           <button
             onClick={() => navigate(`/hunts/${selected}`)}
-            className="w-full rounded-full py-2.5 text-[13px] font-semibold"
-            style={{ background: color.text, color: color.canvas }}
+            className="w-full rounded-full bg-brand-500 py-2.5 text-[13px] font-semibold text-white shadow-chunk-sm transition-transform hover:-translate-y-0.5"
           >
             Open hunt
           </button>
@@ -64,11 +63,11 @@ export function DenChatPanel() {
 
   return (
     <div className={shell} style={shellStyle}>
-      <div className="flex items-center gap-2 px-3 h-[52px] shrink-0" style={{ borderBottom: '1px solid #404040' }}>
-        <button onClick={goBack} className="p-1 text-text-dim hover:text-white" aria-label="Back">
+      <div className="flex items-center gap-2 px-3 h-[52px] shrink-0" style={{ borderBottom: `1px solid ${color.border}` }}>
+        <button onClick={goBack} className="p-1 text-text-dim hover:text-ink-900" aria-label="Back">
           <ChevronLeft size={18} />
         </button>
-        <span className="flex-1 text-[13px] font-semibold text-white">Chat History</span>
+        <span className="flex-1 text-[13px] font-semibold text-ink-900">Chat History</span>
       </div>
 
       {hunts.length === 0 && !isLoading ? (
@@ -83,11 +82,11 @@ export function DenChatPanel() {
             <button
               key={h.hunt_id}
               onClick={() => setSelected(h.hunt_id)}
-              className="group flex w-full items-center gap-2 rounded-lg px-2.5 py-2 text-left transition-colors hover:bg-[rgba(255,255,255,0.05)]"
+              className="group flex w-full items-center gap-2 rounded-lg px-2.5 py-2 text-left transition-colors hover:bg-cream-100"
             >
               <div className="min-w-0 flex-1">
                 <p className="truncate text-[13.5px] font-medium text-text">{h.title}</p>
-                <p className="text-[11.5px] text-[#7A7A7A]">
+                <p className="text-[11.5px] text-ink-500">
                   {formatRelative(h.created_at)} · {spent(h.cost_usd)} spent
                 </p>
               </div>
@@ -98,10 +97,10 @@ export function DenChatPanel() {
       )}
 
       <div className="mt-auto border-t px-2 py-2 flex flex-col gap-0.5" style={{ borderColor: color.border }}>
-        <button onClick={() => navigate('/instincts')} className="flex items-center gap-3 rounded-lg px-3 py-2 text-[13px] text-[#D4D4D4] hover:bg-[rgba(255,255,255,0.05)]">
+        <button onClick={() => navigate('/instincts')} className="flex items-center gap-3 rounded-lg px-3 py-2 text-[13px] text-ink-700 hover:bg-cream-100">
           <Bookmark size={16} className="text-muted" /> Saved Instincts
         </button>
-        <button onClick={() => navigate('/settings')} className="flex items-center gap-3 rounded-lg px-3 py-2 text-[13px] text-[#D4D4D4] hover:bg-[rgba(255,255,255,0.05)]">
+        <button onClick={() => navigate('/settings')} className="flex items-center gap-3 rounded-lg px-3 py-2 text-[13px] text-ink-700 hover:bg-cream-100">
           <Settings size={16} className="text-muted" /> App Settings
         </button>
       </div>

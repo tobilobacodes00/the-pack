@@ -10,7 +10,7 @@ interface Props {
 
 export function RewardHeader({ prompt, actions, onClose }: Props) {
   return (
-    <div className="flex h-[52px] shrink-0 items-center gap-3 border-b border-[#242424] px-4">
+    <div className="flex h-[52px] shrink-0 items-center gap-3 border-b border-border px-4">
       <span className="min-w-0 flex-1 truncate text-[13px] text-muted">{prompt}</span>
       <div className="flex items-center gap-1">
         {actions}

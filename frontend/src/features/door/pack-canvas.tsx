@@ -13,6 +13,8 @@ export interface PackDrive {
   alphaY: number
   /** Lone-wolf size multiplier — 1 = hero size, small as it settles into the resting logo. */
   alphaScaleMul: number
+  /** 0 = glow on black (hero), 1 = forest-ink wireframe on cream (the warmed-up pack). */
+  warm: number
 }
 
 /**
@@ -89,9 +91,18 @@ export function PackCanvas({
       pulse: u('uPulse'), blink: u('uBlink'), earL: u('uEarL'), earR: u('uEarR'),
       jaw: u('uJaw'), glow: u('uGlow'), alpha: u('uAlpha'),
     }
-    gl.uniform3fv(u('uFill'), hexToVec3('#1A1A1A'))
-    gl.uniform3fv(u('uEdge'), hexToVec3('#FAFAFA'))
-    gl.uniform3fv(u('uEye'), hexToVec3('#FFFFFF'))
+    // The wolf's palette is scroll-driven: glow-on-black on the dark hero, forest-ink-on-cream once
+    // the world warms up. Two triples, lerped per-frame by drive.warm and pushed as uniforms.
+    const uFill = u('uFill')
+    const uEdge = u('uEdge')
+    const uEye = u('uEye')
+    const DARK = { fill: hexToVec3('#1A1A1A'), edge: hexToVec3('#FAFAFA'), eye: hexToVec3('#FFFFFF') }
+    const WARM = { fill: hexToVec3('#FDFCF8'), edge: hexToVec3('#1A1A1A'), eye: hexToVec3('#4A4A4A') }
+    const mix3 = (a: number[], b: number[], t: number): [number, number, number] => [
+      a[0] + (b[0] - a[0]) * t,
+      a[1] + (b[1] - a[1]) * t,
+      a[2] + (b[2] - a[2]) * t,
+    ]
 
     const clamp01 = (x: number) => Math.max(0, Math.min(1, x))
     const pulse = (x: number) => (x <= 0 || x >= 1 ? 0 : Math.sin(Math.PI * x))
@@ -186,6 +197,15 @@ export function PackCanvas({
       const k = 1 - Math.exp(-dt * 6)
       mouse.sx += (mouse.cx - mouse.sx) * k
       mouse.sy += (mouse.cy - mouse.sy) * k
+
+      // Recolour once per frame: glow-on-black → forest-ink-on-cream as the journey warms.
+      const warm = clamp01(drive.warm)
+      const fc = mix3(DARK.fill, WARM.fill, warm)
+      const ec = mix3(DARK.edge, WARM.edge, warm)
+      const yc = mix3(DARK.eye, WARM.eye, warm)
+      gl.uniform3f(uFill, fc[0], fc[1], fc[2])
+      gl.uniform3f(uEdge, ec[0], ec[1], ec[2])
+      gl.uniform3f(uEye, yc[0], yc[1], yc[2])
 
       gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT)
 

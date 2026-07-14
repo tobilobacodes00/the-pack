@@ -117,8 +117,15 @@ INTENT_INSTRUCTIONS: dict[str, str] = {
         "sources agree. Only raise a conflict that is really there."
     ),
     "critique": (
-        "Check that every claim carries a real source and is supported. Respond with ONLY JSON: "
-        "`ok` (boolean) and `issues` (array of {claim, problem}). Be strict but fair."
+        "Verify each claim against the numbered Sources list in your context. For every claim, read "
+        "its `[sources: N]` and check: (1) it actually cites a source — a claim with an EMPTY citation "
+        "is unsupported; (2) each cited number exists in the Sources list; (3) prefer [READ]/verified "
+        "sources — a claim resting only on an `(unverified)` snippet is weak; (4) the cited source "
+        "plausibly SUPPORTS the specific claim — flag over-claiming (source says 'may reach $500M by "
+        "2027', claim says 'will hit $500M'), stale data, or a claim that contradicts another. Respond "
+        "with ONLY JSON: `ok` (boolean — true only if NO claim has an issue) and `issues` (array of "
+        "{claim, problem}), where `claim` is the offending claim's TEXT and `problem` names the defect. "
+        "Be strict but fair — flag real problems, not stylistic nits."
     ),
     "gaps": (
         "Name what is still missing to answer the task well. Respond with ONLY JSON: `gaps` "
@@ -150,8 +157,17 @@ INTENT_INSTRUCTIONS: dict[str, str] = {
         "concede and say how you'll strengthen it, or defend it with the evidence you have."
     ),
     "standoff_judge": (
-        "You are Alpha settling a standoff. In one or two sentences, make the call: keep, drop, or "
-        "qualify the claim, and say why. Plain English."
+        "You are Alpha settling a standoff. Weigh the challenge and the defense against the numbered "
+        'sources on the table. Respond with ONLY JSON: `verdict` (exactly one of "keep", "drop", '
+        '"qualify") and `rationale` (one sentence citing the source number(s)). KEEP only if a listed '
+        "source genuinely backs the claim; DROP if none does; QUALIFY if it's only partly supported. "
+        "Rule on the evidence, not on volume."
+    ),
+    "conflict_decide": (
+        "You are Alpha resolving a genuine conflict for the Packmaster in Wild mode. Weigh the offered "
+        "options against the numbered sources on the table. Respond with ONLY JSON: `choice` (exactly "
+        "one of the offered options, copied verbatim) and `rationale` (one sentence citing the source "
+        "number(s) that decide it). Pick the option the evidence best supports — never invent a new one."
     ),
 }
 

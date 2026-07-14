@@ -121,6 +121,7 @@
           "est_time": { "type": "number" },
           "queries": { "type": "array", "items": { "type": "string" }, "description": "Per-scout search angles (additive)." },
           "strategy": { "type": "string", "description": "Selected research strategy (additive)." },
+          "depth": { "enum": ["brief", "standard", "deep"], "description": "v3: adaptive research depth (additive)." },
           "team": { "type": "array", "description": "v2: the per-task team Alpha builds — [{role,count,tier,thinking,budget_usd}]." },
           "edges": { "type": "array", "description": "v2: optional formation DAG edges [from_role, to_role]." }
         }
@@ -135,7 +136,8 @@
         "required": ["mode", "boundary_usd"],
         "properties": {
           "mode": { "enum": ["wild", "on_signal", "on_command"] },
-          "boundary_usd": { "type": "number" }
+          "boundary_usd": { "type": "number" },
+          "depth": { "enum": ["brief", "standard", "deep"], "description": "v3: the approved (possibly user-overridden) research depth (additive)." }
         }
       },
       "wolf_spawned": {
@@ -143,7 +145,7 @@
         "required": ["wolf_id", "role", "model_tier", "thinking", "prompt_version"],
         "properties": {
           "wolf_id": { "type": "string" },
-          "role": { "enum": ["alpha", "beta", "scout", "tracker", "howler", "sentinel", "hunter", "elder", "doctor"] },
+          "role": { "enum": ["alpha", "beta", "scout", "tracker", "howler", "sentinel", "hunter", "elder", "doctor", "warden"] },
           "model_tier": { "enum": ["max", "plus", "flash"] },
           "thinking": { "type": "boolean" },
           "prompt_version": { "type": "string" },
@@ -242,7 +244,9 @@
         "properties": {
           "hold_id": { "type": "string" },
           "resolution": { "type": "string" },
-          "edited_text": { "type": ["string", "null"] }
+          "edited_text": { "type": ["string", "null"] },
+          "auto": { "type": "boolean" },
+          "rationale": { "type": ["string", "null"] }
         }
       },
       "standoff_opened": {
@@ -269,7 +273,7 @@
         "required": ["standoff_id", "outcome", "rationale"],
         "properties": {
           "standoff_id": { "type": "string" },
-          "outcome": { "enum": ["agreement", "alpha_call", "hold_opened"] },
+          "outcome": { "enum": ["agreement", "alpha_call", "hold_opened", "unresolved"] },
           "rationale": { "type": "string" }
         }
       },

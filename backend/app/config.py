@@ -79,13 +79,30 @@ class Settings(BaseSettings):
     strict_secrets: bool = False
 
     # Boundary — hard safety ceiling on a hunt's spend (the approved boundary is honored to this cap).
-    # Must exceed the per-wolf budget sum of the largest team (~$1.30 for 5 scouts + support) so a
-    # bigger formation isn't silently throttled/halted. Lower via .env for cheap demos.
-    first_hunt_cap_usd: float = 3.00
+    # Must exceed the per-wolf budget sum of the largest boundary-gated team so a bigger/deeper
+    # formation isn't silently throttled/halted. Worst case (5 scouts×0.10 + tracker 0.30 + sentinel
+    # 0.20 + howler 0.40 + elder 0.05) = $1.45 (beta's plan call is NOT boundary-gated); 4.00 leaves
+    # >2.5× headroom for reserve-then-reconcile. Lower via .env for cheap demos.
+    first_hunt_cap_usd: float = 4.00
 
     # A wolf's single dispatch may not exceed this wall-clock before it's ruled a Stray and
-    # rerouted (anomaly path — generous so only true hangs trip it).
-    step_timeout_s: float = 120.0
+    # rerouted (anomaly path — generous so only true hangs trip it). Measured: a plus+thinking scout
+    # search runs ~4-6s, a critique ~6s, but Beta's plan call ~50s and a rich merge over 5 findings
+    # ~90-130s — so 120s clipped the merge on real deep hunts, collapsing the whole synthesis to a
+    # raw-findings paste. 180 gives the common calls headroom; the two big SYNTHESIS calls (merge,
+    # draft) get the longer dedicated budget below.
+    step_timeout_s: float = 180.0
+
+    # The Tracker MERGE and Howler DRAFT are the two heaviest calls — a plus+thinking model
+    # synthesizing every finding/claim into the whole brief. They legitimately take 90-180s+ and are
+    # the calls that were silently timing out. Give them their own generous budget so the pack
+    # actually produces its synthesis instead of falling back to pasting raw findings.
+    synthesis_timeout_s: float = 300.0
+
+    # A merge/draft that overruns even the synthesis budget is retried ONCE before the honest
+    # fallback — a single transient slow call shouldn't collapse the whole brief to a raw-findings
+    # paste. The retry runs under the same synthesis budget.
+    synthesis_retries: int = 1
 
     # Web search (real research). An empty key falls back to the deterministic canned
     # provider, so the whole engine still runs offline end to end (Doc 04 §07).
@@ -99,13 +116,24 @@ class Settings(BaseSettings):
     search_soft_s: float = 2.5
     search_budget_s: float = 7.0
     search_provider_concurrency: int = 6
+    # Soft domain-diversity nudge in the cross-provider rank (a 2nd+ hit from the same host is pushed
+    # down, never dropped; only kicks in with ≥3 distinct hosts so a single-source topic isn't hurt).
+    search_domain_diversity: bool = True
     # Depth: how many of a scout's top hits to actually deep-read (web_fetch the full page), and how
     # much of each page to keep. Reading only the #1 hit left most sources snippet-only ("unverified")
     # and made briefs thin; reading the top few full pages gives the pack real material to write from.
     # Fetches run in parallel, and the assembled context is still bounded by qwen_context_budget_tokens
     # and the dollar Boundary — so deeper reads cost more per hunt but can't run away.
-    scout_deep_reads: int = 3
-    web_fetch_max_chars: int = 5000
+    scout_deep_reads: int = 5
+    web_fetch_max_chars: int = 8000
+    # How much of each deep-read page's full text to carry into the scout's summarization context,
+    # and how many named sources per finding reach the merge. Loosened from the old 2500/4 that
+    # starved the brief. `findings_sources_max` is depth-scaled (deeper → more) at the call site.
+    hits_fulltext_chars: int = 3500
+    findings_sources_max: int = 6
+    # Chars kept per library doc injected into the draft, and per mid-hunt Packmaster input line.
+    kb_pick_chars: int = 1000
+    extra_input_chars: int = 1200
 
     # Multi-source research — every provider with a key present joins the fan-out; keyless ones
     # (Hacker News, Wikidata, DBpedia, OpenAlex) always run. ALL empty → canned offline provider.
@@ -146,8 +174,9 @@ class Settings(BaseSettings):
     # starting point pending confirmation against the pack's actual account/region limit.
     qwen_max_request_bytes: int = 6_291_456  # 6 MB
 
-    # Context sizing.
-    qwen_context_budget_tokens: int = 24_000  # soft cap on the assembled context string, not a
+    # Context sizing. Raised 24k→48k (≈192k chars, well under qwen_max_request_bytes) so the richer
+    # 5-scout deep findings + numbered sources aren't silently truncated by fit_context's tail-drop.
+    qwen_context_budget_tokens: int = 48_000  # soft cap on the assembled context string, not a
     # hard token count — see app/qwen/context_budget.py.
 
     # Prompt caching — OFF by default. DashScope's context-cache feature is unverified against
