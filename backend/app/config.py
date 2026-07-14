@@ -198,15 +198,20 @@ class Settings(BaseSettings):
     qwen_context_budget_tokens: int = 48_000  # soft cap on the assembled context string, not a
     # hard token count — see app/qwen/context_budget.py.
 
-    # Prompt caching — confirmed working on the pack's real DashScope key/endpoint via
-    # scripts/check_prompt_cache.py (turn 2 of a repeated system prompt served from cache). Still
-    # opt-in: flip to True once the reordered, cache-marked system prompt (prompt_context.py) has
-    # been proven on a live key in THIS shape, not just the spike script's synthetic padding.
-    qwen_prompt_cache_enabled: bool = False
-    # DashScope's minimum cacheable block, per the spike script's findings. A persona shorter than
-    # this wastes the cache_control marker (never actually caches), so we only attach the marker
-    # when the stable prefix clears it — chars/4 heuristic, same margin the rest of the client uses.
-    qwen_prompt_cache_min_chars: int = 4096
+    # Prompt caching — PROVEN on the pack's real DashScope key/endpoint in the production shape
+    # (tests/live/test_live_qwen.py + a live persona probe, 2026-07-14): the reordered, cache-marked
+    # system prompt built by prompt_context._system_content is genuinely served from cache on turn 2.
+    # The endpoint's real minimum is MUCH lower than the docs' 1024-token floor — the actual scout
+    # persona (~325 tokens) served 256 tokens from cache. So this is ON, and the min-chars gate below
+    # was RECALIBRATED down: at 4096 it suppressed caching on EVERY real wolf (all personas are
+    # 481-2831 chars), making the flag a silent no-op.
+    qwen_prompt_cache_enabled: bool = True
+    # Attach the cache_control marker to any persona at/above this length. Set to 400 (~100 tokens) so
+    # every real wolf persona — warden (481) through beta (2831) — gets marked; the live probe showed
+    # personas this size DO cache on this endpoint (the docs' 1024-token floor does not apply here). A
+    # block too short to cache just doesn't (no error, no cost), so err on the low side. NOT 4096: that
+    # cleared no real persona and disabled caching entirely.
+    qwen_prompt_cache_min_chars: int = 400
 
     # deep_scout — the ONE bounded model-driven tool-loop (app/engine/deep_scout.py), the study's
     # opt-in architecture bet. A deep_scout wolf gets up to `deep_scout_max_iterations` turns to CHOOSE

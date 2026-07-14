@@ -7,6 +7,9 @@ REORDERED, cache-marked system prompt is genuinely served from cache on a live D
 
 from __future__ import annotations
 
+import asyncio
+from collections.abc import Callable
+
 import pytest
 
 from app.qwen.types import CallSpec
@@ -15,6 +18,23 @@ from .conftest import requires_live_key
 
 # Skip the whole module without a real key AND run every test under asyncio.
 pytestmark = [requires_live_key(), pytest.mark.asyncio]
+
+
+async def _cache_engages(
+    client, make_spec: Callable[[str], CallSpec], *, attempts: int = 4
+) -> bool:
+    """Warm the cache with one call, then probe up to `attempts` times (short gap between) for a hit.
+    DashScope's cache WRITE has a small propagation delay, so an instant back-to-back second call can
+    read cached=0 even though caching works — that's an endpoint timing race, not a code defect. We
+    only need to prove caching ENGAGES on this prompt shape, so we retry rather than assert on the very
+    first probe. Returns True as soon as any probe reports cached_tokens > 0."""
+    await client.complete(make_spec("warm the cache"))
+    for i in range(attempts):
+        await asyncio.sleep(1.0)
+        result = await client.complete(make_spec(f"probe {i}"))
+        if result.cached_tokens > 0:
+            return True
+    return False
 
 
 async def test_each_tier_answers(live_client) -> None:
@@ -76,10 +96,47 @@ async def test_reordered_prompt_is_served_from_cache_on_the_second_call(live_cli
             ],
         )
 
-    await live_client.complete(_spec("Say: one"))  # warm the cache
-    second = await live_client.complete(_spec("Say: two"))  # identical prefix → should hit cache
-
-    assert second.cached_tokens > 0, (
-        "the reordered cache-marked prompt was NOT served from cache on turn 2 — do not flip "
+    assert await _cache_engages(live_client, _spec), (
+        "the reordered cache-marked prompt was NOT served from cache across retries — do not flip "
         "qwen_prompt_cache_enabled on until this passes (DashScope reported cached_tokens=0)"
+    )
+
+
+async def test_real_scout_dispatch_shape_caches_end_to_end(live_client):
+    """THE definitive 'in THIS shape' proof: a REAL wolf dispatch — the exact messages
+    prompt_context.messages() builds for a scout, through the real QwenClient with the SHIPPED config
+    (caching on, min_chars=400) — must be served from cache on the second identical call. This is the
+    production path, not synthetic padding: it proves the flip we shipped actually saves tokens live."""
+    from app.config import settings
+    from app.engine.prompt_context import messages
+    from app.engine.wolves import Wolf
+
+    # Force the shipped caching config regardless of test-env overrides.
+    settings.qwen_prompt_cache_enabled = True
+    settings.qwen_prompt_cache_min_chars = 400
+
+    wolf = Wolf(
+        hunt_id="live",
+        wolf_id="scout-1",
+        role="scout",
+        tier="flash",
+        thinking=False,
+        prompt_version="scout/v1",
+        client=live_client,
+    )
+    built = messages(
+        wolf, raw_input="the EV charging market", wolf_notes={}, intent="search", context=""
+    )
+    assert isinstance(built[0]["content"], list), "real scout persona must produce cache blocks"
+
+    def _spec(user: str) -> CallSpec:
+        msgs = [
+            built[0],
+            {"role": "user", "content": user},
+        ]  # same cache-marked system, new user turn
+        return CallSpec(hunt_id="live", wolf_id="scout-1", tier="flash", messages=msgs)
+
+    assert await _cache_engages(live_client, _spec), (
+        "a REAL scout dispatch never cached across retries in the shipped config — the min_chars gate "
+        "or the _system_content ordering may have regressed (not a mere cache-write race)"
     )

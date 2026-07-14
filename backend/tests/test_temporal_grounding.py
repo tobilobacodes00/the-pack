@@ -34,10 +34,15 @@ class _StubWolf:
     wolf_id: str = "scout-1"
 
 
-def test_dispatch_system_prompt_leads_with_the_stable_persona() -> None:
+def test_dispatch_system_prompt_leads_with_the_stable_persona(monkeypatch) -> None:
     """The STABLE persona must come first and the VOLATILE date grounding last — a provider's
     prompt cache keys on the longest common prefix, so date-first (the old order) poisoned the
-    cache on every single call. Reordering doesn't drop the date, it just moves it to the tail."""
+    cache on every single call. Reordering doesn't drop the date, it just moves it to the tail.
+
+    Caching is ON by default now (proven live), which makes the system content a block LIST; this
+    test pins the plain-STRING ordering, so force caching off here — the block-shape ordering has its
+    own test below (test_system_content_becomes_cache_marked_blocks...)."""
+    monkeypatch.setattr("app.config.settings.qwen_prompt_cache_enabled", False)
     msgs = messages(
         _StubWolf(),  # type: ignore[arg-type]  # messages() only reads .role/.wolf_id
         raw_input="What are the latest AI models?",
@@ -93,3 +98,23 @@ def test_short_persona_skips_the_cache_marker_even_when_enabled(monkeypatch) -> 
     monkeypatch.setattr("app.config.settings.qwen_prompt_cache_min_chars", 10_000_000)
     msgs = messages(_StubWolf(), raw_input="x", wolf_notes={}, intent="search", context="")  # type: ignore[arg-type]
     assert isinstance(msgs[0]["content"], str)  # falls back to the plain-string shape
+
+
+def test_real_personas_clear_the_shipped_cache_threshold() -> None:
+    """REGRESSION GUARD for the recalibration: with the shipped default min_chars (400) and caching ON
+    (both proven live 2026-07-14), every real wolf persona MUST cache-mark. A 4096 threshold silently
+    disabled caching on every wolf (all personas are 481-2831 chars) — this fails if that regresses."""
+    from app.config import settings
+    from app.prompts import load_prompt
+
+    assert settings.qwen_prompt_cache_enabled is True  # ON by default (proven on the live key)
+    for role in ("scout", "tracker", "sentinel", "howler", "beta", "alpha", "elder", "warden"):
+        persona = load_prompt(role).body
+        assert len(persona) >= settings.qwen_prompt_cache_min_chars, (
+            f"{role} persona ({len(persona)} chars) is under the {settings.qwen_prompt_cache_min_chars}"
+            "-char cache threshold — it would never cache-mark; lower the threshold or it's a no-op"
+        )
+
+    # And the shipped config actually produces the block shape for a real dispatch.
+    msgs = messages(_StubWolf(), raw_input="x", wolf_notes={}, intent="search", context="")  # type: ignore[arg-type]
+    assert isinstance(msgs[0]["content"], list), "caching ON + real persona must yield cache blocks"

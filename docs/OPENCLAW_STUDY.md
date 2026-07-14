@@ -198,9 +198,15 @@ dropped.
 > fires. **Read-side event validation (#36)** is a cross-repo concern (the Rust gateway is the real
 > consumer) and stays flagged there.
 >
-> **The two remaining live-key proofs** (need a real Qwen key, harness is built): flip
-> `qwen_prompt_cache_enabled` on only after `tests/live` shows `cached_tokens > 0` in this reordered
-> shape; prove `deep_scout` on the harness before enabling `deep_scout_enabled`.
+> **Live-key proofs — DONE (2026-07-14, real key).** All 5 `tests/live` tests pass against the real
+> DashScope endpoint. Prompt caching is now **ON by default**: proven that a real scout dispatch (in the
+> production `_system_content` shape) is served ~256 tokens from cache on the repeat call. This also
+> corrected a real miscalibration — `qwen_prompt_cache_min_chars` was 4096, which cleared NO real wolf
+> persona (all are 481–2831 chars), so the flag would have been a silent no-op; recalibrated to 400
+> (the endpoint's real minimum is far below the docs' 1024-token floor — personas at ~325 tokens cache).
+> `deep_scout` is **proven** to drive to completion against the real model (turn 1 search → turn 2 fetch
+> → turn 3 finish, grounded summary), and got a real `deep_scout/v1` persona; it stays opt-in
+> (`deep_scout_enabled` default off) pending a product decision to route wolves into it.
 >
 > The original phase plan is preserved below for reference.
 
