@@ -1,2 +1,2 @@
-"""Multi-source research providers (web search, news, academic, community, knowledge graph) and
-the deep-read reader chain. Assembled into a MultiProvider by `app.tools.search_provider`."""
+"""The web search provider (DuckDuckGo — see duckduckgo.py) and the keyless deep-read reader chain
+(readers.py). Assembled into a MultiProvider by `app.tools.search_provider`."""

@@ -1,29 +1,26 @@
 """Deep-read readers — turn a URL into readable text. Tried in order by the MultiProvider until
-one returns content. Each returns None on any failure so the chain falls through."""
+one returns content. Each returns None on any failure so the chain falls through.
+
+Keyless only, by design (see search_provider.py) — no paid reader vendor."""
 
 from __future__ import annotations
 
 import httpx
 
 from app.tools._ssrf import safe_fetch
-from app.tools.providers.base import _post_json, _strip_html, random_ua
+from app.tools.providers.base import _strip_html, random_ua
 
 
 class JinaReader:
     """Deep-read via Jina Reader (r.jina.ai): renders JS and returns clean text — far more reliable
-    than raw HTML scraping. Works KEYLESS on the free tier (rate-limited ~20 RPM); a key raises the
-    limit. This is the workhorse free deep-reader."""
+    than raw HTML scraping. Keyless free tier (rate-limited ~20 RPM). This is the workhorse
+    deep-reader; DirectReader is the keyless fallback when it can't read a page."""
 
     name = "jina"
     _BASE = "https://r.jina.ai/"
 
-    def __init__(self, api_key: str = "") -> None:
-        self._key = api_key
-
     async def read(self, url: str) -> str | None:
         headers = {"Accept": "text/plain", "User-Agent": random_ua()}
-        if self._key:  # a key lifts the free-tier rate limit
-            headers["Authorization"] = f"Bearer {self._key}"
         try:
             async with httpx.AsyncClient(
                 timeout=25.0, follow_redirects=True, headers=headers
@@ -36,47 +33,9 @@ class JinaReader:
         return text.strip() or None
 
 
-class FirecrawlReader:
-    name = "firecrawl"
-    _URL = "https://api.firecrawl.dev/v1/scrape"
-
-    def __init__(self, api_key: str) -> None:
-        self._key = api_key
-
-    async def read(self, url: str) -> str | None:
-        data = await _post_json(
-            self._URL,
-            headers={"Authorization": f"Bearer {self._key}"},
-            json={"url": url, "formats": ["markdown"]},
-            timeout=20.0,
-        )
-        if not isinstance(data, dict):
-            return None
-        md = (data.get("data") or {}).get("markdown") or ""
-        return md.strip() or None
-
-
-class TavilyExtractReader:
-    name = "tavily-extract"
-    _URL = "https://api.tavily.com/extract"
-
-    def __init__(self, api_key: str) -> None:
-        self._key = api_key
-
-    async def read(self, url: str) -> str | None:
-        data = await _post_json(self._URL, json={"api_key": self._key, "urls": [url]}, timeout=20.0)
-        if not isinstance(data, dict):
-            return None
-        results = data.get("results", [])
-        if not results:
-            return None
-        return str(results[0].get("raw_content", "")).strip() or None
-
-
 class DirectReader:
-    """Keyless deep-read — fetch the page yourself (SSRF-safe) and strip it to text. The free
-    fallback so pages still get read with zero paid readers. Tried LAST, so a paid reader (Jina/
-    Firecrawl/Tavily) wins when configured; this catches everything else."""
+    """Keyless deep-read — fetch the page yourself (SSRF-safe) and strip it to text. The fallback
+    when Jina can't read a page. Tried last."""
 
     name = "direct"
 
@@ -88,23 +47,3 @@ class DirectReader:
             return None
         text = _strip_html(resp.text)
         return text or None
-
-
-class ApifyReader:
-    """Best-effort — Apify actor runs are slow; usually times out and the chain moves on. Last."""
-
-    name = "apify"
-    _URL = "https://api.apify.com/v2/acts/apify~website-content-crawler/run-sync-get-dataset-items"
-
-    def __init__(self, api_key: str) -> None:
-        self._key = api_key
-
-    async def read(self, url: str) -> str | None:
-        data = await _post_json(
-            f"{self._URL}?token={self._key}",
-            json={"startUrls": [{"url": url}], "maxCrawlPages": 1},
-            timeout=25.0,
-        )
-        if not isinstance(data, list) or not data:
-            return None
-        return str((data[0] or {}).get("text", "")).strip() or None

@@ -86,7 +86,7 @@ async def test_direct_reader_returns_none_on_error(monkeypatch) -> None:
 
 
 async def test_jina_reader_works_keyless_and_omits_auth(monkeypatch) -> None:
-    """The free tier works with no key — and we must NOT send an empty bearer header when keyless."""
+    """JinaReader is keyless-only (no paid vendor wiring) — must never send an Authorization header."""
     seen: dict = {}
 
     def handler(req: httpx.Request) -> httpx.Response:
@@ -97,10 +97,7 @@ async def test_jina_reader_works_keyless_and_omits_auth(monkeypatch) -> None:
     import app.tools.providers.readers as readers
 
     _mock(monkeypatch, readers, handler)
-    text = await JinaReader().read("https://example.com/page")  # no key
+    text = await JinaReader().read("https://example.com/page")
     assert text == "clean extracted text"
     assert seen["url"] == "https://r.jina.ai/https://example.com/page"
-    assert seen["auth"] is None  # keyless → no Authorization header
-    # With a key, the bearer is sent.
-    await JinaReader("k-123").read("https://example.com/page")
-    assert seen["auth"] == "Bearer k-123"
+    assert seen["auth"] is None  # keyless → no Authorization header, ever

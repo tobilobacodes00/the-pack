@@ -31,10 +31,11 @@ themselves.
 - [ ] A **working Qwen API key** — you already have one, confirmed live and working:
       it is currently in `backend/.env` on this machine, starts `sk-ws-H.XHRRLX...`
       (copy the FULL value from that file when you get to Part 7 — never re-type it by hand)
-- [ ] A Tavily account (free) for web search — sign up at https://tavily.com, grab the key from
-      your dashboard (starts `tvly-...`)
 - [ ] This codebase, pushed to GitHub (it already is — `tobiloba/engine-spine` branch, confirmed
       pushed and clean as of this guide being written)
+
+No other API key or account is needed. Web search runs on DuckDuckGo — free, keyless, nothing to
+sign up for.
 - [ ] ~30–45 minutes, most of which is waiting for cloud resources to provision
 
 ---
@@ -233,19 +234,15 @@ Troubleshooting if that happens.
 
 ---
 
-## Part 4 — Get your API keys ready
+## Part 4 — Get your API key ready
 
 You already have a **working, verified Qwen key** — it's the one confirmed live in this session,
 currently saved in `backend/.env` on your computer starting with `sk-ws-H.XHRRLX...`. When you get to
 Part 7, open that file and copy the **full** key value (do not retype it — one wrong character and
 every hunt fails).
 
-You still need a **Tavily** key for real web search (without it, the app still runs but search results
-are fake/canned):
-
-1. Go to https://tavily.com → **Sign Up** → verify your email
-2. Once logged in, your API key is shown on the dashboard homepage — starts with `tvly-`
-3. Copy it and save it somewhere for Part 7.
+That's the only key you need. Web search runs on DuckDuckGo (free, keyless) — nothing to sign up
+for, no other account needed.
 
 ---
 
@@ -350,7 +347,6 @@ it — it already ships correct, verified defaults):
 
 ```
 QWEN_API_KEY=sk-ws-H.XHRRLX...                    ← the FULL key from backend/.env on your computer
-SEARCH_API_KEY=tvly-...                            ← your Tavily key from Part 4
 
 POSTGRES_URL=postgresql://pack:POSTGRES_PASSWORD@POSTGRES_HOST:5432/pack
                                                     ← use the values you wrote down in Part 1
@@ -691,9 +687,13 @@ Ctrl+C to stop watching (does not stop the app).
   Give it up to 15 minutes before assuming something's wrong.
 
 ### Scouts always return empty/fake search results
-- `SEARCH_API_KEY` (your Tavily key) is missing or wrong in `.env.prod` — without it the app
-  deliberately falls back to canned results so it never fully breaks, but real search needs the key.
-- Fix the key, then: `docker compose -f docker-compose.prod.yml restart engine`
+- Search is DuckDuckGo (free, keyless) — there's no key to misconfigure. If results are consistently
+  empty, DuckDuckGo itself may be rate-limiting or blocking the ECS box's IP (this can happen on
+  shared cloud IP ranges). Check `docker compose -f docker-compose.prod.yml logs engine | grep -i
+  duckduckgo` for errors. This is rare and usually resolves itself; if it persists, the ECS box's
+  outbound IP may need to be rotated (stop/start the instance often assigns a new public IP).
+- If QWEN_API_KEY itself is missing/wrong, the app falls back to canned results entirely (no real
+  search AND no real model) — check that first, it's the more common cause.
 
 ### You made a typo in `.env.prod` and need to fix it
 ```bash
@@ -726,7 +726,7 @@ This does NOT delete your data (Postgres/Redis are separate managed services, un
 | Public IP + bandwidth | $5–10/month |
 | OSS storage (if used) | ~$1–5/month for typical use |
 | Qwen AI usage | ~$0.05–$0.20 per hunt (pay only for what you use) |
-| Tavily search | Free up to ~1000 searches/month |
+| Web search (DuckDuckGo) | Free, no limit |
 | **Fixed monthly total** | **~$105–150/month** |
 
 You can reduce this significantly by stopping the ECS instance (not deleting) when you're not actively

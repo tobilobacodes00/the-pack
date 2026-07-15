@@ -46,23 +46,10 @@ _MIN_SECRET_LEN = 8
 _SECRET_FIELDS = (
     "qwen_api_key",
     "qwen_voice_api_key",
-    "search_api_key",
     "session_secret",
     "api_auth_token",
     "oss_access_key_secret",
     "oss_access_key_id",
-    "exa_api_key",
-    "serpapi_api_key",
-    "youcom_api_key",
-    "newsapi_key",
-    "gnews_api_key",
-    "newsdata_api_key",
-    "jina_api_key",
-    "firecrawl_api_key",
-    "apify_api_key",
-    "core_api_key",
-    "github_token",
-    "google_kg_api_key",
 )
 
 # Obvious non-secret placeholders that ship as defaults — never register these or we'd mask the literal

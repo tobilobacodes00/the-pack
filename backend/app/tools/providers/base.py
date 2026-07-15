@@ -1,13 +1,12 @@
-"""Shared building blocks for the multi-source research providers.
+"""Shared building blocks for the web search provider.
 
-A *sub-provider* turns a query into a list of `SearchHit`s for one upstream API (Tavily, Exa,
-NewsAPI, OpenAlex, …). A *reader* turns a URL into readable text (Jina, Firecrawl, …). The
-`MultiProvider` in `search_provider.py` fans a query out to every enabled sub-provider and walks
-the reader chain for deep reads.
+A *sub-provider* turns a query into a list of `SearchHit`s for one upstream (DuckDuckGo — the only
+one wired in). A *reader* turns a URL into readable text (Jina's free tier, then a direct fetch). The
+`MultiProvider` in `search_provider.py` runs the search then walks the reader chain for deep reads.
 
 Every network call goes through `_get_json` / `_post_json` / `_get_text`, which swallow ALL errors
-(timeouts, non-2xx, bad JSON) and return `None`. That isolation is the whole point: with ~16
-upstreams on free tiers, one slow or rate-limited API must never sink the others.
+(timeouts, non-2xx, bad JSON) and return `None`. That isolation is the whole point: a slow or
+rate-limited upstream must never take down the search.
 """
 
 from __future__ import annotations

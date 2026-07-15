@@ -151,62 +151,12 @@ async def test_fanout_diversity_off_restores_plain_order(monkeypatch: pytest.Mon
     assert [h.url for h in hits] == ["https://a.com/1", "https://a.com/2", "https://b.com/1"]
 
 
-class TestProviderAllowList:
-    """`search_providers_enabled` decides which upstreams actually run. Default is DuckDuckGo only —
-    the one general web engine the live audit proved reliable; the rest 403'd or timed out to 0 hits.
-    A live model key is required or make_search_provider short-circuits to the offline Canned provider,
-    so these tests set a dummy key and every real-provider key present to prove filtering, not gating."""
+def test_make_search_provider_is_duckduckgo_only(monkeypatch: pytest.MonkeyPatch) -> None:
+    """DuckDuckGo is the ONLY search upstream — no allow-list, no other vendor. A live model key is
+    required or make_search_provider short-circuits to the offline Canned provider."""
+    from app.tools.search_provider import MultiProvider, make_search_provider
 
-    @staticmethod
-    def _all_keys(monkeypatch: pytest.MonkeyPatch) -> None:
-        # A model key (so we don't hit the offline Canned branch) + every provider key present, so the
-        # allow-list is the ONLY thing narrowing the set.
-        for attr in (
-            "qwen_api_key",
-            "search_api_key",
-            "exa_api_key",
-            "serpapi_api_key",
-            "youcom_api_key",
-            "newsapi_key",
-            "gnews_api_key",
-            "newsdata_api_key",
-            "core_api_key",
-            "github_token",
-            "google_kg_api_key",
-        ):
-            monkeypatch.setattr(f"app.config.settings.{attr}", "x")
-
-    def _sub_names(self) -> list[str]:
-        from app.tools.search_provider import MultiProvider, make_search_provider
-
-        prov = make_search_provider()
-        assert isinstance(prov, MultiProvider)
-        return [s.name for s in prov._subs]
-
-    def test_default_is_duckduckgo_only(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        self._all_keys(monkeypatch)
-        monkeypatch.setattr("app.config.settings.search_providers_enabled", "duckduckgo")
-        assert self._sub_names() == ["duckduckgo"]
-
-    def test_named_allow_list_filters_and_orders(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        self._all_keys(monkeypatch)
-        monkeypatch.setattr(
-            "app.config.settings.search_providers_enabled", "tavily, duckduckgo , exa"
-        )
-        # kept in the order named, whitespace tolerant, only the named ones
-        assert self._sub_names() == ["tavily", "duckduckgo", "exa"]
-
-    def test_empty_setting_runs_all_constructible(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        self._all_keys(monkeypatch)
-        monkeypatch.setattr("app.config.settings.search_providers_enabled", "")
-        names = self._sub_names()
-        # the legacy fan-out-everything behaviour: many providers, DuckDuckGo among them
-        assert "duckduckgo" in names and len(names) > 5
-
-    def test_all_unknown_names_falls_back_to_duckduckgo(
-        self, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
-        self._all_keys(monkeypatch)
-        monkeypatch.setattr("app.config.settings.search_providers_enabled", "nope,bogus")
-        # misconfigured to nothing real must never leave the pack with zero engines
-        assert self._sub_names() == ["duckduckgo"]
+    monkeypatch.setattr("app.config.settings.qwen_api_key", "x")
+    prov = make_search_provider()
+    assert isinstance(prov, MultiProvider)
+    assert [s.name for s in prov._subs] == ["duckduckgo"]

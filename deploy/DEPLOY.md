@@ -1,5 +1,11 @@
 # How to deploy The Pack — step by step
 
+> ⚠️ **Superseded — use `deploy/ECS_DEPLOY_GUIDE.md` instead.** This file predates a cleanup that
+> removed every search vendor except DuckDuckGo (which is free and keyless) — the Tavily API key
+> steps below are stale and no longer needed. `ECS_DEPLOY_GUIDE.md` also fixes a real step-ordering
+> bug in this guide (the password file must be created BEFORE the first `docker compose up`, not
+> after). This file is kept for background/architecture context only.
+
 This guide assumes you have an Alibaba Cloud account and access to the code.
 You do not need to know how to code. Just follow each step in order.
 

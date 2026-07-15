@@ -4,13 +4,14 @@ A `SearchProvider` turns a query into ranked hits and a url into readable text. 
 
 * `CannedProvider` — DETERMINISTIC synthetic hits, no network, so the offline hunt stays
   reproducible with no keys (and tests stay hermetic).
-* `MultiProvider` — fans every query out to ALL configured upstreams (web search, news, academic,
-  community, knowledge graph — see `app/tools/providers/`), merges + dedupes the hits, and walks a
-  reader chain (Jina → Firecrawl → Tavily → Apify) for deep page reads. Each upstream is failure-
-  isolated: a timeout or rate-limit on one returns nothing and the rest still answer.
+* `MultiProvider` — DuckDuckGo only (free, keyless, the one engine proven reliable — see
+  `search_providers_enabled` history), deep-reading via a keyless reader chain (Jina free tier →
+  DirectReader raw fetch).
 
-`make_search_provider()` builds the MultiProvider from whichever keys are present; if NO real key is
-configured it returns Canned, so the engine still runs end to end offline (Doc 04 §07).
+`make_search_provider()` builds the MultiProvider when a model key is configured; if NO real key is
+configured it returns Canned, so the engine still runs end to end offline (Doc 04 §07). There is
+deliberately no other search vendor wired in — DuckDuckGo + keyless readers is the whole research
+retrieval layer.
 """
 
 from __future__ import annotations
@@ -23,7 +24,6 @@ from typing import Protocol
 from app.config import settings
 from app.tools.cache import TTLCache
 from app.tools.content_guard import is_fetchable_url, scan_content
-from app.tools.providers.academic import CoreSearch, OpenAlexSearch
 from app.tools.providers.base import (
     _BLOCKED_HOSTS,
     Reader,
@@ -33,18 +33,8 @@ from app.tools.providers.base import (
     canonical_url,
     host_key,
 )
-from app.tools.providers.community import GitHubSearch, HackerNewsSearch
 from app.tools.providers.duckduckgo import DuckDuckGoSearch
-from app.tools.providers.kg import DBpediaSearch, GoogleKgSearch, WikidataSearch
-from app.tools.providers.news import GNewsSearch, NewsApiSearch, NewsDataSearch
-from app.tools.providers.readers import (
-    ApifyReader,
-    DirectReader,
-    FirecrawlReader,
-    JinaReader,
-    TavilyExtractReader,
-)
-from app.tools.providers.web import ExaSearch, SerpApiSearch, TavilySearch, YouSearch
+from app.tools.providers.readers import DirectReader, JinaReader
 
 __all__ = [
     "SearchHit",
@@ -99,12 +89,11 @@ class CannedProvider:
 _SEARCH_BUDGET_S = settings.search_budget_s
 _SEARCH_SOFT_S = settings.search_soft_s
 
-# Cross-provider ranking: raw `score` is incommensurate (Tavily/Exa emit 0-1 relevance, DDG emits
-# rank-position, GitHub emits star COUNT, Serp/You emit 0.0). We never compare raw scores across
-# providers — we blend a within-provider RANK component with a relevance component that is trusted
-# ONLY from providers that emit real 0-1 relevance. Providers absent from _REAL_SCORE degrade to pure
-# rank (so their best hit floats instead of always sinking on a 0.0 score).
-_REAL_SCORE = frozenset({"tavily", "exa", "canned"})
+# Ranking: raw `score` is provider-specific and not comparable across sources — DuckDuckGo emits
+# rank-position only, no real 0-1 relevance, so it degrades to pure rank below (its best hit still
+# floats instead of sinking on a 0.0 score). `canned` (the offline demo provider) is the one source
+# that does emit trustworthy 0-1 relevance.
+_REAL_SCORE = frozenset({"canned"})
 _RANK_W = 0.6
 _REL_W = 0.4
 _DIVERSITY_PENALTY = 0.85  # a 2nd+ hit from the same host is nudged down (never dropped)
@@ -225,8 +214,8 @@ class MultiProvider:
         if not is_fetchable_url(url):
             logging.getLogger("pack").warning("content guard blocked unsafe fetch URL: %s", url)
             return ""
-        # Priority chain (Jina → Firecrawl → Tavily → Apify): first reader to return text wins. Each
-        # reader carries its own timeout, so the chain is bounded even if an early one is slow.
+        # Priority chain (Jina free tier → DirectReader raw fetch): first reader to return text wins.
+        # Each reader carries its own timeout, so the chain is bounded even if an early one is slow.
         for reader in self._readers:
             text = await reader.read(url)
             if text:
@@ -248,66 +237,16 @@ class MultiProvider:
 
 
 def make_search_provider() -> SearchProvider:
-    """Assemble the enabled upstreams from config. Real web search is FREE by default now: DuckDuckGo
-    and the keyless providers always run, and the keyless DirectReader deep-reads pages — no paid key
-    required. Paid providers/readers join when their key is present. Only a pure offline demo (no
-    model key → FakeQwen brain) falls back to Canned so the no-key run stays deterministic.
+    """DuckDuckGo (free, keyless) is the only search upstream — no other vendor is wired in. Deep
+    reads go through the keyless reader chain: Jina's free tier first, DirectReader (raw fetch) as
+    the fallback. Only a pure offline demo (no model key → FakeQwen brain) falls back to Canned so
+    the no-key run stays deterministic.
     """
-    s = settings
-    if not s.qwen_api_key:  # offline/demo: FakeQwen brain + deterministic Canned search
+    if not settings.qwen_api_key:  # offline/demo: FakeQwen brain + deterministic Canned search
         return CannedProvider()
 
-    # Every upstream we CAN build (keyless ones always constructible; keyed ones only when their key
-    # is present). This is the full menu — `search_providers_enabled` decides which actually run.
-    candidates: list[SubProvider] = [DuckDuckGoSearch(), OpenAlexSearch(s.openalex_mailto)]
-    candidates.append(HackerNewsSearch())
-    candidates.append(WikidataSearch())
-    candidates.append(DBpediaSearch())
-    if s.search_api_key:
-        candidates.append(TavilySearch(s.search_api_key))
-    if s.exa_api_key:
-        candidates.append(ExaSearch(s.exa_api_key))
-    if s.serpapi_api_key:
-        candidates.append(SerpApiSearch(s.serpapi_api_key))
-    if s.youcom_api_key:
-        candidates.append(YouSearch(s.youcom_api_key))
-    if s.newsapi_key:
-        candidates.append(NewsApiSearch(s.newsapi_key))
-    if s.gnews_api_key:
-        candidates.append(GNewsSearch(s.gnews_api_key))
-    if s.newsdata_api_key:
-        candidates.append(NewsDataSearch(s.newsdata_api_key))
-    if s.core_api_key:
-        candidates.append(CoreSearch(s.core_api_key))
-    if s.github_token:
-        candidates.append(GitHubSearch(s.github_token))
-    if s.google_kg_api_key:
-        candidates.append(GoogleKgSearch(s.google_kg_api_key))
-
-    # Allow-list filter: keep only the enabled providers, in the order they're named. An empty setting
-    # means "run everything constructible" (the legacy fan-out). Default is DuckDuckGo only — the one
-    # engine the live audit proved reliable and fast; the rest 403'd, moved, or timed out to 0 hits.
-    enabled = [n.strip().lower() for n in s.search_providers_enabled.split(",") if n.strip()]
-    if enabled:
-        by_name = {c.name.lower(): c for c in candidates}
-        subs: list[SubProvider] = [by_name[n] for n in enabled if n in by_name]
-        if not subs:  # misconfigured to nothing real → fall back to DuckDuckGo so the pack can hunt
-            subs = [DuckDuckGoSearch()]
-    else:
-        subs = candidates
-
-    # Deep-read chain (first to return text wins). Jina Reader leads — it renders JS + clean-extracts
-    # and its free tier works KEYLESS, so most pages read for free; a key just lifts its rate limit.
-    # Paid readers are extra fallbacks; DirectReader (raw fetch) is the last resort.
-    readers: list[Reader] = [JinaReader(s.jina_api_key)]  # "" ⇒ keyless free tier
-    if s.firecrawl_api_key:
-        readers.append(FirecrawlReader(s.firecrawl_api_key))
-    if s.search_api_key:
-        readers.append(TavilyExtractReader(s.search_api_key))
-    if s.apify_api_key:
-        readers.append(ApifyReader(s.apify_api_key))
-    readers.append(DirectReader())
-
+    subs: list[SubProvider] = [DuckDuckGoSearch()]
+    readers: list[Reader] = [JinaReader(), DirectReader()]
     return MultiProvider(subs, readers)
 
 

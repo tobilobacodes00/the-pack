@@ -110,20 +110,10 @@ class Settings(BaseSettings):
     # paste. The retry runs under the same synthesis budget.
     synthesis_retries: int = 1
 
-    # Web search (real research). An empty key falls back to the deterministic canned
-    # provider, so the whole engine still runs offline end to end (Doc 04 §07).
-    search_provider: str = "tavily"
-    search_api_key: str = ""  # Tavily (the primary web-search vendor)
-    search_max_results: int = 8
+    # Web search (real research) — DuckDuckGo only (free, keyless; see search_provider.py). No model
+    # key at all → the deterministic canned provider, so the whole engine still runs offline end to
+    # end (Doc 04 §07).
     search_cache_ttl_s: float = 3600.0  # reuse identical searches/URL reads within the window
-    # Which upstreams actually run, comma-separated by provider name (see app/tools/providers/*).
-    # DEFAULT: DuckDuckGo only — it's free, keyless, and the live audit showed it's the one general
-    # web engine that reliably returns hits fast (~5s/scout) once it isn't fighting a dozen dead/slow
-    # providers for the event loop. Every other upstream measured either 403'd on its key, moved/500'd,
-    # or returned 0 hits at 9-19s and just starved the good ones. Re-enable any by name here (e.g.
-    # "duckduckgo,tavily,exa") once its key/endpoint is confirmed working. Empty ⇒ all keyed/keyless
-    # providers whose key is present (the old fan-out-everything behaviour).
-    search_providers_enabled: str = "duckduckgo"
     # Fan-out timing: return at the SOFT deadline once we have any ground, extend to the hard
     # BUDGET only when still short, and let CONCURRENCY parallel scouts hit one upstream at once.
     # Sized to the MEASURED latency of DuckDuckGo (the sole default engine): ~5-6s per scout under a
@@ -153,22 +143,6 @@ class Settings(BaseSettings):
     # Chars kept per library doc injected into the draft, and per mid-hunt Packmaster input line.
     kb_pick_chars: int = 1000
     extra_input_chars: int = 1200
-
-    # Multi-source research — every provider with a key present joins the fan-out; keyless ones
-    # (Hacker News, Wikidata, DBpedia, OpenAlex) always run. ALL empty → canned offline provider.
-    exa_api_key: str = ""
-    serpapi_api_key: str = ""
-    youcom_api_key: str = ""
-    newsapi_key: str = ""
-    gnews_api_key: str = ""
-    newsdata_api_key: str = ""
-    jina_api_key: str = ""
-    firecrawl_api_key: str = ""
-    apify_api_key: str = ""
-    core_api_key: str = ""
-    github_token: str = ""
-    google_kg_api_key: str = ""
-    openalex_mailto: str = ""
 
     # Research strategy — the selectable engine modes. ORTHOGONAL to the autonomy `mode`
     # (wild | on_signal | on_command): strategy shapes the plan, mode shapes execution.
