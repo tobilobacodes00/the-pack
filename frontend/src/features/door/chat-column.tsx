@@ -65,6 +65,8 @@ export interface ChatColumnProps {
   removeFile: (localId: string) => void
   addFiles: (files: FileList | File[]) => void
   isPending: boolean
+  /** True while attached files are being parsed/transcribed before the turn sends — shows a hint. */
+  parsingFiles?: boolean
   send: () => void | Promise<void>
   pickFiles: () => void
   handleKeyDown: (e: React.KeyboardEvent<HTMLTextAreaElement>) => void
@@ -90,7 +92,7 @@ export interface ChatColumnProps {
 export function ChatColumn(props: ChatColumnProps) {
   const {
     variant, messages, input, setInput, attachedFiles, removeFile, addFiles,
-    isPending, send, pickFiles,
+    isPending, parsingFiles, send, pickFiles,
     handleKeyDown, footer, hideComposer, activity, launchIndex, placeholder,
   } = props
 
@@ -244,6 +246,12 @@ export function ChatColumn(props: ChatColumnProps) {
           {docFiles.map((f) => (
             <FileCard key={f.localId} file={f} onRemove={removeFile} />
           ))}
+        </div>
+      )}
+      {parsingFiles && (
+        <div className="flex items-center gap-2 mb-4 text-[12.5px] text-ink-500">
+          <span className="w-3 h-3 border-2 border-ink-400 border-t-transparent rounded-full animate-spin" />
+          Reading your files…
         </div>
       )}
 

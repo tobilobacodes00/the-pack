@@ -5,7 +5,7 @@ import { AnimatePresence, motion } from 'framer-motion'
 import { ChevronDown } from 'lucide-react'
 import { toast } from '@/store/toast-store'
 import type { AskAction } from '@/hooks/use-ask-stream'
-import { useDoorLogic } from '../intake/use-intake'
+import { useDoorLogic, type ReusedInstinct } from '../intake/use-intake'
 import { PresetCard, PRESETS } from '../intake/preset-card'
 import { FileDropOverlay } from '../intake/file-drop-overlay'
 import { LeftPanel } from '../territory/left-panel'
@@ -45,15 +45,20 @@ export default function DoorPage() {
         void qc.invalidateQueries({ queryKey: ['hunts'], predicate: (q) => q.queryKey.includes('artifact') || q.queryKey.includes('artifacts') })
         toast({ title: 'Brief updated', description: 'Alpha re-worked the brief.', variant: 'default' })
       } else if ((action === 'subhunt' || action === 'new_hunt') && newHuntId) {
+        // A follow-up is a NEW hunt (its own hunt_id) that lands in plan_ready and waits for approval.
+        // Take the Packmaster there — same as retry below — so they see it, approve the plan, and watch
+        // it run. Without this the new hunt starves at the approval gate and gets reaped as failed on the
+        // next engine restart, with the user never told it existed.
         void qc.invalidateQueries({ queryKey: ['hunts'] })
         toast({
           title: action === 'subhunt' ? 'Digging deeper' : 'New hunt launched',
           description:
             action === 'subhunt'
-              ? 'The pack is researching that and will fold it into your brief.'
-              : 'The pack is on the new hunt.',
+              ? "Taking you to it — approve the plan and the pack folds it into your brief."
+              : 'Taking you to the new hunt.',
           variant: 'default',
         })
+        window.location.assign(`/hunts/${newHuntId}`)
       } else if (action === 'retry' && newHuntId) {
         // Alpha re-ran the job as a fresh hunt — send the Packmaster to it so they watch it run.
         void qc.invalidateQueries({ queryKey: ['hunts'] })
@@ -63,12 +68,22 @@ export default function DoorPage() {
     },
     [qc],
   )
-  const door = useDoorLogic({ onAskAction })
+  // A reused Instinct arrives via router state (from the Instincts library OR the Past-Hunts sidebar):
+  // its proven formation rides along as the hunt's seed_team, but the TASK is gathered fresh here —
+  // Alpha greets naming the pack and asks what to point it at, then the normal intake flow runs. Held
+  // as state (not a mount-only memo) so a navigation to '/' that arrives while the Door is ALREADY
+  // mounted — the sidebar's own "Use This" — still activates it (React Router won't remount same-path).
+  const location = useLocation()
+  const [reusedInstinct, setReusedInstinct] = useState<ReusedInstinct | null>(
+    () => (location.state as { instinct?: ReusedInstinct } | null)?.instinct ?? null,
+  )
+  const door = useDoorLogic({ onAskAction, instinct: reusedInstinct })
   const { phase, huntId, isDragging, onDragEnter, onDragOver, onDragLeave, onDrop } = door
 
   const huntState = useHuntStore((s) => s.state)
   const resetHunt = useHuntStore((s) => s.reset)
   const applyLocalEdits = useHuntStore((s) => s.applyLocalEdits)
+  const seedPreviewPlan = useHuntStore((s) => s.seedPreviewPlan)
   const [editing, setEditing] = useState(false)
   // First paint leads with the chat: sidebar starts collapsed (the top-nav hamburger opens
   // Past Hunts on demand), so the intake chat renders centered and full-width.
@@ -104,13 +119,23 @@ export default function DoorPage() {
     resetHunt()
   }, [resetHunt])
 
-  // Seed the composer when arriving from a built-in Instinct's "Use This".
-  const location = useLocation()
+  // React to arrivals from an Instinct's "Use This" — a built-in (text-only composer prefill) or a saved
+  // instinct (formation reuse). Keyed on location.key so it fires on EVERY navigation to the door, incl.
+  // the sidebar's own "Use This" while the door is already mounted (same-path nav → no remount). For a
+  // saved instinct: reset to a clean session, greet as Alpha, and show the formation on the canvas; the
+  // formation rides along in useDoorLogic (→ seed_team on the created hunt).
   useEffect(() => {
-    const seed = (location.state as { seed?: string } | null)?.seed
-    if (seed) door.setInput(seed)
+    const st = location.state as { seed?: string; instinct?: ReusedInstinct } | null
+    if (st?.seed) door.setInput(st.seed)
+    if (st?.instinct) {
+      setReusedInstinct(st.instinct)
+      resetHunt()
+      door.greetForInstinct(st.instinct, location.key)
+      seedPreviewPlan(st.instinct.team) // show the reused formation on the canvas straight away
+    }
+    // location.key changes per navigation; door/seedPreviewPlan/resetHunt are stable.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [])
+  }, [location.key])
 
   const { mutate: approvePlan, isPending: approving } = useApprovePlan(huntId ?? '')
   const reward = useReward(huntId)

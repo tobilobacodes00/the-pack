@@ -46,15 +46,19 @@ export function RightPanel({ huntId, huntState, messages, onApprove, onEditForma
         void qc.invalidateQueries({ queryKey: ['hunts', huntId, 'artifacts'] })
         toast({ title: 'Brief updated', description: 'Alpha re-worked the brief above.', variant: 'default' })
       } else if ((action === 'subhunt' || action === 'new_hunt') && newHuntId) {
+        // A follow-up is a NEW hunt that lands in plan_ready awaiting approval — navigate there (like
+        // retry below) so the Packmaster approves the plan and watches it run, instead of leaving it to
+        // starve at the approval gate and get reaped as failed on the next engine restart.
         void qc.invalidateQueries({ queryKey: ['hunts'] })
         toast({
           title: action === 'subhunt' ? 'Digging deeper' : 'New hunt launched',
           description:
             action === 'subhunt'
-              ? 'The pack is researching that and will fold it into your brief.'
-              : 'The pack is on the new hunt.',
+              ? "Taking you to it — approve the plan and the pack folds it into your brief."
+              : 'Taking you to the new hunt.',
           variant: 'default',
         })
+        navigate(`/hunts/${newHuntId}`)
       } else if (action === 'retry' && newHuntId) {
         // Alpha re-ran the job — navigate to the fresh hunt so the Packmaster watches it run.
         void qc.invalidateQueries({ queryKey: ['hunts'] })

@@ -1,10 +1,11 @@
-import { useRef } from 'react'
+import { useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { ChevronLeft, FileText, Trash2, Upload } from 'lucide-react'
-import { useDocuments, useUploadDocument, useDeleteDocument } from '@/api/documents'
+import { useDocuments, useDocument, useUploadDocument, useDeleteDocument } from '@/api/documents'
 import { useSpendSummary, useClearHunts, useResetData } from '@/api/hunts'
 import { toast } from '@/store/toast-store'
 import { color } from '@/lib/theme'
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/ui/dialog'
 import { HuntSidebar } from '@/features/door/hunt-sidebar'
 
 function money(n: number): string {
@@ -29,6 +30,9 @@ export default function SettingsPage() {
   const deleteDoc = useDeleteDocument()
   const clearHunts = useClearHunts()
   const resetData = useResetData()
+  // The KB doc whose full extracted text is open in the viewer (null = closed).
+  const [viewDocId, setViewDocId] = useState<number | null>(null)
+  const { data: viewDoc, isLoading: viewLoading } = useDocument(viewDocId)
 
   const onClear = () => {
     if (!window.confirm('Clear all hunt history? Documents, memory and instincts are kept.')) return
@@ -63,10 +67,15 @@ export default function SettingsPage() {
                 <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg" style={{ background: '#f2f2f0', color: '#4a4a4a' }}>
                   <FileText size={17} />
                 </span>
-                <div className="min-w-0 flex-1">
-                  <p className="truncate text-[13.5px] font-medium text-text">{d.name}</p>
+                {/* Click to see the full text the pack actually extracted from this upload. */}
+                <button
+                  onClick={() => setViewDocId(d.id)}
+                  className="min-w-0 flex-1 text-left"
+                  title="View extracted text"
+                >
+                  <p className="truncate text-[13.5px] font-medium text-text group-hover:underline">{d.name}</p>
                   <p className="text-[11.5px] uppercase text-ink-500">{d.kind} · {d.chars.toLocaleString()} chars</p>
-                </div>
+                </button>
                 <button
                   onClick={() => deleteDoc.mutate(d.id)}
                   className="shrink-0 p-1 text-[#666] opacity-0 group-hover:opacity-100 transition-opacity hover:text-[#EF4444]"
@@ -143,6 +152,31 @@ export default function SettingsPage() {
         </Section>
       </div>
       </div>
+
+      {/* Extracted-text viewer — "what the pack actually read from this file". Opens on a doc-row click. */}
+      <Dialog open={viewDocId != null} onOpenChange={(o) => !o && setViewDocId(null)}>
+        <DialogContent className="max-w-2xl">
+          <DialogHeader>
+            <DialogTitle>{viewDoc?.name ?? 'Document'}</DialogTitle>
+            {viewDoc && (
+              <p className="text-[12px] uppercase text-ink-500">
+                {viewDoc.kind} · {viewDoc.chars.toLocaleString()} chars
+              </p>
+            )}
+          </DialogHeader>
+          <div className="mt-3 max-h-[60vh] overflow-y-auto rounded-lg border border-border bg-canvas p-4">
+            {viewLoading ? (
+              <p className="text-[13px] text-text-faint">Loading…</p>
+            ) : viewDoc?.text ? (
+              <pre className="whitespace-pre-wrap break-words font-sans text-[13px] leading-relaxed text-ink-900">
+                {viewDoc.text}
+              </pre>
+            ) : (
+              <p className="text-[13px] text-text-faint">No text was extracted from this file.</p>
+            )}
+          </div>
+        </DialogContent>
+      </Dialog>
     </div>
   )
 }

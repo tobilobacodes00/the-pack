@@ -13,6 +13,9 @@ export interface HuntStore {
   pendingEdits: PendingEdits | null
   dispatch: (event: HuntEvent) => void
   applyLocalEdits: (edits: PendingEdits) => void
+  /** Show a reused Instinct's formation on the canvas before a hunt exists (intake). A skeletal
+   *  preview plan the graph can render; the real `plan_proposed` replaces it once the hunt runs. */
+  seedPreviewPlan: (team: TeamEntry[]) => void
   reset: () => void
 }
 
@@ -40,6 +43,28 @@ export function createHuntStore() {
         return {
           pendingEdits: edits,
           state: { ...store.state, plan: { ...store.state.plan, team: edits.team, wolves } },
+        }
+      }),
+    seedPreviewPlan: (team) =>
+      set((store) => {
+        // Don't clobber a real plan if one already arrived (a fast hunt).
+        if (store.state.plan) return {}
+        const wolves = team.flatMap(
+          (t) => Array(Math.max(1, t.count)).fill(t.role) as string[],
+        )
+        return {
+          state: {
+            ...store.state,
+            plan: {
+              steps: [],
+              wolves,
+              team,
+              pattern: 'parallel_then_merge',
+              assumptions: [],
+              est_cost: 0,
+              est_time: 0,
+            },
+          },
         }
       }),
     reset: () => set({ state: initialHuntState, pendingEdits: null }),

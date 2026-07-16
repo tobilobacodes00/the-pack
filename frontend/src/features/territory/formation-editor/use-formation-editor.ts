@@ -1,12 +1,22 @@
 import { useState, useMemo, useCallback } from 'react'
 import type { Node } from '@xyflow/react'
 import { buildGraph } from '../graph-canvas'
+import { ROLE_DESC } from '../roles'
 import {
   buildTeam, expandTeamToWolves, wolfIds, addedInstances, teamToCounts, seedCounts, roleBounds,
 } from './formation-model'
 import type { EditableNodeData } from './editable-agent-node'
 import type { PlanState } from '@/events/schema'
 import type { PendingEdits } from '@/store/hunt-store'
+
+/** A scout's assigned search angle, if the plan carries one. Scout ids are `scout-1..N` and the
+ *  plan's `queries` are positional — `queries[i]` is `scout-(i+1)`'s angle, the exact mapping the
+ *  engine zips at execution (orchestrate/deep_dive/critique). Non-scouts have no per-instance query. */
+function scoutQuery(plan: PlanState | null, wolfId: string): string | null {
+  const m = /^scout-(\d+)$/.exec(wolfId)
+  if (!m || !plan?.queries) return null
+  return plan.queries[Number(m[1]) - 1]?.trim() || null
+}
 
 /**
  * Owns the Edit-Formations state: per-role `counts` (floored at the plan's proposal — additive only)
@@ -84,8 +94,17 @@ export function useFormationEditor(plan: PlanState | null) {
     if (!selected) return null
     const a = added.find((x) => x.wolfId === selected)
     const role = a?.role ?? selected.replace(/-\d+$/, '')
-    return { wolfId: selected, role, added: !!a, note: notes[selected] ?? '' }
-  }, [selected, added, notes])
+    return {
+      wolfId: selected,
+      role,
+      added: !!a,
+      note: notes[selected] ?? '',
+      // What this wolf will do: its role contribution, plus — for a scout — its assigned search angle
+      // from the plan (so the Packmaster sees the real work before approving, not a generic blurb).
+      desc: ROLE_DESC[role] ?? '',
+      query: scoutQuery(plan, selected),
+    }
+  }, [selected, added, notes, plan])
 
   /** Per-role capacity for the palette. */
   const capacity = useCallback(
@@ -98,13 +117,18 @@ export function useFormationEditor(plan: PlanState | null) {
   )
 
   const savePayload = useCallback((): PendingEdits => {
+    // Keep notes for EVERY wolf that still exists in the edited team (not just user-added extras) — the
+    // backend `_apply_edits` honors a handler note on any wolf_id and injects it into that wolf's prompt.
+    // Scope to live ids so a note left on a role whose count was later reduced doesn't ride along orphaned.
+    const liveIds = new Set<string>()
+    for (const t of editedTeam) for (const id of wolfIds(t.role, t.count)) liveIds.add(id)
     const cleanNotes: Record<string, string> = {}
-    for (const a of added) {
-      const t = (notes[a.wolfId] ?? '').trim()
-      if (t) cleanNotes[a.wolfId] = t
+    for (const [wolfId, raw] of Object.entries(notes)) {
+      const t = (raw ?? '').trim()
+      if (t && liveIds.has(wolfId)) cleanNotes[wolfId] = t
     }
     return { team: editedTeam, notes: cleanNotes }
-  }, [editedTeam, added, notes])
+  }, [editedTeam, notes])
 
   const addedCount = added.length
 

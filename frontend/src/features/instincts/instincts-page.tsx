@@ -1,8 +1,8 @@
 import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { ChevronLeft, MoreVertical } from 'lucide-react'
-import { useInstincts, useDeleteInstinct } from '@/api/instincts'
-import { useCreateHunt } from '@/api/hunts'
+import { useInstincts, useDeleteInstinct, type Instinct } from '@/api/instincts'
+import { toReusedInstinct } from '../intake/use-intake'
 import { color } from '@/lib/theme'
 import { AnimatePresence, motion } from 'framer-motion'
 import { HuntSidebar } from '../door/hunt-sidebar'
@@ -77,11 +77,12 @@ export default function InstinctsPage() {
   const [sidebarOpen, setSidebarOpen] = useState(true)
   const { data: instincts, isLoading } = useInstincts()
   const deleteInstinct = useDeleteInstinct()
-  const createHunt = useCreateHunt()
 
   const applyBuiltin = (b: Builtin) => navigate('/', { state: { seed: b.prompt } })
-  const applyInstinct = (id: string) =>
-    createHunt.mutate({ instinct_id: id }, { onSuccess: (r) => navigate(`/hunts/${r.hunt_id}`) })
+  // Reuse the SHAPE, not the old job: open the Door with this formation in hand so Alpha asks what to
+  // point it at, then the hunt launches on the fresh task with the saved team as its seed_team.
+  const applyInstinct = (it: Instinct) =>
+    navigate('/', { state: { instinct: toReusedInstinct(it) } })
 
   return (
     <div className="h-screen flex overflow-hidden" style={{ background: color.canvas }}>
@@ -160,7 +161,7 @@ export default function InstinctsPage() {
                   <div className="flex items-start justify-between gap-4">
                     <h3 className="min-w-0 flex-1 truncate text-[15px] font-semibold text-text">{it.label}</h3>
                     <div className="flex items-center gap-2">
-                      <UseThis onClick={() => applyInstinct(it.instinct_id)} />
+                      <UseThis onClick={() => applyInstinct(it)} />
                       <button
                         onClick={() => setMenuId(menuId === it.instinct_id ? null : it.instinct_id)}
                         className="p-1 text-muted hover:text-ink-900"

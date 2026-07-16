@@ -27,7 +27,8 @@ export function AgentPalette({ ed }: { ed: FormationEditorApi }) {
       <div style={{ padding: '16px 16px 12px', borderBottom: `1px solid ${color.border}` }}>
         <p style={{ margin: 0, fontSize: 15, fontWeight: 600, color: color.text }}>Edit Formation</p>
         <p style={{ margin: '4px 0 0', fontSize: 12, color: color.dim, lineHeight: 1.5 }}>
-          Add agents to the pack. Core roles always run. Select an added agent to give it a note.
+          Add agents to the pack. Core roles always run. Select any agent to see what it&rsquo;ll do and
+          give it a note.
         </p>
       </div>
 
@@ -72,22 +73,58 @@ export function AgentPalette({ ed }: { ed: FormationEditorApi }) {
         })}
       </div>
 
-      {/* Selected-agent inspector */}
-      <div style={{ borderTop: `1px solid ${color.border}`, padding: 16, minHeight: 132 }}>
+      {/* Selected-agent inspector — for ANY wolf: what it'll do (role contribution + a scout's assigned
+          search angle) and a handler note the backend injects into that exact wolf's prompt. */}
+      <div style={{ borderTop: `1px solid ${color.border}`, padding: 16, minHeight: 132, overflowY: 'auto' }}>
         {!info ? (
           <p style={{ margin: 0, fontSize: 13, color: '#6b6b6b', lineHeight: 1.5 }}>
-            Select an added agent on the canvas to write its note.
+            Select an agent on the canvas to see what it&rsquo;ll do and give it a note.
           </p>
-        ) : info.added ? (
+        ) : (
           <>
-            <p style={{ margin: '0 0 8px', fontSize: 13, color: color.text }}>
-              Note for <span style={{ fontWeight: 600, textTransform: 'capitalize' }}>{info.role}</span>{' '}
-              <span style={{ color: '#6b6b6b' }}>({info.wolfId})</span>
+            {/* Who + what it does */}
+            <p style={{ margin: 0, fontSize: 14, color: color.text }}>
+              <span style={{ fontWeight: 600, textTransform: 'capitalize' }}>{info.role}</span>{' '}
+              <span style={{ color: '#6b6b6b', fontSize: 12 }}>({info.wolfId})</span>
+              {!info.added && (
+                <span style={{ color: color.faint, fontSize: 11, marginLeft: 6 }}>core &middot; always runs</span>
+              )}
+            </p>
+            {info.desc && (
+              <p style={{ margin: '4px 0 0', fontSize: 12.5, color: color.dim, lineHeight: 1.5 }}>
+                {info.desc}
+              </p>
+            )}
+
+            {/* A scout's assigned search angle from the plan — the real work, not a generic blurb. */}
+            {info.query && (
+              <div
+                style={{
+                  marginTop: 10, padding: '8px 10px', background: color.raised,
+                  border: `1px solid ${color.border}`, borderRadius: 10,
+                }}
+              >
+                <p style={{ margin: 0, fontSize: 10.5, fontWeight: 600, letterSpacing: 0.3, textTransform: 'uppercase', color: color.faint }}>
+                  Assigned angle
+                </p>
+                <p style={{ margin: '3px 0 0', fontSize: 12.5, color: color.text, lineHeight: 1.45 }}>
+                  &ldquo;{info.query}&rdquo;
+                </p>
+              </div>
+            )}
+
+            {/* Steering note — available for EVERY wolf now (was added-only). */}
+            <p style={{ margin: '12px 0 6px', fontSize: 12, fontWeight: 600, color: color.dim }}>
+              Your note to this agent
             </p>
             <textarea
               value={info.note}
               onChange={(e) => ed.setNote(info.wolfId, e.target.value)}
-              placeholder="e.g. focus on primary sources from the last 6 months"
+              placeholder={
+                info.query
+                  ? 'e.g. focus on primary sources from the last 6 months'
+                  : 'e.g. keep it concise; prioritize official filings'
+              }
               rows={3}
               style={{
                 width: '100%', resize: 'none', background: '#ffffff', border: `1px solid ${color.border}`,
@@ -95,21 +132,18 @@ export function AgentPalette({ ed }: { ed: FormationEditorApi }) {
                 fontFamily: 'inherit', lineHeight: 1.4,
               }}
             />
-            <button
-              onClick={() => ed.removeRole(info.role)}
-              style={{
-                marginTop: 8, background: 'none', border: `1px solid ${color.border}`, borderRadius: 8,
-                color: '#F87171', fontSize: 12, padding: '5px 12px', cursor: 'pointer',
-              }}
-            >
-              Remove this agent
-            </button>
+            {info.added && (
+              <button
+                onClick={() => ed.removeRole(info.role)}
+                style={{
+                  marginTop: 8, background: 'none', border: `1px solid ${color.border}`, borderRadius: 8,
+                  color: '#F87171', fontSize: 12, padding: '5px 12px', cursor: 'pointer',
+                }}
+              >
+                Remove this agent
+              </button>
+            )}
           </>
-        ) : (
-          <p style={{ margin: 0, fontSize: 13, color: color.dim, lineHeight: 1.5 }}>
-            <span style={{ fontWeight: 600, textTransform: 'capitalize', color: color.text }}>{info.role}</span> is a
-            core agent — it always runs. Add extra agents to give them notes.
-          </p>
         )}
       </div>
     </div>

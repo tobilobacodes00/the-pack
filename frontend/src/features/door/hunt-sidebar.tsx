@@ -1,8 +1,9 @@
 import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { Loader2, MoreVertical, Bookmark, Settings, Trash2, PanelLeft, SquarePen } from 'lucide-react'
-import { useHunts, useDeleteHuntById, useCreateHunt } from '@/api/hunts'
+import { useHunts, useDeleteHuntById } from '@/api/hunts'
 import { useInstincts, useCreateInstinct, useDeleteInstinct } from '@/api/instincts'
+import { toReusedInstinct } from '../intake/use-intake'
 import { formatRelative } from '@/lib/format'
 import { toast } from '@/store/toast-store'
 import { color } from '@/lib/theme'
@@ -110,7 +111,6 @@ export function HuntSidebar({ onCollapse }: Props) {
   const deleteHunt = useDeleteHuntById()
   const deleteInstinct = useDeleteInstinct()
   const createInstinct = useCreateInstinct()
-  const createHunt = useCreateHunt()
 
   const hunts = huntData?.hunts ?? []
 
@@ -197,12 +197,7 @@ export function HuntSidebar({ onCollapse }: Props) {
             >
               <p className="min-w-0 flex-1 truncate text-[13.5px] font-medium text-text">{it.label}</p>
               <button
-                onClick={() =>
-                  createHunt.mutate(
-                    { instinct_id: it.instinct_id },
-                    { onSuccess: (r) => navigate(`/hunts/${r.hunt_id}`) },
-                  )
-                }
+                onClick={() => navigate('/', { state: { instinct: toReusedInstinct(it) } })}
                 className="shrink-0 rounded-full border px-2.5 py-1 text-[11.5px] text-ink-700 hover:text-ink-900"
                 style={{ borderColor: color.border }}
               >

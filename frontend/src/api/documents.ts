@@ -11,6 +11,12 @@ export const DocumentSchema = z.object({
 })
 export type Document = z.infer<typeof DocumentSchema>
 
+/** One document WITH its extracted text (GET /documents/:id). Matches backend DocumentDetailResponse. */
+export const DocumentDetailSchema = DocumentSchema.extend({
+  text: z.string().default(''),
+})
+export type DocumentDetail = z.infer<typeof DocumentDetailSchema>
+
 export function useDocuments() {
   return useQuery({
     queryKey: ['documents'],
@@ -18,6 +24,19 @@ export function useDocuments() {
       const res = await api.get<{ documents: unknown }>('/documents')
       return DocumentSchema.array().parse(res.data.documents)
     },
+  })
+}
+
+/** Fetch one document's full extracted text — the "see what the pack actually read from my upload"
+ *  view. Enabled only when a doc id is selected. */
+export function useDocument(docId: number | null) {
+  return useQuery({
+    queryKey: ['documents', docId],
+    queryFn: async () => {
+      const res = await api.get(`/documents/${docId}`)
+      return DocumentDetailSchema.parse(res.data)
+    },
+    enabled: docId != null,
   })
 }
 
