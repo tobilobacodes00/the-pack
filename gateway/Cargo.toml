@@ -7,7 +7,12 @@ description = "Pack — the Rust gateway. The realtime read path only: replay a 
 [dependencies]
 axum = { version = "0.7", features = ["ws"] }
 tokio = { version = "1", features = ["full"] }
-redis = { version = "0.27", features = ["tokio-comp", "streams"] }
+# tokio-rustls-comp adds TLS so a rediss:// URL (Upstash and every managed Redis) actually connects —
+# the redis crate auto-selects TLS from the URL scheme, so no code change is needed, only this feature.
+# rustls (not native-tls) keeps the build free of an OpenSSL system dependency in the slim images.
+# tls-rustls-webpki-roots bundles the Mozilla CA set into the binary, so cert verification does not
+# depend on the container's /etc/ssl store being present. A plain redis:// URL still works unchanged.
+redis = { version = "0.27", features = ["tokio-comp", "tokio-rustls-comp", "tls-rustls-webpki-roots", "streams"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 futures-util = "0.3"

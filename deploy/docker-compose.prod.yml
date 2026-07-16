@@ -1,15 +1,22 @@
-# Pack — production stack (engine + gateway + web/nginx) for one ECS box.
-# Postgres and Redis are MANAGED services (ApsaraDB RDS + Tair) reached via .env.prod —
-# they are NOT containers here.
+# Pack — backend-only production stack for one ECS box (cheapest hackathon-demo shape).
+#
+# Only the engine + gateway + web/nginx run here. Postgres and Redis are EXTERNAL free-tier services
+# (Neon for Postgres, Upstash for Redis — see deploy/ECS_DEPLOY_GUIDE.md) reached over the public
+# internet via POSTGRES_URL/REDIS_URL in .env.prod, both requiring TLS. This keeps the ECS box small
+# (no DB containers competing for its RAM) and the whole stack's cost to just the ECS instance itself.
 #
 #   cd deploy
-#   cp .env.prod.example .env.prod   # then fill in the real values
+#   cp .env.prod.example .env.prod   # fill in QWEN_API_KEY, POSTGRES_URL, REDIS_URL, SESSION_SECRET, API_AUTH_TOKEN
+#   htpasswd -bc .htpasswd <user> <password>
 #   docker compose -f docker-compose.prod.yml up -d --build
 #
 # Build contexts are the repo root (..) so gateway/ and backend/ are used as-is, untouched.
+#
+# Frontend is deployed SEPARATELY (Vercel/Netlify/Cloudflare Pages — see the deploy guide) pointing
+# VITE_ENGINE_URL/VITE_GATEWAY_URL at this box's public IP. The `web` service below is still here and
+# still works (nginx + Basic auth + the same-origin /api and /ws proxy) if you'd rather serve the
+# frontend from this box too — just don't run both; pick one frontend path.
 
-# Resource limits assume the recommended 4 vCPU / 8 GB ECS box (see DEPLOY.md Part 3) and leave
-# headroom for the host. `deploy.resources.limits` is honored by `docker compose up` (v2).
 services:
   engine:
     build:
@@ -49,7 +56,7 @@ services:
     ports:
       - "80:8080"
       # - "443:8443"   # enable after you add TLS (see DEPLOY.md)
-    # The Basic-auth password file (create it before `up`: htpasswd -c deploy/.htpasswd <user>).
+    # The Basic-auth password file (create it before `up`: htpasswd -bc deploy/.htpasswd <user> <pass>).
     # Read-only, and gitignored — never committed.
     volumes:
       - ./.htpasswd:/etc/nginx/.htpasswd:ro
