@@ -6,7 +6,7 @@
 # list — is what keeps the image in lockstep with pyproject; a hand list silently drifted before and
 # shipped a prod engine missing python-multipart/pypdf/reportlab/… (uploads + Forge broke).
 
-FROM python:3.12-slim AS build
+FROM python:3.14-slim AS build
 WORKDIR /app
 # A dedicated venv we can copy wholesale into the runtime stage.
 RUN python -m venv /opt/venv
@@ -17,7 +17,7 @@ COPY backend/ /app/
 RUN pip install --no-cache-dir --upgrade pip \
     && pip install --no-cache-dir .
 
-FROM python:3.12-slim
+FROM python:3.14-slim
 WORKDIR /app
 # Non-root runtime user (least privilege). Install `adduser` explicitly — newer Debian slim bases
 # (trixie) dropped it, so relying on it being preinstalled breaks when the slim tag floats forward.
