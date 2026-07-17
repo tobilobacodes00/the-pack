@@ -19,8 +19,12 @@ RUN pip install --no-cache-dir --upgrade pip \
 
 FROM python:3.12-slim
 WORKDIR /app
-# Non-root runtime user (least privilege).
-RUN adduser --system --no-create-home --group pack
+# Non-root runtime user (least privilege). Install `adduser` explicitly — newer Debian slim bases
+# (trixie) dropped it, so relying on it being preinstalled breaks when the slim tag floats forward.
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends adduser \
+    && rm -rf /var/lib/apt/lists/* \
+    && adduser --system --no-create-home --group pack
 COPY --from=build /opt/venv /opt/venv
 # App source: app/, schema/ (frozen event schema, loaded at runtime), prompts/, scripts/.
 # Secrets are NOT baked in — they arrive via env (.env.prod). .dockerignore drops .env/.venv.
