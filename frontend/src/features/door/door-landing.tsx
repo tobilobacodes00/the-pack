@@ -2,7 +2,7 @@ import { memo, useState, type ReactNode } from 'react'
 import { motion } from 'framer-motion'
 import {
   ArrowRight, ArrowUpRight, Github, Server, Workflow, PlayCircle, Figma,
-  Linkedin, Twitter, Instagram, Mail, MessageCircle,
+  Dribbble, Palette,
 } from 'lucide-react'
 import { PackReveal } from './pack-reveal'
 
@@ -67,6 +67,8 @@ type Builder = {
   role: string
   bio: string
   photo?: string
+  /** Render the photo in black & white. */
+  grayscale?: boolean
   site: string
   ctaLabel: string
   stats: BuilderStat[]
@@ -81,31 +83,34 @@ const BUILDERS: Builder[] = [
     photo: 'https://i.postimg.cc/CxHXd1vK/myself_(1).png',
     site: 'https://tobilobasulaimon.com',
     ctaLabel: 'Visit site',
-    // Real, honest chrome — a link out to the platforms, not invented follower counts.
     stats: [
       { Icon: Github, value: 'GitHub', label: 'code', href: 'https://github.com/tobilobacodes00' },
       { Icon: Server, value: 'AuTrans', label: 'founder', href: 'https://autrans.online' },
     ],
-    links: [
-      { Icon: Github, label: 'GitHub', href: 'https://github.com/tobilobacodes00' },
-      { Icon: Linkedin, label: 'LinkedIn', href: 'https://www.linkedin.com/in/tobilobacodes' },
-      { Icon: Twitter, label: 'X', href: 'https://x.com/tobilobacodes00' },
-      { Icon: Instagram, label: 'Instagram', href: 'https://www.instagram.com/tobilobacodes' },
-      { Icon: Mail, label: 'Email', href: 'mailto:hello@tobilobasulaimon.com' },
-      {
-        Icon: MessageCircle,
-        label: 'WhatsApp',
-        href: 'https://wa.me/2349021063830?text=Hello%20Tobiloba%2C%20I%27m%20reaching%20out%20from%20A%20Pack.',
-      },
+    // Chips removed under the card — the "Visit site" CTA covers reaching out.
+    links: [],
+  },
+  {
+    name: 'AbdulQudus',
+    role: 'UI/UX & Product Designer',
+    bio: 'UI/UX & product designer with 3+ years crafting clean, conversion-driven work across apps and dashboards. He designed A Pack end to end in Figma, every screen and interaction, turning a complex multi-agent system into something intuitive.',
+    photo: '/abdul.jpeg',
+    grayscale: true,
+    site: 'https://dribbble.com/abdul_uxui',
+    ctaLabel: 'Portfolio',
+    stats: [
+      { Icon: Dribbble, value: 'Dribbble', label: 'shots', href: 'https://dribbble.com/abdul_uxui' },
+      { Icon: Palette, value: 'Behance', label: 'work', href: 'https://www.behance.net/abduluxui' },
     ],
+    links: [],
   },
   {
     name: 'Joanna',
     role: 'Frontend Developer',
-    bio: "Frontend developer who turns UI/UX designs into clean, accessible, high-performance code with React, Next.js, TypeScript, and Tailwind. She polished A Pack's front end, refining the interface and interactions until every screen felt right.",
+    bio: "Frontend developer who turns designs into clean, accessible code with React, Next.js, TypeScript, and Tailwind. She polished A Pack's front end, refining the interface and interactions until every screen felt right.",
     photo: '/devbyte.jpeg',
-    site: '',
-    ctaLabel: '',
+    site: 'https://staging.open-profile.hng14.com',
+    ctaLabel: 'Profile',
     stats: [],
     links: [],
   },
@@ -115,8 +120,11 @@ const BUILDERS: Builder[] = [
 // the page never reflows.
 const CARD_SPRING = { type: 'spring' as const, stiffness: 240, damping: 24, mass: 0.9 }
 const GLIDE = { duration: 0.45, ease: [0.22, 1, 0.36, 1] as const }
-const CARD_H = 450
-const PHOTO_REST = 300 // photo is a square window at rest; grows to fill the card on hover
+const CARD_H = 440
+const PHOTO_REST = 224 // photo is a square window at rest; grows to fill the card on hover. Kept short
+                       // enough that the white panel below (CARD_H - PHOTO_REST) comfortably holds a
+                       // 4-line bio + the CTA row with breathing room from the top edge — no card's name
+                       // ever rides up to the edge, regardless of bio length.
 
 /** A builder profile card. At rest: photo square up top, dark text on the white panel below. On hover
  *  the card lifts, the photo grows to fill it, the white panel slides away, and the text turns white. */
@@ -170,7 +178,7 @@ function BuilderCard({ builder, delay }: { builder: Builder; delay: number }) {
               loading="lazy"
               decoding="async"
               onError={() => setImgFailed(true)}
-              className="h-full w-full object-cover object-center"
+              className={`h-full w-full object-cover object-center ${builder.grayscale ? 'grayscale' : ''}`}
             />
           ) : (
             <div className="flex h-full w-full items-center justify-center bg-brand-100 font-display text-7xl font-extrabold text-ink-400">
@@ -180,10 +188,12 @@ function BuilderCard({ builder, delay }: { builder: Builder; delay: number }) {
         </motion.div>
 
         {/* White panel: present at rest holding dark text below the photo; on hover it SLIDES DOWN out
-            of view (and fades) as the photo takes over. */}
+            of view (and fades) as the photo takes over. Fixed geometry so every card is identical —
+            bios are trimmed to a uniform length that fits this panel. Its TOP edge is gently rounded so
+            it meets the photo above with a soft curve, not a hard seam. */}
         <motion.div
           aria-hidden
-          className="absolute inset-x-0 bottom-0 rounded-b-[28px] bg-white"
+          className="absolute inset-x-0 bottom-0 rounded-t-2xl rounded-b-[28px] bg-white"
           style={{ top: PHOTO_REST - 20 }}
           initial={false}
           animate={{ y: hover ? CARD_H : 0, opacity: hover ? 0 : 1 }}
@@ -372,13 +382,13 @@ export const DoorLanding = memo(function DoorLanding({ setInput }: { setInput: (
         <section className="cv-auto relative overflow-hidden border-t border-ink-900/10">
           <div className="mx-auto max-w-6xl px-5 py-14 sm:px-6 sm:py-16 md:py-20">
             <Reveal>
-              <Kicker>The builders</Kicker>
+              <Kicker>The team</Kicker>
               <h2 className="mt-4 max-w-2xl font-display text-2xl font-extrabold leading-tight tracking-tight text-ink-900 sm:mt-5 sm:text-3xl md:text-4xl">
-                Made by the people who send the pack.
+                The pack behind the pack.
               </h2>
             </Reveal>
 
-            <div className="mt-10 grid grid-cols-1 justify-items-center gap-10 sm:mt-12 sm:grid-cols-2 sm:gap-8 md:gap-10">
+            <div className="mt-10 grid grid-cols-1 justify-items-center gap-10 sm:mt-12 sm:grid-cols-2 sm:gap-8 lg:grid-cols-3 lg:gap-6">
               {BUILDERS.map((b, i) => (
                 <div key={b.name} className="flex w-full max-w-[380px] flex-col items-center">
                   <BuilderCard builder={b} delay={0.05 * i} />
