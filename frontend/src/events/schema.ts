@@ -12,7 +12,7 @@ const base = z.object({
 const HuntCreated = base.extend({
   type: z.literal('hunt_created'),
   payload: z.object({
-    source: z.enum(['typed', 'spoken', 'dropped']),
+    source: z.enum(['typed', 'spoken', 'dropped', 'chat']),
     raw_input_ref: z.string(),
   }),
 })

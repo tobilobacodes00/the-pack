@@ -1,4 +1,4 @@
-import { Loader2 } from 'lucide-react'
+import { Loader2, RotateCcw } from 'lucide-react'
 import { color } from '@/lib/theme'
 import type { HuntState } from '@/events/schema'
 import type { useApprovePlan } from '@/api/hunts'
@@ -31,11 +31,47 @@ export function composerPlaceholder(status: string): string | undefined {
   return undefined
 }
 
-function StatusMessage({ title, body, tone }: { title: string; body: string; tone: 'fail' | 'idle' }) {
+function StatusMessage({
+  title,
+  body,
+  tone,
+  onRetry,
+  retrying,
+}: {
+  title: string
+  body: string
+  tone: 'fail' | 'idle'
+  onRetry?: () => void
+  retrying?: boolean
+}) {
   return (
     <div style={{ padding: '4px 16px 12px' }}>
       <p style={{ margin: 0, fontSize: 13, fontWeight: 600, color: tone === 'fail' ? '#F87171' : '#D4D4D4' }}>{title}</p>
       <p style={{ margin: '6px 0 0', fontSize: 13, color: color.dim, lineHeight: 1.6, whiteSpace: 'pre-line' }}>{body}</p>
+      {onRetry && (
+        <button
+          onClick={onRetry}
+          disabled={retrying}
+          style={{
+            marginTop: 10,
+            display: 'inline-flex',
+            alignItems: 'center',
+            gap: 6,
+            borderRadius: 999,
+            border: `1px solid ${color.border}`,
+            background: color.surface,
+            padding: '6px 14px',
+            fontSize: 13,
+            fontWeight: 600,
+            color: color.text,
+            cursor: retrying ? 'default' : 'pointer',
+            opacity: retrying ? 0.6 : 1,
+          }}
+        >
+          {retrying ? <Loader2 size={13} className="animate-spin" /> : <RotateCcw size={13} />}
+          {retrying ? 'Retrying…' : 'Try again'}
+        </button>
+      )}
     </div>
   )
 }
@@ -47,6 +83,9 @@ interface Props {
   approving: boolean
   onEditFormation: () => void
   onOpenReward: () => void
+  /** Relaunch a failed/stopped hunt from the chat (fires the same "retry" path a typed retry takes). */
+  onRetry?: () => void
+  retrying?: boolean
 }
 
 /**
@@ -54,7 +93,7 @@ interface Props {
  * card for the moment — Hunt Summary (plan_ready), Hold (awaiting a call), Completion (result), or a
  * failed/stopped message. Shared by the live door and the standalone territory so both stay in sync.
  */
-export function TerritoryFooter({ huntId, huntState, onApprove, approving, onEditFormation, onOpenReward }: Props) {
+export function TerritoryFooter({ huntId, huntState, onApprove, approving, onEditFormation, onOpenReward, onRetry, retrying }: Props) {
   const s = huntState.status
   const showSpend = huntId && (RUNNING.has(s) || DONE.has(s))
 
@@ -95,10 +134,24 @@ export function TerritoryFooter({ huntId, huntState, onApprove, approving, onEdi
       {s === 'completed' && huntId && <CompletionCards huntId={huntId} onOpenReward={onOpenReward} />}
 
       {s === 'failed' && (
-        <StatusMessage title="Hunt failed" body={"The pack couldn't finish this one.\nPlease try again"} tone="fail" />
+        <StatusMessage
+          title="Hunt failed"
+          body="The pack couldn't finish this one."
+          tone="fail"
+          onRetry={onRetry}
+          retrying={retrying}
+        />
       )}
 
-      {s === 'stopped' && <StatusMessage title="Hunt stopped" body="You stopped the hunt before it finished." tone="idle" />}
+      {s === 'stopped' && (
+        <StatusMessage
+          title="Hunt stopped"
+          body="You stopped the hunt before it finished."
+          tone="idle"
+          onRetry={onRetry}
+          retrying={retrying}
+        />
+      )}
     </>
   )
 }

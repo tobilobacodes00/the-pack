@@ -131,6 +131,55 @@ def test_instinct_full_crud() -> None:
     assert client.delete(f"/instincts/{sid}").status_code == 404
 
 
+def test_create_hunt_rejects_empty_task() -> None:
+    # A hunt needs a real task. An empty input is a clean 422, not a bare launch. This also closes the
+    # old trap where an instinct with no input silently re-ran its saved task.
+    client, _ = _client()
+    assert client.post("/hunts", json={"input": ""}).status_code == 422
+    assert client.post("/hunts", json={"input": "   "}).status_code == 422
+
+
+def test_instinct_reuse_pulls_shape_not_stale_task() -> None:
+    # Reusing an instinct by id contributes its FORMATION + strategy to a FRESH task — it must never
+    # resurrect the instinct's old baked-in task (the whole feature is "reuse the shape, not the job").
+    from app.dependencies import get_hunt_slots
+    from app.engine.registry import HuntRegistry
+    from app.qwen.client import QwenClient
+
+    fake = FakeRepo()
+    registry = HuntRegistry()
+    client_obj = QwenClient()
+    assert client_obj.offline
+    app.dependency_overrides[get_repo] = lambda: fake
+    app.dependency_overrides[get_registry] = lambda: registry
+    app.dependency_overrides[get_client] = lambda: client_obj
+    app.dependency_overrides[get_background] = lambda: set()
+    app.dependency_overrides[get_hunt_slots] = lambda: None
+    tc = TestClient(app)
+
+    sid = tc.post(
+        "/instincts",
+        json={
+            "label": "Deep pack",
+            "spec": {"strategy": "deep_dive", "team": [{"role": "scout", "count": 5}], "task": "OLD stale task"},
+        },
+    ).json()["instinct_id"]
+
+    # Launch a NEW hunt reusing that instinct, with a fresh task.
+    r = tc.post("/hunts", json={"instinct_id": sid, "input": "a brand new question"})
+    assert r.status_code == 202
+    hid = r.json()["hunt_id"]
+
+    # The created hunt runs the fresh task, NOT the instinct's old one; strategy came from the instinct.
+    snap = fake.hunts.get(hid) or {}
+    assert snap.get("raw_input") == "a brand new question"
+    assert "OLD stale task" not in str(snap.get("raw_input"))
+    assert snap.get("strategy") == "deep_dive"
+
+    # An instinct reuse with NO fresh task is rejected (never resurrects the saved task).
+    assert tc.post("/hunts", json={"instinct_id": sid}).status_code == 422
+
+
 def test_feedback_is_readable() -> None:
     # A2: votes were write-only; now they read back with tallies.
     client, _ = _client()

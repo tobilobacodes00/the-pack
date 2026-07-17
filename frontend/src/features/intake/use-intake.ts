@@ -195,8 +195,10 @@ export function useDoorLogic(opts?: DoorLogicOptions) {
     fileInputRef.current?.click()
   }, [])
 
-  const send = useCallback(async () => {
-    const text = input.trim()
+  const send = useCallback(async (override?: string) => {
+    // `override` lets a button (e.g. the failed-hunt "Try again") fire a specific message without
+    // routing it through the composer's input state — the retry text goes straight to Alpha.
+    const text = (override ?? input).trim()
     if (!text && attachedFiles.length === 0) return
 
     // Fold the door open on the very first message — the chat slides aside and the

@@ -164,6 +164,10 @@ export default function DoorPage() {
       approving={approving}
       onEditFormation={() => setEditing(true)}
       onOpenReward={reward.openReward}
+      // "Try again" on a failed/stopped hunt: fire the same "retry" the chat understands (routes to
+      // the backend retry intent → a fresh hunt), without the user having to type it.
+      onRetry={() => void door.send('retry')}
+      retrying={door.isPending}
     />
   )
   const hideComposer = !composerVisible(huntState.status)

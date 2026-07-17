@@ -15,7 +15,7 @@ from pydantic import BaseModel, ConfigDict, Field
 # ---------------------------------------------------------------------------
 
 Strategy = Literal["orchestrate", "deep_dive", "critique"]
-Source = Literal["typed", "spoken", "dropped"]
+Source = Literal["typed", "spoken", "dropped", "chat"]
 Mode = Literal["wild", "on_signal", "on_command"]
 Depth = Literal["brief", "standard", "deep"]
 InputKind = Literal["text", "pdf", "csv", "md", "url", "image", "audio", "video"]

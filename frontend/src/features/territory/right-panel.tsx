@@ -84,6 +84,8 @@ export function RightPanel({ huntId, huntState, messages, onApprove, onEditForma
       approving={approving}
       onEditFormation={onEditFormation}
       onOpenReward={onOpenReward}
+      onRetry={() => void door.send('retry')}
+      retrying={door.isPending}
     />
   )
 

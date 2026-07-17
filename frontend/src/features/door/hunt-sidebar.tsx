@@ -2,10 +2,9 @@ import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { Loader2, MoreVertical, Bookmark, Settings, Trash2, PanelLeft, SquarePen } from 'lucide-react'
 import { useHunts, useDeleteHuntById } from '@/api/hunts'
-import { useInstincts, useCreateInstinct, useDeleteInstinct } from '@/api/instincts'
+import { useInstincts, useDeleteInstinct } from '@/api/instincts'
 import { toReusedInstinct } from '../intake/use-intake'
 import { formatRelative } from '@/lib/format'
-import { toast } from '@/store/toast-store'
 import { color } from '@/lib/theme'
 
 /** Hunts still working (spinner on the row) vs terminal. */
@@ -110,7 +109,6 @@ export function HuntSidebar({ onCollapse }: Props) {
   const { data: instincts, isLoading: instLoading } = useInstincts()
   const deleteHunt = useDeleteHuntById()
   const deleteInstinct = useDeleteInstinct()
-  const createInstinct = useCreateInstinct()
 
   const hunts = huntData?.hunts ?? []
 
@@ -165,15 +163,9 @@ export function HuntSidebar({ onCollapse }: Props) {
                   <RowMenu
                     onClose={() => setMenuId(null)}
                     items={[
-                      {
-                        label: 'Save Instinct',
-                        onClick: () => {
-                          createInstinct.mutate(
-                            { label: h.title, spec: { task: h.title } },
-                            { onSuccess: () => toast({ title: 'Saved as instinct', variant: 'success' }) },
-                          )
-                        },
-                      },
+                      // Note: saving an Instinct lives in the Reward modal (after a hunt), where the
+                      // real formation is in hand. A row here only has the title, not the pack shape —
+                      // saving from it would produce an instinct that launches a generic default pack.
                       {
                         label: 'Delete',
                         danger: true,

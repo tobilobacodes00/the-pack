@@ -134,12 +134,20 @@ async def create_hunt(
     if body.instinct_id:
         inst = await repo.get_instinct(body.instinct_id)
         if inst is not None:
+            # An Instinct contributes its proven SHAPE (formation + strategy) to a FRESH task — never
+            # its old baked-in job. The task must come from `input`; we don't resurrect spec["task"].
             spec = inst.get("spec") or {}
-            raw_input = body.input or str(spec.get("task") or inst.get("label") or "").strip()
             strategy = body.strategy or str(spec.get("strategy") or strategy)
             team = spec.get("team")
             if isinstance(team, list) and team:
                 seed_team = team
+
+    # A hunt needs a real task. Reject an empty one cleanly instead of launching a bare hunt (this
+    # also closes the old trap where an instinct with no `input` silently re-ran its saved task).
+    if not raw_input.strip():
+        if slots is not None:
+            slots.release()
+        return JSONResponse(status_code=422, content={"detail": "a task is required"})
 
     try:
         await _launch_hunt(

@@ -87,7 +87,7 @@
         "type": "object",
         "required": ["source", "raw_input_ref"],
         "properties": {
-          "source": { "enum": ["typed", "spoken", "dropped"] },
+          "source": { "enum": ["typed", "spoken", "dropped", "chat"] },
           "raw_input_ref": { "type": "string" }
         }
       },
