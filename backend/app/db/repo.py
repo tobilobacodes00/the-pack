@@ -308,6 +308,17 @@ class Repo:
         title = (row["title"] or (row["raw_input"] or "").strip()[:80]) or "A Pack brief"
         return {"title": title, "content": content}
 
+    async def get_shared_meta(self, token: str) -> dict[str, Any] | None:
+        """Resolve a share token to its hunt id + display title — the Flight Recorder's key. The
+        token (not a hunt id) is the public capability, so its scope stays exactly one hunt."""
+        row = await self._pool.fetchrow(
+            "SELECT hunt_id, title, raw_input FROM hunts WHERE share_token = $1", token
+        )
+        if row is None:
+            return None
+        title = (row["title"] or (row["raw_input"] or "").strip()[:80]) or "A Pack brief"
+        return {"hunt_id": row["hunt_id"], "title": title}
+
     # --- events (the log + the outbox) -------------------------------------------------
 
     async def get_last_seq(self, hunt_id: str) -> int:
@@ -577,11 +588,48 @@ class Repo:
             "INSERT INTO memory (hunt_id, kind, text) VALUES ($1, $2, $3)", hunt_id, kind, text
         )
 
-    async def recent_memory(self, limit: int = 5) -> list[dict[str, Any]]:
-        rows = await self._pool.fetch(
-            "SELECT hunt_id, kind, text FROM memory ORDER BY id DESC LIMIT $1", limit
-        )
+    async def recent_memory(
+        self, limit: int = 5, *, include_archived: bool = False
+    ) -> list[dict[str, Any]]:
+        """Recent lessons, newest first. Recall reads ACTIVE only (an archived lesson is vetoed —
+        it must never steer a hunt again); the memory page passes include_archived for the record."""
+        if include_archived:
+            rows = await self._pool.fetch(
+                "SELECT id, hunt_id, kind, text, status FROM memory ORDER BY id DESC LIMIT $1",
+                limit,
+            )
+        else:
+            rows = await self._pool.fetch(
+                "SELECT id, hunt_id, kind, text, status FROM memory"
+                " WHERE status = 'active' ORDER BY id DESC LIMIT $1",
+                limit,
+            )
         return [dict(r) for r in rows]
+
+    async def update_memory(
+        self, memory_id: int, *, text: str | None = None, status: str | None = None
+    ) -> bool:
+        """Edit a lesson's text and/or flip its lifecycle status. True when a row changed."""
+        if text is None and status is None:
+            return False
+        sets: list[str] = []
+        args: list[Any] = []
+        if text is not None:
+            args.append(text)
+            sets.append(f"text = ${len(args)}")
+        if status is not None:
+            args.append(status)
+            sets.append(f"status = ${len(args)}")
+        args.append(memory_id)
+        result = await self._pool.execute(
+            f"UPDATE memory SET {', '.join(sets)} WHERE id = ${len(args)}", *args
+        )
+        return result.endswith("1")
+
+    async def delete_memory_row(self, memory_id: int) -> bool:
+        """Forget ONE lesson for good. True when a row was deleted."""
+        result = await self._pool.execute("DELETE FROM memory WHERE id = $1", memory_id)
+        return result.endswith("1")
 
     # --- knowledge base (your documents, v4.2) -----------------------------------------
 
@@ -601,8 +649,11 @@ class Repo:
         return [dict(r) for r in rows]
 
     async def get_document(self, doc_id: int) -> dict[str, Any] | None:
+        # NB: do NOT select created_at here — the router returns this dict via a plain JSONResponse,
+        # which can't serialize a raw datetime (it 500s). Nothing consumes created_at anyway; the
+        # response model (DocumentDetailResponse) only declares id/name/kind/chars/text.
         row = await self._pool.fetchrow(
-            "SELECT id, name, kind, text, chars, created_at FROM documents WHERE id = $1", doc_id
+            "SELECT id, name, kind, text, chars FROM documents WHERE id = $1", doc_id
         )
         return dict(row) if row else None
 

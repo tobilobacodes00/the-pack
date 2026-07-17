@@ -120,6 +120,8 @@
           "assumptions": { "type": "array", "items": { "type": "string" } },
           "est_cost": { "type": "number" },
           "est_time": { "type": "number" },
+          "est_by_depth": { "type": "object", "description": "v3: per-depth {cost,time} estimates so the plan card shows the true figure for the selected depth (additive). v6: entries are rehearsed for the actual team and additionally carry {calls}." },
+          "est_detail": { "type": "object", "description": "v6: rehearsal detail for the proposed depth — {scouts:int, warnings:string[]} — so the plan card can show what was priced (additive)." },
           "queries": { "type": "array", "items": { "type": "string" }, "description": "Per-scout search angles (additive)." },
           "strategy": { "type": "string", "description": "Selected research strategy (additive)." },
           "depth": { "enum": ["brief", "standard", "deep"], "description": "v3: adaptive research depth (additive)." },

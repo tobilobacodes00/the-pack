@@ -51,6 +51,7 @@ const InstinctsPage  = lazy(() => import('@/features/instincts/instincts-page'))
 const MemoryPage     = lazy(() => import('@/features/memory/memory-page'))
 const SpendPage      = lazy(() => import('@/features/spend/spend-page'))
 const SharePage      = lazy(() => import('@/features/share/share-page'))
+const ShareReplayPage = lazy(() => import('@/features/share/share-replay-page'))
 const SettingsPage   = lazy(() => import('@/features/settings/settings-page'))
 
 export const router = createBrowserRouter([
@@ -69,5 +70,6 @@ export const router = createBrowserRouter([
   { path: '/memory',                    element: wrap(MemoryPage) },
   { path: '/spend',                     element: wrap(SpendPage) },
   { path: '/share/:token',              element: wrap(SharePage) },
+  { path: '/share/:token/replay',       element: wrap(ShareReplayPage) },
   { path: '/settings',                  element: wrap(SettingsPage) },
 ])

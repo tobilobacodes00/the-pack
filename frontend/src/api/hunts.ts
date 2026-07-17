@@ -5,8 +5,11 @@ import {
   HuntSnapshotSchema,
   BriefSchema,
   ArtifactMetaSchema,
+  ReceiptsSchema,
+  RehearseSchema,
   ScorecardSchema,
   SharedSchema,
+  SharedTracksSchema,
   SpendSummarySchema,
 } from './schemas'
 import type { ArtifactMeta } from './schemas'
@@ -26,6 +29,8 @@ export type {
   Shared,
   ScorecardSide,
   Scorecard,
+  ReceiptClaim,
+  Receipts,
   SpendHunt,
   SpendSummary,
 } from './schemas'
@@ -88,7 +93,16 @@ export function useIntake() {
 export function useCreateHunt() {
   const qc = useQueryClient()
   return useMutation({
-    mutationFn: async (body: { input?: string; instinct_id?: string; strategy?: string; project_id?: string; boundary_usd?: number }) => {
+    mutationFn: async (body: {
+      input?: string
+      instinct_id?: string
+      strategy?: string
+      project_id?: string
+      boundary_usd?: number
+      // A reused Instinct carries its proven formation as seed_team — the backend lets it override
+      // Beta's sizing while the fresh `input` (not the instinct's baked-in task) drives the research.
+      team?: Array<{ role: string; count: number }>
+    }) => {
       const res = await api.post<{ hunt_id: string }>('/hunts', body)
       return res.data
     },
@@ -279,9 +293,54 @@ export function useShare(huntId: string) {
   })
 }
 
-/** The latest benchmark Scorecard (Lone Wolf vs Pack). 404 (→ isError) until a benchmark is run. */
-export function useHuntScorecard(huntId: string, enabled: boolean) {
+/** Re-price the hunt for an EDITED formation before approval (the Shadow Hunt rehearsal). The
+ *  endpoint is a pure estimator — POST-in-a-query is safe and idempotent; keyed on the exact
+ *  team/strategy/depth so toggling depth or reshaping the pack re-prices instantly. */
+export function useRehearse(
+  huntId: string | null,
+  body: {
+    team?: Array<{ role: string; count: number }>
+    strategy?: string
+    depth: 'brief' | 'standard' | 'deep'
+  },
+  enabled: boolean,
+) {
   return useQuery({
+    queryKey: ['hunts', huntId, 'rehearse', body.depth, body.strategy, JSON.stringify(body.team ?? null)],
+    queryFn: async () => {
+      const res = await api.post(`/hunts/${huntId}/rehearse`, body)
+      return RehearseSchema.parse(res.data)
+    },
+    enabled: enabled && !!huntId,
+    staleTime: Infinity, // pure function of the key — never goes stale
+    retry: false,
+  })
+}
+
+/** Launch "Lone Wolf vs the Pack": the same task runs once as a single solo agent, a judge scores
+ *  both briefs, and the Scorecard lands as benchmark_completed on the hunt's stream (and via
+ *  GET /scorecard). 202 fire-and-forget — pair with useHuntScorecard's pollWhileMissing. */
+export function useRunBenchmark(huntId: string) {
+  return useMutation({
+    mutationFn: async () => {
+      await api.post(`/hunts/${huntId}/benchmark`)
+    },
+  })
+}
+
+/** How long to wait for a launched benchmark before giving up: 2.5s × 48 ≈ 2 min. A benchmark that
+ *  dies in the background (provider error, bad judge response) never lands a scorecard — without a
+ *  cap the poll would spin forever and the Scorecard would show "running…" indefinitely. */
+export const SCORECARD_POLL_MS = 2500
+export const SCORECARD_POLL_MAX = 48
+
+/** The latest benchmark Scorecard (Lone Wolf vs Pack). 404 (→ isError) until a benchmark is run.
+ *  `pollWhileMissing` re-checks every 2.5s until the scorecard exists OR the poll budget runs out
+ *  (SCORECARD_POLL_MAX attempts) — the follow-up to useRunBenchmark for when the live stream isn't
+ *  connected to deliver benchmark_completed. `pollExhausted` on the result tells the caller the
+ *  benchmark never landed so the UI can recover instead of spinning forever. */
+export function useHuntScorecard(huntId: string, enabled: boolean, pollWhileMissing = false) {
+  const q = useQuery({
     queryKey: ['hunts', huntId, 'scorecard'],
     queryFn: async () => {
       const res = await api.get<{ scorecard: unknown }>(`/hunts/${huntId}/scorecard`)
@@ -289,7 +348,20 @@ export function useHuntScorecard(huntId: string, enabled: boolean) {
     },
     enabled: enabled && !!huntId,
     retry: false,
+    refetchInterval: (query) => {
+      // Count fetch cycles (successes + failures); the scorecard 404s until it lands, so this is
+      // effectively "attempts so far". Stop once we have the data or the budget is spent.
+      const attempts = query.state.dataUpdateCount + query.state.errorUpdateCount
+      return pollWhileMissing && !query.state.data && attempts < SCORECARD_POLL_MAX
+        ? SCORECARD_POLL_MS
+        : false
+    },
   })
+  // The benchmark never landed within the budget: the poll made its full run of attempts and still
+  // has no scorecard. Lets the UI stop showing "running…" and offer a retry instead.
+  const pollExhausted =
+    pollWhileMissing && !q.data && q.failureCount + q.errorUpdateCount >= SCORECARD_POLL_MAX
+  return Object.assign(q, { pollExhausted })
 }
 
 export interface RawTrackEvent {
@@ -298,6 +370,32 @@ export interface RawTrackEvent {
   seq: number
   ts: string
   payload: Record<string, unknown>
+}
+
+/** The Receipts — per-claim provenance for the delivered brief. 404 (→ isError) until it exists. */
+export function useReceipts(huntId: string, enabled: boolean) {
+  return useQuery({
+    queryKey: ['hunts', huntId, 'receipts'],
+    queryFn: async () => {
+      const res = await api.get(`/hunts/${huntId}/receipts`)
+      return ReceiptsSchema.parse(res.data)
+    },
+    enabled: enabled && !!huntId,
+    retry: false,
+  })
+}
+
+/** The public Flight Recorder feed: a shared hunt's full redacted event log, by share token. */
+export function useSharedTracks(token: string | undefined) {
+  return useQuery({
+    queryKey: ['share', token, 'tracks'],
+    queryFn: async () => {
+      const res = await api.get(`/share/${token}/tracks`)
+      return SharedTracksSchema.parse(res.data)
+    },
+    enabled: !!token,
+    retry: false,
+  })
 }
 
 /** The full redacted event log — the Reward's Tracks drawer derives its narrative from this. */

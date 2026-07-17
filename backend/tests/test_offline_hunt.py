@@ -865,12 +865,46 @@ async def test_normalize_plan_empty_assumptions_stay_empty() -> None:
 
 
 async def test_normalize_plan_est_always_depth_derived() -> None:
-    """Estimates are ALWAYS derived per depth — a bogus/negative Beta number never wins."""
-    sup = _bare_sup(FakeRepo(), "hunt_est")
+    """Estimates are ALWAYS rehearsal-derived per depth — a bogus/negative Beta number never wins,
+    and the emitted figures match rehearse() for the actual team + the strategy that depth runs."""
+    from app.engine.rehearse import rehearse
+
+    sup = _bare_sup(FakeRepo(), "hunt_est")  # _bare_sup pins strategy="orchestrate" (explicit)
     std = sup._normalize_plan({"depth": "standard", "est_cost": 0, "est_time": -5})
-    assert std["est_cost"] == 0.7 and std["est_time"] == 220
+    want_std = rehearse(std["team"], "orchestrate", "standard")
+    assert std["est_cost"] == want_std["est_cost_usd"] > 0
+    assert std["est_time"] == want_std["est_time_s"] > 0
     deep = sup._normalize_plan({"depth": "deep", "est_cost": 999.0, "est_time": 999})
-    assert deep["est_cost"] == 1.4 and deep["est_time"] == 340
+    # an EXPLICIT strategy never auto-upgrades — deep here still prices an orchestrate run
+    want_deep = rehearse(deep["team"], "orchestrate", "deep")
+    assert deep["est_cost"] == want_deep["est_cost_usd"]
+    assert deep["est_time"] == want_deep["est_time_s"]
+    # deep genuinely costs more than standard for the same team — the table is no longer static
+    assert deep["est_cost"] > std["est_cost"]
+    # with NO pinned strategy, a deep hunt auto-upgrades to deep_dive and the estimate prices THAT
+    auto = _bare_sup(FakeRepo(), "hunt_est_auto", strategy=None)
+    deep_auto = auto._normalize_plan({"depth": "deep"})
+    want_auto = rehearse(deep_auto["team"], "deep_dive", "deep")
+    assert deep_auto["est_cost"] == want_auto["est_cost_usd"]
+    # the second scout round makes the auto-upgraded run pricier than the pinned one
+    assert deep_auto["est_cost"] > deep["est_cost"]
+
+
+async def test_normalize_plan_est_scales_with_team() -> None:
+    """The rehearsed estimate reflects the actual formation: more scouts → a costlier preview.
+    (The old static depth table showed identical numbers for any team — the honesty fix.)"""
+    small = _bare_sup(FakeRepo(), "hunt_est_small")._normalize_plan(
+        {"depth": "standard", "team": [{"role": "scout", "count": 1}]}
+    )
+    big = _bare_sup(FakeRepo(), "hunt_est_big")._normalize_plan(
+        {"depth": "standard", "team": [{"role": "scout", "count": 5}]}
+    )
+    assert big["est_cost"] > small["est_cost"]
+    # the additive detail rides the payload for the plan card's breakdown line
+    assert big["est_detail"]["scouts"] == 5
+    assert small["est_detail"]["scouts"] == 1
+    assert isinstance(big["est_detail"]["warnings"], list)
+    assert big["est_by_depth"]["standard"]["calls"] > small["est_by_depth"]["standard"]["calls"]
 
 
 async def test_normalize_plan_carries_summary() -> None:

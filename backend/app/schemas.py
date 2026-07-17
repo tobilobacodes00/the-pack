@@ -90,8 +90,18 @@ class AddInput(BaseModel):
     kind: InputKind = "text"
 
 
+class TeamEntry(BaseModel):
+    """One formation slot. `role` is free-form (rehearse warns on unknown roles rather than
+    rejecting); `count` is validated/coerced here so a malformed value (e.g. a non-numeric string)
+    422s at the boundary instead of crashing rehearse() with an uncaught ValueError."""
+
+    model_config = ConfigDict(extra="ignore")
+    role: str = ""
+    count: int = Field(default=0, ge=0, le=50)
+
+
 class RehearseBody(BaseModel):
-    team: list[dict] | None = None
+    team: list[TeamEntry] | None = None
     strategy: str | None = None
     depth: Depth | None = None
 
@@ -264,6 +274,31 @@ class TracksResponse(BaseModel):
     redacted: bool
 
 
+class SharedTracksResponse(BaseModel):
+    """The public Flight Recorder: a shared hunt's full redacted event log, keyed by the share
+    token (never a hunt id) so the link's scope is exactly one hunt's replay."""
+
+    title: str
+    events: list[dict[str, Any]]
+    redacted: bool
+
+
+class ReceiptsResponse(BaseModel):
+    """The Receipts — per-claim provenance for a delivered brief: each claim's sources (with the
+    wolf that found each and whether the page was read), the Sentinel's challenges and their
+    outcomes, the claims that were dropped, and your-documents coverage."""
+
+    hunt_id: str
+    critique_ran: bool
+    review_note: str = ""  # why verification didn't complete, when critique_ran is False
+    claims: list[dict[str, Any]]
+    dropped: list[dict[str, Any]]
+    standoff: dict[str, Any] | None = None
+    wolves: dict[str, dict[str, int]]
+    documents: list[dict[str, Any]]
+    totals: dict[str, int]
+
+
 # ---------------------------------------------------------------------------
 # Project response models
 # ---------------------------------------------------------------------------
@@ -374,15 +409,34 @@ class DocumentDeleteResponse(BaseModel):
 
 
 class MemoryItem(BaseModel):
+    # v6: id + status make each lesson addressable — editable, vetoable, and citable (memory://id).
+    id: int
     text: str
     # The lesson type the Elder assigned — what-worked / what-failed / preference / topic-insight,
     # or the legacy "takeaway" for older/untyped rows — so the UI can group and label what it shows.
     kind: str = "takeaway"
     hunt_id: str | None = None
+    status: str = "active"
 
 
 class MemoryResponse(BaseModel):
     memory: list[MemoryItem]
+
+
+class MemoryPatch(BaseModel):
+    """Edit a lesson: rewrite its text and/or flip its lifecycle (active ↔ archived). Archived =
+    vetoed — kept for the record, never recalled into a hunt again."""
+
+    text: str | None = None
+    status: str | None = None
+
+
+class MemoryPatchResponse(BaseModel):
+    ok: bool
+
+
+class MemoryDeleteResponse(BaseModel):
+    deleted: bool
 
 
 class SpendHuntItem(BaseModel):

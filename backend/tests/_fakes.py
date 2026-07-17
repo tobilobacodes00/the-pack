@@ -23,12 +23,43 @@ class FakeRepo:
         self.instincts: list[dict[str, Any]] = []
         self.feedback: list[dict[str, Any]] = []
         self.projects: list[dict[str, Any]] = []
+        self.share_tokens: dict[str, str] = {}  # token -> hunt_id (mirrors hunts.share_token)
 
     async def save_memory(self, hunt_id: str | None, kind: str, text: str) -> None:
-        self.memory.append({"hunt_id": hunt_id, "kind": kind, "text": text})
+        self.memory.append(
+            {
+                "id": len(self.memory) + 1,
+                "hunt_id": hunt_id,
+                "kind": kind,
+                "text": text,
+                "status": "active",
+            }
+        )
 
-    async def recent_memory(self, limit: int = 5) -> list[dict[str, Any]]:
-        return list(reversed(self.memory))[:limit]
+    async def recent_memory(
+        self, limit: int = 5, *, include_archived: bool = False
+    ) -> list[dict[str, Any]]:
+        rows = [m for m in self.memory if include_archived or m.get("status", "active") == "active"]
+        return list(reversed(rows))[:limit]
+
+    async def update_memory(
+        self, memory_id: int, *, text: str | None = None, status: str | None = None
+    ) -> bool:
+        if text is None and status is None:
+            return False
+        for m in self.memory:
+            if m.get("id") == memory_id:
+                if text is not None:
+                    m["text"] = text
+                if status is not None:
+                    m["status"] = status
+                return True
+        return False
+
+    async def delete_memory_row(self, memory_id: int) -> bool:
+        before = len(self.memory)
+        self.memory = [m for m in self.memory if m.get("id") != memory_id]
+        return len(self.memory) < before
 
     async def save_document(self, name: str, kind: str, text: str) -> int:
         doc_id = len(self.documents) + 1
@@ -138,6 +169,28 @@ class FakeRepo:
     async def set_parent_hunt(self, hunt_id: str, parent_hunt_id: str) -> None:
         self.hunts.setdefault(hunt_id, {})["parent_hunt_id"] = parent_hunt_id
 
+    # --- sharing (mirrors Repo's share-token trio) --------------------------------------
+
+    def _shared_title(self, hunt_id: str) -> str:
+        h = self.hunts.get(hunt_id) or {}
+        return ((h.get("raw_input") or "").strip()[:80]) or "A Pack brief"
+
+    async def set_share_token(self, hunt_id: str, token: str) -> None:
+        self.share_tokens[token] = hunt_id
+
+    async def get_shared(self, token: str) -> dict[str, Any] | None:
+        hunt_id = self.share_tokens.get(token)
+        if hunt_id is None:
+            return None
+        art = await self.get_final_artifact(hunt_id)
+        return {"title": self._shared_title(hunt_id), "content": art["content"] if art else None}
+
+    async def get_shared_meta(self, token: str) -> dict[str, Any] | None:
+        hunt_id = self.share_tokens.get(token)
+        if hunt_id is None:
+            return None
+        return {"hunt_id": hunt_id, "title": self._shared_title(hunt_id)}
+
     async def set_boundary(self, hunt_id: str, boundary_usd: float) -> None:
         self.hunts.setdefault(hunt_id, {})["boundary_usd"] = boundary_usd
 
@@ -167,6 +220,24 @@ class FakeRepo:
     async def get_final_artifact(self, hunt_id: str) -> dict[str, Any] | None:
         finals = [a for a in self.artifacts if a["hunt_id"] == hunt_id and a["kind"] == "final"]
         return finals[-1] if finals else None
+
+    async def list_artifacts(self, hunt_id: str) -> list[dict[str, Any]]:
+        return [
+            {"artifact_id": a["artifact_id"], "kind": a["kind"]}
+            for a in self.artifacts
+            if a["hunt_id"] == hunt_id
+        ]
+
+    async def get_artifact_row(self, artifact_id: str) -> dict[str, Any] | None:
+        for a in self.artifacts:
+            if a["artifact_id"] == artifact_id:
+                return {
+                    "artifact_id": a["artifact_id"],
+                    "hunt_id": a["hunt_id"],
+                    "kind": a["kind"],
+                    "content": a["content"],
+                }
+        return None
 
     async def save_checkpoint(
         self, checkpoint_id: str, hunt_id: str, at_seq: int, state: Any

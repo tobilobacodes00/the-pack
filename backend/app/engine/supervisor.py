@@ -42,6 +42,7 @@ from app.engine.dispatch_gate import decide_and_reserve
 from app.engine.forge import MIME, forge
 from app.engine.healing import Healer
 from app.engine.ids import new_artifact_id, new_checkpoint_id, new_hold_id, new_standoff_id
+from app.engine.rehearse import rehearse
 from app.engine.roster import (
     DEFAULT_SCOUTS,
     ROLE_SPEC,
@@ -71,7 +72,7 @@ from app.qwen.client import OnDelta, QwenClient, is_transient_provider_error
 from app.qwen.types import CompletionResult
 from app.storage import store_forged_content
 from app.tools.knowledge import select_relevant
-from app.tools.memory import normalize_kind, recall, remember
+from app.tools.memory import as_sources, normalize_kind, recall_items, remember, render_note
 from app.tools.providers.base import canonical_url
 from app.tools.web import WEB_FETCH, WEB_SEARCH
 
@@ -100,6 +101,12 @@ _CRITIQUE_STOPWORDS = frozenset(
 # claim. 0.75 clears the real paraphrase (coverage 1.00 on the flagged claim) without catching claims
 # that merely share a couple of task words (which land ~0.5 even after task-word stripping).
 _CRITIQUE_MATCH_COVERAGE = 0.75
+
+# The per-depth estimates emitted on plan_proposed are REHEARSED for the actual team + strategy
+# (app.engine.rehearse — the same pricing.estimate the spend gate reserves from), not a fixed table.
+# A 5-scout deep_dive and a 1-scout brief check now show honestly different numbers. Still preview
+# figures — the Boundary enforces from live per-call estimates, not these. (Beta can't ground token
+# pricing/latency, so its own est guesses are always discarded in favor of the rehearsal.)
 
 
 def _content_tokens(text: str, extra_stop: AbstractSet[str] = frozenset()) -> set[str]:
@@ -168,6 +175,7 @@ class Supervisor:
         # it emits + spawns through this Supervisor so seq assignment and the roster stay in one place.
         self._healer = Healer(self._emit, self._spawn_wolf)
         self._memory_note: str = ""  # v2: what the Elder recalled to seed the plan
+        self._memory_items: list[dict] = []  # v6: the recalled lessons themselves (citable)
         self._search_attempts = 0  # v2: web searches run (to tell "no results" from "search down")
         self._search_ok = 0  # v2: web searches that succeeded
         self._no_sources = False  # v2: the hunt found no traceable ground — never fabricate
@@ -323,7 +331,10 @@ class Supervisor:
         We feed that stream through the same `_progress_sink` every step uses, plus one immediate
         beat, so the forming state narrates live on Beta's node instead of sitting frozen for a
         minute-plus while the pack forms."""
-        self._memory_note = await recall(self._repo, self.task)
+        # Recall ONCE: the same ranked lessons feed Beta's whisper (prose) AND become citable
+        # memory:// sources at merge — a brief that leaned on the pack's memory says so.
+        self._memory_items = await recall_items(self._repo, self.task)
+        self._memory_note = render_note(self._memory_items)
         beta = self._make_wolf("beta", "beta", "plus", True)
         context = f"Coordination strategy: {self._strategy.label} ({self._strategy.pattern})."
         if self._memory_note:
@@ -425,6 +436,15 @@ class Supervisor:
         if self._plan:  # only where a normalized plan exists (the _approve seam)
             self._plan["strategy"] = self._strategy.name
 
+    def _strategy_name_for_depth(self, depth: str) -> str:
+        """The strategy a hunt WOULD run at `depth` — the pure (no-mutation) twin of
+        `_resolve_strategy_for_depth`, for pricing the per-depth estimate table honestly. An explicit
+        strategy always wins; otherwise the orchestrate↔deep_dive auto-upgrade tracks the depth, and
+        any other strategy (critique) is depth-independent."""
+        if self._strategy_explicit or self._strategy.name not in ("orchestrate", "deep_dive"):
+            return self._strategy.name
+        return "deep_dive" if depth == "deep" else "orchestrate"
+
     def _normalize_plan(self, parsed: dict) -> dict:
         """Coerce the model's plan into a schema-valid plan_proposed payload: build the per-task
         TEAM, then derive the scout angles/steps/worker-roster from it (additive canvas fields)."""
@@ -449,9 +469,23 @@ class Supervisor:
             depth = "standard"
         # est_cost/est_time are UI-preview numbers (the spend gate reserves from pricing.estimate, not
         # these). ALWAYS derive them per depth — Beta can't ground token pricing/latency, and its guess
-        # used to override the correct default (or propagate an absurd/negative value).
-        est_cost = {"brief": 0.4, "standard": 0.7, "deep": 1.4}[depth]
-        est_time = {"brief": 150, "standard": 220, "deep": 340}[depth]
+        # used to override the correct default (or propagate an absurd/negative value). Each depth is
+        # REHEARSED for the actual team + the strategy that depth would run (deep may auto-upgrade to
+        # deep_dive), so the plan card shows honest per-formation figures and updates live as the user
+        # toggles Brief/Standard/Deep. `calls` rides each entry (additive) — the breakdown the card
+        # shows so "priced by rehearsal" is checkable, not asserted.
+        est_by_depth: dict[str, dict[str, float]] = {}
+        rehearsed: dict[str, dict] = {}
+        for d in ("brief", "standard", "deep"):
+            r = rehearse(self._team, self._strategy_name_for_depth(d), d)
+            rehearsed[d] = r
+            est_by_depth[d] = {
+                "cost": float(r["est_cost_usd"]),
+                "time": float(r["est_time_s"]),
+                "calls": float(r["calls"]),
+            }
+        est_cost = est_by_depth[depth]["cost"]
+        est_time = est_by_depth[depth]["time"]
         return {
             "steps": [
                 {
@@ -477,6 +511,15 @@ class Supervisor:
             "assumptions": assumptions,
             "est_cost": est_cost,
             "est_time": est_time,
+            # additive: the full per-depth REHEARSED estimate table ({cost,time,calls} per depth for
+            # THIS team) so the plan card shows the true figure for whichever depth the user selects.
+            "est_by_depth": est_by_depth,
+            # additive: the rehearsal's team-level detail — scout count priced, plus any warnings
+            # (e.g. an over-cap scout count the engine will clamp). Depth-independent.
+            "est_detail": {
+                "scouts": int(rehearsed[depth]["scouts"]),
+                "warnings": list(rehearsed[depth]["warnings"]),
+            },
             # additive (schema allows extra fields): the canvas + Door + Edit Panel read these.
             # `summary` is carried for observability — a real plan has one, a fallback (empty parsed)
             # doesn't, so the two are distinguishable in the event log.
@@ -982,6 +1025,10 @@ class Supervisor:
         # in the prompt even though draft()/finish() dedupe them into the same list afterward.
         raw_sources = [s for f in findings for s in f.sources]
         raw_sources.extend(await self._absorb_knowledge())
+        # v6: recalled lessons are citable like library docs — a claim grounded in the pack's
+        # memory cites memory://<id> and the receipt credits the Elder. Stable synthetic urls
+        # survive the same dedupe, so repeat merges (deep_dive) don't duplicate them.
+        raw_sources.extend(as_sources(self._memory_items))
         reg_sources, registry = prompt_context.numbered_sources(raw_sources)
 
         # The merge is the single heaviest call — a plus+thinking model synthesizing every finding
@@ -1300,30 +1347,57 @@ class Supervisor:
             await self._stray_event(
                 "sentinel", "timeout" if res is None else "provider_error", None
             )
+            verdict = _unverified()
+            # Persist the honest "did not complete" verdict too — the Receipts must be able to say
+            # "claims are unverified" from a durable record, not infer it from a missing artifact.
+            # completed=False marks it as a non-completion so the Receipts don't read this
+            # placeholder as a genuine, passed review.
+            out_ref = await self._save_critique(verdict, completed=False)
             await self._emit(
                 "step_completed",
                 "sentinel",
                 {
                     "step_id": "s-critique",
                     "wolf_id": "sentinel",
-                    "output_ref": f"art_{self._hunt_id}_critique",
+                    "output_ref": out_ref,
                     "confidence": 0.0,
                 },
             )
-            return _unverified()
+            return verdict
         parsed = res.parsed or {}
         issues = [i for i in (parsed.get("issues") or []) if isinstance(i, dict)]
+        verdict = CritiqueResult(ok=bool(parsed.get("ok", True)), issues=issues)
+        # The Sentinel's verdict becomes a REAL artifact (it used to be a dangling placeholder ref):
+        # the Receipts join each challenged claim to its problem from this durable record.
+        out_ref = await self._save_critique(verdict)
         await self._emit(
             "step_completed",
             "sentinel",
             {
                 "step_id": "s-critique",
                 "wolf_id": "sentinel",
-                "output_ref": f"art_{self._hunt_id}_critique",
+                "output_ref": out_ref,
                 "confidence": 0.9,
             },
         )
-        return CritiqueResult(ok=bool(parsed.get("ok", True)), issues=issues)
+        return verdict
+
+    async def _save_critique(self, verdict: CritiqueResult, *, completed: bool = True) -> str:
+        """Persist the Sentinel's verdict as an artifact (kind='critique') and return its id.
+
+        `completed` records whether the Sentinel actually finished reviewing: False on the
+        timeout/faulted path (the `_unverified()` verdict) so the Receipts can honestly say
+        "verification did not run" from a durable record instead of reading a persisted
+        placeholder as a genuine pass."""
+        out_ref = new_artifact_id()
+        await self._repo.save_artifact(
+            out_ref,
+            self._hunt_id,
+            "critique",
+            "sentinel",
+            {"ok": verdict.ok, "issues": list(verdict.issues), "completed": completed},
+        )
+        return out_ref
 
     async def apply_critique(
         self,
@@ -1775,6 +1849,11 @@ class Supervisor:
                 "text": draft_text,
                 "blocks": blocks,  # v3: tagged blocks for click-any-line → source
                 "claims": merged.claims,
+                # v-fix: persist per-claim citation ids alongside the claims — the Receipts join
+                # reads these BY POSITION (claims[i] ↔ claims_src[i]), so it never has to re-derive
+                # a claim's sources by matching text (which collapses duplicate-text claims onto the
+                # first occurrence and mis-credits the wrong source/wolf). Parallel to `claims`.
+                "claims_src": list(merged.claims_src),
                 "sources": sources,
                 "span_map_ref": spanmap_ref,
                 "no_sources": self._no_sources or not sources,  # honest empty state

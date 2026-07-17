@@ -202,10 +202,10 @@
                 "intake"
               ]
             },
-            "description": "Front-door clarify-gate: Alpha converses until there's a real task, then signals ready\nwith a one-line brief. No hunt is created here \u2014 the frontend creates one only on ready=true.",
+            "description": "Front-door gate, now state-aware: Alpha is ONE continuous lead. If the conversation already has\na running or delivered hunt (body.hunt_id), the injected [HUNT STATE] header stops it re-asking\nscoping questions or relaunching \u2014 it converses about the live/finished hunt instead. Only a fresh,\nhunt-less turn can signal ready. No hunt is created here \u2014 the frontend creates one on ready=true.",
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"messages\": [\n    {}\n  ]\n}",
+              "raw": "{\n  \"messages\": [\n    {}\n  ],\n  \"hunt_id\": \"<value>\"\n}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -235,10 +235,10 @@
                 "stream"
               ]
             },
-            "description": "SSE variant of /intake \u2014 yields `token` events as text arrives, then a `done` event.",
+            "description": "SSE variant of /intake \u2014 yields `token` events as text arrives, then a `done` event.\nState-aware like /intake: an in-flight hunt for this thread suppresses relaunch.",
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"messages\": [\n    {}\n  ]\n}",
+              "raw": "{\n  \"messages\": [\n    {}\n  ],\n  \"hunt_id\": \"<value>\"\n}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -371,7 +371,7 @@
                 ":artifact_id"
               ]
             },
-            "description": "Download one forged file \u2014 base64-decoded, with the right content-type and a filename.\nArtifacts are immutable so we issue a strong ETag and honor If-None-Match \u2192 304."
+            "description": "Download one forged file \u2014 resolved from the artifact store (Alibaba OSS in prod, disk\noffline; legacy rows carry the bytes inline), with the right content-type and a filename.\nArtifacts are immutable so we issue a strong ETag and honor If-None-Match \u2192 304."
           }
         },
         {
@@ -389,7 +389,7 @@
                 "ask"
               ]
             },
-            "description": "A side conversation with Alpha about the hunt \u2014 multi-turn, carries the full history.",
+            "description": "The ONE Alpha side-chat, now a smart dispatcher: it classifies each message against the live\nhunt state and either answers, refines the brief in place, steers a running hunt, or launches a\nscoped follow-up \u2014 then replies in Alpha's voice. Multi-turn; carries the full history.",
             "body": {
               "mode": "raw",
               "raw": "{\n  \"question\": \"<value>\",\n  \"messages\": [\n    {}\n  ]\n}",
@@ -423,7 +423,7 @@
                 "stream"
               ]
             },
-            "description": "SSE variant of /ask \u2014 yields `token` events then a `done` event with the full reply.",
+            "description": "SSE variant of the smart dispatcher: classify the message against live hunt state, take the\naction (refine / steer / follow-up hunt), THEN stream Alpha's reply and emit the action + any new\nhunt_id on the `done` frame so the frontend can refresh the brief or track the sub-hunt.",
             "body": {
               "mode": "raw",
               "raw": "{\n  \"question\": \"<value>\",\n  \"messages\": [\n    {}\n  ]\n}",
@@ -648,7 +648,7 @@
             "description": "Approve the plan and set the Boundary. The hunt begins; events flow on the stream.",
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"mode\": \"wild\",\n  \"boundary_usd\": 100.0,\n  \"edits\": {}\n}",
+              "raw": "{\n  \"mode\": \"wild\",\n  \"boundary_usd\": 100.0,\n  \"edits\": {},\n  \"depth\": \"brief\"\n}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -661,6 +661,24 @@
                 "value": "application/json"
               }
             ]
+          }
+        },
+        {
+          "name": "Get Receipts  [GET]",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{baseUrl}}/hunts/{hunt_id}/receipts",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "hunts",
+                ":hunt_id",
+                "receipts"
+              ]
+            },
+            "description": "The Receipts \u2014 per-claim provenance for this hunt's delivered brief: every claim's sources\n(who found each, was the page actually read), the Sentinel's challenges and outcomes, the\nclaims that were dropped in verification, and your-documents coverage. 404 until a brief\nexists."
           }
         },
         {
@@ -711,10 +729,10 @@
                 "rehearse"
               ]
             },
-            "description": "Shadow Hunt (safety rail): estimate this team's cost + time before the pack runs.",
+            "description": "Shadow Hunt (safety rail): estimate this team's cost + time before the pack runs.\n\nThe team is validated/coerced by RehearseBody.TeamEntry, so a malformed payload (e.g. a\nnon-numeric count) 422s at the boundary rather than crashing rehearse() with a 500.",
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"team\": [\n    {}\n  ],\n  \"strategy\": \"<value>\"\n}",
+              "raw": "{\n  \"team\": [\n    null\n  ],\n  \"strategy\": \"<value>\",\n  \"depth\": \"brief\"\n}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -912,6 +930,42 @@
           }
         },
         {
+          "name": "Get Share Receipts  [GET]",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{baseUrl}}/share/{token}/receipts",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "share",
+                ":token",
+                "receipts"
+              ]
+            },
+            "description": "Public Receipts for a shared brief \u2014 the same per-claim audit trail the owner sees, scoped\nby the share token. A shared answer travels with its proof."
+          }
+        },
+        {
+          "name": "Get Share Tracks  [GET]",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{baseUrl}}/share/{token}/tracks",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "share",
+                ":token",
+                "tracks"
+              ]
+            },
+            "description": "The public Flight Recorder: the shared hunt's full redacted event log, so anyone with the\nlink can REPLAY how the brief was produced \u2014 every decision, every challenge, every dollar.\nKeyed by the share token (scope: exactly this hunt), with the same PII/secret redaction as the\nauthenticated Tracks export."
+          }
+        },
+        {
           "name": "Transcribe  [POST]",
           "request": {
             "method": "POST",
@@ -1073,7 +1127,7 @@
                 "memory"
               ]
             },
-            "description": "What the pack remembers across hunts (the Elder's takeaways), most recent first."
+            "description": "Everything the pack learned across hunts (the Elder's typed lessons), most recent first \u2014\nINCLUDING archived (vetoed) lessons, so the record stays visible. Only active lessons are\nrecalled into hunts."
           }
         },
         {
@@ -1090,6 +1144,55 @@
               ]
             },
             "description": "Forget everything the pack learned (wired to Settings \u2192 Clear all saved data)."
+          }
+        },
+        {
+          "name": "Patch Memory  [PATCH]",
+          "request": {
+            "method": "PATCH",
+            "url": {
+              "raw": "{{baseUrl}}/memory/{memory_id}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "memory",
+                ":memory_id"
+              ]
+            },
+            "description": "Edit one lesson: rewrite its text and/or veto it (status=archived) / restore it\n(status=active). A vetoed lesson is never recalled into a hunt again.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"text\": \"<value>\",\n  \"status\": \"<value>\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ]
+          }
+        },
+        {
+          "name": "Delete Memory Row  [DELETE]",
+          "request": {
+            "method": "DELETE",
+            "url": {
+              "raw": "{{baseUrl}}/memory/{memory_id}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "memory",
+                ":memory_id"
+              ]
+            },
+            "description": "Forget ONE lesson for good."
           }
         },
         {
@@ -1292,7 +1395,7 @@
                 "reset"
               ]
             },
-            "description": "Reset all local data (Settings \u2192 Reset Data): hunts, memory, documents, instincts, projects."
+            "description": "Reset all local data (Settings \u2192 Reset Data): hunts, memory, documents, instincts, projects.\n\nGated by the auth token when set (unlike the browser flow, which is gated at the nginx edge)."
           }
         },
         {

@@ -68,17 +68,21 @@ def _relevant(rows: list[dict], task: str) -> list[dict]:
     return [row for *_ignore, row in scored[:_CAP]]
 
 
-async def recall(repo: MemoryStore, task: str = "", limit: int = 12) -> str:
-    """A short note of what the pack LEARNED on past hunts, relevant to THIS task, to seed planning.
-    Grouped by kind and phrased as guidance for Beta. Empty on a first hunt or when nothing relevant."""
+async def recall_items(repo: MemoryStore, task: str = "", limit: int = 12) -> list[dict]:
+    """The recalled lessons THEMSELVES (id/kind/text rows), ranked and capped exactly as recall()
+    injects them. The supervisor uses these to also register each recalled lesson as a citable
+    source (memory://<id>) — so a brief that leaned on the pack's memory says so, with a receipt."""
     try:
-        rows = await repo.recent_memory(limit)
+        rows = await repo.recent_memory(limit)  # active only — a vetoed lesson never steers a hunt
     except Exception:  # noqa: BLE001 — memory is best-effort; never sink a hunt
-        return ""
-    picked = _relevant(rows, task)
+        return []
+    return _relevant(rows, task)
+
+
+def render_note(picked: list[dict]) -> str:
+    """The whisper to Beta: recalled lessons grouped by kind, phrased as guidance. '' when empty."""
     if not picked:
         return ""
-    # Group into the display order, one section per kind that has a lesson.
     by_kind: dict[str, list[str]] = {}
     for row in picked:
         kind = normalize_kind(row.get("kind"))
@@ -88,6 +92,37 @@ async def recall(repo: MemoryStore, task: str = "", limit: int = 12) -> str:
         for text in by_kind.get(kind, []):
             lines.append(f"- [{_KIND_HEADER[kind]}] {text}")
     return "\n".join(lines)
+
+
+def as_sources(picked: list[dict]) -> list[dict]:
+    """Recalled lessons as injectable source dicts — memory:// mirrors the library's lib://
+    pattern (tools/knowledge.py), so a lesson the brief leaned on gets a stable [N] and shows up
+    in the Sources list and the Receipts credited to the Elder. Rows without a real id are
+    skipped (nothing citable to point at)."""
+    out: list[dict] = []
+    for row in picked:
+        text = str(row.get("text") or "").strip()
+        rid = row.get("id")
+        if not text or rid is None:
+            continue
+        kind = normalize_kind(row.get("kind"))
+        out.append(
+            {
+                "title": f"Pack memory — {_KIND_HEADER[kind]}",
+                "url": f"memory://{rid}",  # synthetic, stable — survives source de-dupe
+                "snippet": text[:400],
+                "text": text,
+                "by": "elder",
+                "verified": True,
+            }
+        )
+    return out
+
+
+async def recall(repo: MemoryStore, task: str = "", limit: int = 12) -> str:
+    """A short note of what the pack LEARNED on past hunts, relevant to THIS task, to seed planning.
+    Grouped by kind and phrased as guidance for Beta. Empty on a first hunt or when nothing relevant."""
+    return render_note(await recall_items(repo, task, limit))
 
 
 async def remember(repo: MemoryStore, hunt_id: str, text: str, kind: str = "takeaway") -> None:

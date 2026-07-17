@@ -101,6 +101,69 @@ export const ScorecardSchema = z.object({
 })
 export type Scorecard = z.infer<typeof ScorecardSchema>
 
+/** GET /hunts/:id/receipts — per-claim provenance for the delivered brief. */
+export const ReceiptSourceSchema = z.object({
+  n: z.number(),
+  title: z.string().default(''),
+  url: z.string().default(''),
+  by: z.string().default(''),
+  verified: z.boolean().default(false),
+  library: z.boolean().default(false),
+})
+export const ReceiptClaimSchema = z.object({
+  text: z.string(),
+  // an unknown future status degrades to the neutral middle instead of rejecting the payload
+  status: z.enum(['verified', 'cited', 'unsourced', 'challenged_kept']).catch('cited'),
+  sources: z.array(ReceiptSourceSchema).default([]),
+  challenge: z.object({ problem: z.string().default('') }).nullable().default(null),
+})
+export const ReceiptsSchema = z.object({
+  hunt_id: z.string().default(''),
+  critique_ran: z.boolean().default(false),
+  review_note: z.string().default(''),
+  claims: z.array(ReceiptClaimSchema).default([]),
+  dropped: z.array(z.object({ text: z.string(), problem: z.string().default('') })).default([]),
+  standoff: z
+    .object({
+      challenger: z.string().default('sentinel'),
+      defendant: z.string().default('tracker'),
+      outcome: z.string().default('unresolved'),
+      rationale: z.string().default(''),
+    })
+    .nullable()
+    .default(null),
+  wolves: z
+    .record(z.string(), z.object({ sources: z.number().default(0), verified: z.number().default(0) }))
+    .default({}),
+  documents: z
+    .array(z.object({ doc_id: z.string(), title: z.string().default(''), cited_by_claims: z.number().default(0) }))
+    .default([]),
+  totals: z.record(z.string(), z.number()).default({}),
+})
+export type ReceiptClaim = z.infer<typeof ReceiptClaimSchema>
+export type Receipts = z.infer<typeof ReceiptsSchema>
+
+/** GET /share/:token/tracks — the public Flight Recorder: a shared hunt's full redacted event
+ *  log. Events stay loosely typed here; the replay engine re-parses each one against
+ *  HuntEventSchema and skips anything it doesn't recognize (same policy as the live stream). */
+export const SharedTracksSchema = z.object({
+  title: z.string().default('A Pack hunt'),
+  events: z.array(z.record(z.string(), z.unknown())).default([]),
+  redacted: z.boolean().default(true),
+})
+export type SharedTracks = z.infer<typeof SharedTracksSchema>
+
+/** POST /hunts/:id/rehearse — the Shadow Hunt cost/time estimate for a team + strategy + depth.
+ *  Pure and instant server-side (no model calls) — safe to re-query as the user reshapes the pack. */
+export const RehearseSchema = z.object({
+  est_cost_usd: z.number(),
+  est_time_s: z.number(),
+  calls: z.number(),
+  scouts: z.number(),
+  warnings: z.array(z.string()).default([]),
+})
+export type Rehearse = z.infer<typeof RehearseSchema>
+
 export const SpendHuntSchema = z.object({
   hunt_id: z.string(),
   title: z.string().default(''),

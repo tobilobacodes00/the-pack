@@ -89,6 +89,8 @@ export function huntReducer(state: HuntState, event: HuntEvent): HuntState {
           assumptions: event.payload.assumptions,
           est_cost: event.payload.est_cost,
           est_time: event.payload.est_time,
+          est_by_depth: event.payload.est_by_depth,
+          est_detail: event.payload.est_detail,
           queries: event.payload.queries,
           strategy: event.payload.strategy,
           depth: event.payload.depth,
@@ -394,6 +396,11 @@ export function huntReducer(state: HuntState, event: HuntEvent): HuntState {
 
     case 'benchmark_completed':
       return { ...next, scorecard: event.payload.scorecard }
+
+    // A deep_scout picking its next tool — narrated on the wolf node via wolf_progress already;
+    // no state to fold in. Explicit no-op so the exhaustiveness guard below stays airtight.
+    case 'tool_selected':
+      return next
 
     default: {
       const _exhaustive: never = event

@@ -172,10 +172,14 @@ def test_memory_and_spend_and_clear_endpoints() -> None:
     asyncio.run(fake.save_memory("h1", "what-worked", "Primary sources beat aggregators."))
     asyncio.run(fake.save_memory("h2", "bogus-kind", "Older untyped note."))
     listed = client.get("/memory").json()["memory"]
+    # v6: each lesson is addressable (id) and carries its lifecycle (status) — the memory page
+    # edits/vetoes by id, and memory://<id> citations resolve back to the row.
     assert listed[0] == {
+        "id": 2,
         "text": "Older untyped note.",
         "kind": "takeaway",
         "hunt_id": "h2",
+        "status": "active",
     }
     assert listed[1]["kind"] == "what-worked" and "Primary sources" in listed[1]["text"]
 

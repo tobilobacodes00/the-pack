@@ -15,5 +15,5 @@ needs the live-key harness, `tests/live/`). The offline suite's own pass/fail is
 | howler | yes | `test_offline_hunt` |
 | beta | yes | `test_depth_scaling`, `test_offline_hunt` |
 | alpha | yes | `test_alpha`, `test_alpha_conversation` |
-| elder | yes | `test_endpoints_v4v5`, `test_offline_hunt` |
+| elder | yes | `test_elder_memory`, `test_endpoints_v4v5`, `test_offline_hunt` |
 | warden | yes | `test_extra_support_agents` |

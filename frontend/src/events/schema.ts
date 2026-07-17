@@ -46,6 +46,14 @@ const PlanProposed = base.extend({
     assumptions: z.array(z.string()).default([]),
     est_cost: z.number(),
     est_time: z.number(),
+    // v6: entries are rehearsed for the actual team and additionally carry the call count.
+    est_by_depth: z
+      .record(z.string(), z.object({ cost: z.number(), time: z.number(), calls: z.number().optional() }))
+      .optional(),
+    // v6: rehearsal detail — what was priced (scout count) + any team warnings, for the plan card.
+    est_detail: z
+      .object({ scouts: z.number(), warnings: z.array(z.string()).default([]) })
+      .optional(),
     queries: z.array(z.string()).optional(),
     strategy: z.string().optional(),
     depth: z.enum(['brief', 'standard', 'deep']).optional(),
@@ -445,6 +453,12 @@ export type PlanState = {
   assumptions: string[]
   est_cost: number
   est_time: number
+  /** v3: per-depth {cost,time} estimates so the plan card shows the true figure for the selected
+   *  depth (not just Beta's proposed one). Keyed brief|standard|deep. v6: rehearsed for the actual
+   *  team, each entry additionally carrying the model-call count it priced. */
+  est_by_depth?: Record<string, { cost: number; time: number; calls?: number }>
+  /** v6: rehearsal detail — the scout count that was priced + any team warnings. */
+  est_detail?: { scouts: number; warnings: string[] }
   queries?: string[]
   strategy?: string
   /** v3: adaptive research depth Beta proposed / the user chose (drives the plan-card toggle). */

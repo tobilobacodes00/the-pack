@@ -1,11 +1,12 @@
 import * as DropdownMenu from '@radix-ui/react-dropdown-menu'
-import { MoreHorizontal, Bookmark, BarChart3, ListTree, Sparkles } from 'lucide-react'
+import { MoreHorizontal, Bookmark, BadgeCheck, BarChart3, ListTree, Sparkles } from 'lucide-react'
 import type { ReactNode } from 'react'
 import { IconButton } from './icon-button'
 
 interface Props {
   onSaveInstinct: () => void
   onScorecard: () => void
+  onReceipts: () => void
   onTracks: () => void
   onRefine: () => void
 }
@@ -30,7 +31,7 @@ function Item({
   )
 }
 
-export function MoreMenu({ onSaveInstinct, onScorecard, onTracks, onRefine }: Props) {
+export function MoreMenu({ onSaveInstinct, onScorecard, onReceipts, onTracks, onRefine }: Props) {
   return (
     <DropdownMenu.Root>
       <DropdownMenu.Trigger asChild>
@@ -46,6 +47,7 @@ export function MoreMenu({ onSaveInstinct, onScorecard, onTracks, onRefine }: Pr
         >
           <Item icon={<Bookmark size={15} />} label="Save as Instinct" onSelect={onSaveInstinct} />
           <Item icon={<BarChart3 size={15} />} label="Scorecard" onSelect={onScorecard} />
+          <Item icon={<BadgeCheck size={15} />} label="Receipts" onSelect={onReceipts} />
           <Item icon={<ListTree size={15} />} label="Tracks" onSelect={onTracks} />
           <DropdownMenu.Separator className="my-1 h-px bg-border" />
           <Item icon={<Sparkles size={15} />} label="Refine" onSelect={onRefine} />

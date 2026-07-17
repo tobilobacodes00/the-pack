@@ -1,5 +1,6 @@
 import { AnimatePresence, motion } from 'framer-motion'
-import { X } from 'lucide-react'
+import { Link } from 'react-router-dom'
+import { Play, X } from 'lucide-react'
 import type { RawTrackEvent } from '@/api/hunts'
 import { deriveNarrative, deriveTrackStats } from './lib/narrative'
 import { TracksTimeline } from './tracks-timeline'
@@ -12,9 +13,11 @@ interface Props {
   events: RawTrackEvent[] | undefined
   loading: boolean
   totals: Record<string, unknown> | null
+  /** When set, the header offers the full Flight Recorder page for this hunt. */
+  huntId?: string
 }
 
-export function TracksDrawer({ open, onClose, events, loading, totals }: Props) {
+export function TracksDrawer({ open, onClose, events, loading, totals, huntId }: Props) {
   const items = deriveNarrative(events ?? [])
   const stats = deriveTrackStats(events ?? [], totals)
 
@@ -38,8 +41,19 @@ export function TracksDrawer({ open, onClose, events, loading, totals }: Props) 
               <X size={16} />
             </button>
           </div>
-          <div className="shrink-0 border-b border-border px-4 py-3 text-[12px] text-ink-500">
-            {stats.costLabel} · {stats.timeLabel}
+          <div className="flex shrink-0 items-center justify-between border-b border-border px-4 py-3 text-[12px] text-ink-500">
+            <span>
+              {stats.costLabel} · {stats.timeLabel}
+            </span>
+            {huntId && (
+              <Link
+                to={`/hunts/${huntId}/tracks`}
+                className="inline-flex items-center gap-1 text-[12px] text-text-dim transition-colors hover:text-text"
+              >
+                <Play size={11} />
+                Replay
+              </Link>
+            )}
           </div>
           <div className="min-h-0 flex-1 overflow-y-auto">
             {loading ? (

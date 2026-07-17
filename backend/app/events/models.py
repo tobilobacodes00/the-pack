@@ -34,6 +34,7 @@ EventType = Literal[
     "tool_called",
     "tool_result",
     "tokens_spent",
+    "tool_selected",
     "hold_opened",
     "hold_resolved",
     "standoff_opened",

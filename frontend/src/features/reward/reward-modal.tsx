@@ -5,7 +5,9 @@ import {
   useHuntSnapshot,
   useHuntArtifacts,
   useDownloadArtifact,
+  useReceipts,
   useRefine,
+  useRunBenchmark,
   useShare,
   useHuntScorecard,
   useTracks,
@@ -25,6 +27,7 @@ import { DownloadMenu } from './download-menu'
 import { RefineInput } from './refine-input'
 import { TracksDrawer } from './tracks-drawer'
 import { ScorecardPanel } from './scorecard-panel'
+import { ReceiptsPanel } from './receipts-panel'
 import { IconButton } from './icon-button'
 import { parseBrief } from './lib/brief-view'
 import { buildInstinctPayload } from './lib/instinct-spec'
@@ -41,7 +44,7 @@ interface Props {
 }
 
 export function RewardModal({ huntId, open, onClose }: Props) {
-  const [panel, setPanel] = useState<'reading' | 'scorecard'>('reading')
+  const [panel, setPanel] = useState<'reading' | 'scorecard' | 'receipts'>('reading')
   const [drawerOpen, setDrawerOpen] = useState(false)
   const [refineOpen, setRefineOpen] = useState(false)
   // The first-completion Instinct nudge: shown once ever (localStorage-gated), the moment the very
@@ -55,7 +58,16 @@ export function RewardModal({ huntId, open, onClose }: Props) {
   const brief = useHuntBrief(huntId, open)
   const snap = useHuntSnapshot(huntId, open)
   const artifacts = useHuntArtifacts(huntId, open)
-  const scorecardQuery = useHuntScorecard(huntId, open && panel === 'scorecard')
+  // After the user launches a benchmark, poll for the scorecard until it lands — the live stream
+  // normally delivers benchmark_completed first (liveScorecard below); polling is the safety net
+  // for a reopened page whose socket isn't tailing this hunt.
+  const runBenchmark = useRunBenchmark(huntId)
+  const scorecardQuery = useHuntScorecard(
+    huntId,
+    open && panel === 'scorecard',
+    runBenchmark.isSuccess,
+  )
+  const receiptsQuery = useReceipts(huntId, open && panel === 'receipts')
   const tracks = useTracks(huntId, open && drawerOpen)
 
   const download = useDownloadArtifact(huntId)
@@ -75,6 +87,9 @@ export function RewardModal({ huntId, open, onClose }: Props) {
     setPanel('reading')
     setDrawerOpen(false)
     setRefineOpen(false)
+    // Clear the benchmark mutation so reopening the Scorecard for this hunt doesn't resurrect a
+    // stale success/failure state (isSuccess/isError otherwise stick for the mounted lifetime).
+    runBenchmark.reset()
     onClose()
   }
 
@@ -140,6 +155,7 @@ export function RewardModal({ huntId, open, onClose }: Props) {
       <MoreMenu
         onSaveInstinct={handleSaveInstinct}
         onScorecard={() => setPanel('scorecard')}
+        onReceipts={() => setPanel('receipts')}
         onTracks={() => setDrawerOpen(true)}
         onRefine={() => setRefineOpen(true)}
       />
@@ -158,6 +174,7 @@ export function RewardModal({ huntId, open, onClose }: Props) {
           events={tracks.data}
           loading={tracks.isLoading}
           totals={totals}
+          huntId={huntId}
         />
       }
       overlay={
@@ -174,8 +191,24 @@ export function RewardModal({ huntId, open, onClose }: Props) {
         <ScorecardPanel
           scorecard={scorecard}
           loading={scorecardQuery.isLoading && !scorecard}
+          // running: from the moment the POST is accepted until the scorecard lands (stream or poll)
+          // — but stop once the poll budget is spent, so a benchmark that died in the background
+          // surfaces as "failed" instead of spinning forever.
+          running={
+            (runBenchmark.isPending ||
+              (runBenchmark.isSuccess && !scorecard && !scorecardQuery.pollExhausted)) &&
+            !scorecard
+          }
+          failed={runBenchmark.isError || (!scorecard && scorecardQuery.pollExhausted)}
+          onRun={() => runBenchmark.mutate()}
           onCancel={() => setPanel('reading')}
           onExport={handleExport}
+        />
+      ) : panel === 'receipts' ? (
+        <ReceiptsPanel
+          receipts={receiptsQuery.data}
+          loading={receiptsQuery.isLoading}
+          onCancel={() => setPanel('reading')}
         />
       ) : brief.isLoading ? (
         <RewardEmpty kind="loading" />

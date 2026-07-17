@@ -7,7 +7,8 @@ import type { WolfState } from '@/events/schema'
 function wolf(role: string, over: Partial<WolfState> = {}): WolfState {
   return {
     wolf_id: role, role: role as WolfState['role'], model_tier: 'flash', thinking: false,
-    phase: null, last_text: null, status: 'active', cost_usd: 0, parent_wolf_id: null, ...over,
+    phase: null, last_text: null, status: 'active', cost_usd: 0, parent_wolf_id: null,
+    phaseHistory: [], lastTool: null, lastLatencyMs: null, toolCalls: 0, ...over,
   }
 }
 

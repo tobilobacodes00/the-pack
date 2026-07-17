@@ -71,6 +71,7 @@ export function TerritoryFooter({ huntId, huntState, onApprove, approving, onEdi
 
       {s === 'plan_ready' && huntState.plan && (
         <PlanCard
+          huntId={huntId}
           plan={huntState.plan}
           onApprove={onApprove}
           onEdit={onEditFormation}

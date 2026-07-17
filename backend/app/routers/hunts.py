@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import logging
 import secrets
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
@@ -40,6 +41,7 @@ from app.dependencies import (
 from app.engine.benchmark import run_benchmark
 from app.engine.core import Emitter
 from app.engine.ids import new_hunt_id
+from app.engine.receipts import build_receipts
 from app.engine.refine import refine_brief
 from app.engine.registry import HuntRegistry
 from app.engine.rehearse import rehearse
@@ -69,6 +71,7 @@ from app.schemas import (
     MessageIn,
     MessagesResponse,
     OkResponse,
+    ReceiptsResponse,
     RefineBody,
     RefineResponse,
     RehearseBody,
@@ -77,6 +80,7 @@ from app.schemas import (
     ResumeHunt,
     ScorecardResponse,
     SharedResponse,
+    SharedTracksResponse,
     ShareResponse,
     TracksResponse,
 )
@@ -364,8 +368,18 @@ async def benchmark(
         return JSONResponse(status_code=404, content={"detail": "hunt not found"})
     emitter = Emitter(hunt_id, repo)
     task_desc = snap.get("raw_input", "") or "the task"
-    coro = run_benchmark(hunt_id, emitter, repo, client, task_desc)
-    task_obj = asyncio.create_task(coro, name=f"benchmark-{hunt_id}")
+
+    async def _guarded() -> None:
+        # A fire-and-forget benchmark that raises after the 202 must fail LOUDLY, not vanish: without
+        # this, an exception in run_benchmark (a provider error, a non-numeric judge response) kills
+        # the task silently, no benchmark_completed ever lands, and the Scorecard poll spins forever.
+        # We log it so it's diagnosable; the frontend poll is separately bounded so the UI recovers.
+        try:
+            await run_benchmark(hunt_id, emitter, repo, client, task_desc)
+        except Exception:  # noqa: BLE001 — background boundary: never let it die unlogged
+            logging.getLogger("pack").exception("benchmark failed for hunt %s", hunt_id)
+
+    task_obj = asyncio.create_task(_guarded(), name=f"benchmark-{hunt_id}")
     background.add(task_obj)
     task_obj.add_done_callback(background.discard)
     return _accepted({"hunt_id": hunt_id, "accepted": True})
@@ -518,6 +532,54 @@ async def get_share(token: str, repo: Repo = Depends(get_repo)) -> JSONResponse:
     return JSONResponse(content=data)
 
 
+@router.get("/share/{token}/tracks", response_model=SharedTracksResponse)
+async def get_share_tracks(token: str, repo: Repo = Depends(get_repo)) -> dict:
+    """The public Flight Recorder: the shared hunt's full redacted event log, so anyone with the
+    link can REPLAY how the brief was produced — every decision, every challenge, every dollar.
+    Keyed by the share token (scope: exactly this hunt), with the same PII/secret redaction as the
+    authenticated Tracks export."""
+    meta = await repo.get_shared_meta(token)
+    if meta is None:
+        raise HTTPException(status_code=404, detail="not found")
+    events = await repo.replay_events(meta["hunt_id"], 0)
+    redacted = [redact_event(e.model_dump()) for e in events]
+    return {"title": meta["title"], "events": redacted, "redacted": True}
+
+
+@router.get("/share/{token}/receipts", response_model=ReceiptsResponse)
+async def get_share_receipts(token: str, repo: Repo = Depends(get_repo)) -> dict:
+    """Public Receipts for a shared brief — the same per-claim audit trail the owner sees, scoped
+    by the share token. A shared answer travels with its proof."""
+    meta = await repo.get_shared_meta(token)
+    if meta is None:
+        raise HTTPException(status_code=404, detail="not found")
+    snap = await repo.get_hunt_snapshot(meta["hunt_id"])
+    data = await build_receipts(repo, meta["hunt_id"], task=(snap or {}).get("raw_input") or "")
+    if data is None:
+        raise HTTPException(status_code=404, detail="no receipts yet — no brief delivered")
+    return data
+
+
+# ---------------------------------------------------------------------------
+# Receipts
+# ---------------------------------------------------------------------------
+
+
+@router.get("/hunts/{hunt_id}/receipts", response_model=ReceiptsResponse)
+async def get_receipts(hunt_id: str, repo: Repo = Depends(get_repo)) -> dict:
+    """The Receipts — per-claim provenance for this hunt's delivered brief: every claim's sources
+    (who found each, was the page actually read), the Sentinel's challenges and outcomes, the
+    claims that were dropped in verification, and your-documents coverage. 404 until a brief
+    exists."""
+    snap = await repo.get_hunt_snapshot(hunt_id)
+    if snap is None:
+        raise HTTPException(status_code=404, detail="unknown hunt")
+    data = await build_receipts(repo, hunt_id, task=snap.get("raw_input") or "")
+    if data is None:
+        raise HTTPException(status_code=404, detail="no receipts yet — no brief delivered")
+    return data
+
+
 # ---------------------------------------------------------------------------
 # Rehearse
 # ---------------------------------------------------------------------------
@@ -525,9 +587,12 @@ async def get_share(token: str, repo: Repo = Depends(get_repo)) -> JSONResponse:
 
 @router.post("/hunts/{hunt_id}/rehearse", response_model=RehearseResponse)
 async def rehearse_hunt(hunt_id: str, body: RehearseBody) -> dict:
-    """Shadow Hunt (safety rail): estimate this team's cost + time before the pack runs."""
+    """Shadow Hunt (safety rail): estimate this team's cost + time before the pack runs.
+
+    The team is validated/coerced by RehearseBody.TeamEntry, so a malformed payload (e.g. a
+    non-numeric count) 422s at the boundary rather than crashing rehearse() with a 500."""
     strategy = body.strategy or settings.default_strategy
-    team = body.team or [{"role": "scout", "count": 3}]
+    team = [e.model_dump() for e in body.team] if body.team else [{"role": "scout", "count": 3}]
     return rehearse(team, strategy, body.depth or "standard")
 
 

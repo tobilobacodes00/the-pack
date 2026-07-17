@@ -1,4 +1,4 @@
-import { Star } from 'lucide-react'
+import { Loader2, Star, Swords } from 'lucide-react'
 import type { ReactNode } from 'react'
 import type { Scorecard } from '@/api/hunts'
 import { accuracyPct, deriveVerdict, hms, usd } from './lib/scorecard-copy'
@@ -6,6 +6,12 @@ import { accuracyPct, deriveVerdict, hms, usd } from './lib/scorecard-copy'
 interface Props {
   scorecard: Scorecard | null | undefined
   loading: boolean
+  /** A benchmark run is in flight — POST accepted, scorecard not landed yet. */
+  running: boolean
+  /** The benchmark didn't produce a scorecard — the launch POST failed, or it was accepted but never
+   *  landed within the poll budget (a background failure). Either way, offer a retry. */
+  failed: boolean
+  onRun: () => void
   onCancel: () => void
   onExport: () => void
 }
@@ -20,7 +26,7 @@ function Row({ lone, label, pack }: { lone: ReactNode; label: string; pack: Reac
   )
 }
 
-export function ScorecardPanel({ scorecard, loading, onCancel, onExport }: Props) {
+export function ScorecardPanel({ scorecard, loading, running, failed, onRun, onCancel, onExport }: Props) {
   if (loading) {
     return (
       <div className="flex h-full items-center justify-center text-sm text-muted">
@@ -33,12 +39,41 @@ export function ScorecardPanel({ scorecard, loading, onCancel, onExport }: Props
     return (
       <div className="flex h-full flex-col">
         <div className="flex flex-1 items-center justify-center px-8 text-center">
-          <div>
-            <p className="text-[15px] font-semibold text-ink-900">No benchmark yet</p>
-            <p className="mx-auto mt-1.5 max-w-[320px] text-[13px] leading-relaxed text-muted">
-              Run “Lone Wolf vs the Pack” from the hunt to see how the pack compares.
-            </p>
-          </div>
+          {running ? (
+            // In flight: the lone wolf is genuinely re-running the same task solo right now.
+            <div>
+              <Loader2 size={22} className="mx-auto animate-spin text-brand-500" />
+              <p className="mt-3 text-[15px] font-semibold text-ink-900">
+                The Lone Wolf is running your task…
+              </p>
+              <p className="mx-auto mt-1.5 max-w-[340px] text-[13px] leading-relaxed text-muted">
+                One solo agent, same task, one pass — then a judge scores both briefs. Usually
+                under a minute.
+              </p>
+            </div>
+          ) : (
+            <div>
+              <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-full bg-brand-500/10">
+                <Swords size={22} className="text-brand-500" />
+              </div>
+              <p className="mt-3 text-[15px] font-semibold text-ink-900">Lone Wolf vs the Pack</p>
+              <p className="mx-auto mt-1.5 max-w-[340px] text-[13px] leading-relaxed text-muted">
+                Re-run this exact task as a single solo agent and score it against the pack —
+                sources, accuracy, time, and cost, side by side.
+              </p>
+              {failed && (
+                <p className="mx-auto mt-2 max-w-[340px] text-[12.5px] text-[#DC2626]">
+                  The benchmark didn’t finish — try again.
+                </p>
+              )}
+              <button
+                onClick={onRun}
+                className="mt-5 rounded-full bg-brand-500 px-5 py-2 text-[13px] font-semibold text-white transition-colors hover:bg-brand-600"
+              >
+                Run the benchmark
+              </button>
+            </div>
+          )}
         </div>
         <footer className="flex shrink-0 justify-end border-t border-border px-6 py-4">
           <button

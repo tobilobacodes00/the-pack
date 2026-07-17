@@ -1,6 +1,9 @@
 import { memo, useState, type FormEvent, type ReactNode } from 'react'
 import { motion } from 'framer-motion'
-import { ArrowRight, ArrowUpRight, Github, Server, Workflow, PlayCircle, FileText, PenLine } from 'lucide-react'
+import {
+  ArrowRight, ArrowUpRight, Github, Server, Workflow, PlayCircle, FileText, PenLine,
+  Linkedin, Twitter, Instagram, Mail, MessageCircle,
+} from 'lucide-react'
 import { toast } from '@/store/toast-store'
 import { PackReveal } from './pack-reveal'
 
@@ -66,6 +69,178 @@ const CONTEXT: Array<{ h: string; links: Array<{ t: string; href: string }> }> =
     ],
   },
 ]
+
+// The people who built A Pack. Edit this list to add a builder.
+type BuilderStat = { Icon: typeof Github; value: string; label: string; href: string }
+type Builder = {
+  name: string
+  role: string
+  bio: string
+  photo?: string
+  site: string
+  ctaLabel: string
+  stats: BuilderStat[]
+  links: Array<{ Icon: typeof Github; label: string; href: string }>
+}
+
+const BUILDERS: Builder[] = [
+  {
+    name: 'Tobiloba Sulaimon',
+    role: 'Fullstack Engineer · Founder of AuTrans',
+    bio: 'Fullstack engineer building technology that understands how Africans talk. I built A Pack end to end — the wolves, the live canvas, and the engine underneath — to make AI research something you can actually watch and trust.',
+    photo: 'https://i.postimg.cc/CxHXd1vK/myself_(1).png',
+    site: 'https://tobilobasulaimon.com',
+    ctaLabel: 'Visit site',
+    // Real, honest chrome — a link out to the platforms, not invented follower counts.
+    stats: [
+      { Icon: Github, value: 'GitHub', label: 'code', href: 'https://github.com/tobilobacodes00' },
+      { Icon: Server, value: 'AuTrans', label: 'founder', href: 'https://autrans.online' },
+    ],
+    links: [
+      { Icon: Github, label: 'GitHub', href: 'https://github.com/tobilobacodes00' },
+      { Icon: Linkedin, label: 'LinkedIn', href: 'https://www.linkedin.com/in/tobilobacodes' },
+      { Icon: Twitter, label: 'X', href: 'https://x.com/tobilobacodes00' },
+      { Icon: Instagram, label: 'Instagram', href: 'https://www.instagram.com/tobilobacodes' },
+      { Icon: Mail, label: 'Email', href: 'mailto:hello@tobilobasulaimon.com' },
+      {
+        Icon: MessageCircle,
+        label: 'WhatsApp',
+        href: 'https://wa.me/2349021063830?text=Hello%20Tobiloba%2C%20I%27m%20reaching%20out%20from%20A%20Pack.',
+      },
+    ],
+  },
+]
+
+// Smooth, GPU-friendly hover. The whole card lifts + scales; the photo (which fills the card behind
+// everything) scales up a touch; and the text panel slides UP to overlap the photo bottom, its
+// frosted-glass backdrop fading in — so the flat "state 1" morphs into the lifted "state 2".
+// EVERYTHING animates on transform/opacity only (translate/scale/opacity) — no margin/aspect-ratio,
+// so it's 60fps with no layout thrash. Spring on the lift so it glides rather than snaps.
+const CARD_SPRING = { type: 'spring' as const, stiffness: 240, damping: 24, mass: 0.9 }
+const GLIDE = { duration: 0.45, ease: [0.22, 1, 0.36, 1] as const }
+const CARD_H = 460 // fixed card height — nothing reflows the PAGE on hover (the card animates in place)
+const PHOTO_REST = 300 // resting photo height (a near-square window up top, face centered)
+
+/** One builder profile card. Rests as the flat card (photo inset up top, text below); on hover it
+ *  scales up and the text panel glides over the now-fuller photo on a frosted-glass panel. */
+function BuilderCard({ builder, delay }: { builder: Builder; delay: number }) {
+  const [hover, setHover] = useState(false)
+  const [imgFailed, setImgFailed] = useState(false)
+  const initials = builder.name.split(' ').map((w) => w[0]).slice(0, 2).join('')
+  const hasPhoto = !!builder.photo && !imgFailed
+
+  return (
+    <Reveal delay={delay} className="w-full [perspective:1200px]">
+      <motion.a
+        href={builder.site}
+        target="_blank"
+        rel="noreferrer noopener"
+        onHoverStart={() => setHover(true)}
+        onHoverEnd={() => setHover(false)}
+        onFocus={() => setHover(true)}
+        onBlur={() => setHover(false)}
+        initial={false}
+        animate={{
+          scale: hover ? 1.05 : 1,
+          y: hover ? -10 : 0,
+          boxShadow: hover
+            ? '0 44px 84px -24px rgba(26,26,26,0.34), 0 14px 30px -12px rgba(26,26,26,0.22)'
+            : '0 18px 40px -18px rgba(26,26,26,0.18), 0 6px 14px -8px rgba(26,26,26,0.12)',
+        }}
+        transition={CARD_SPRING}
+        style={{ height: CARD_H, transformOrigin: 'center bottom', willChange: 'transform' }}
+        className="group relative mx-auto block w-full max-w-[380px] overflow-hidden rounded-[28px] bg-white outline-none"
+      >
+        {/* ── Photo. RESTING: a near-square window up top (face centered), text on white below —
+             matching the mockup's state 1. HOVER: the window grows to fill the whole card so the
+             photo bleeds full behind the glass (state 2). Only this card animates its own height —
+             the page never reflows. object-center + object-cover keeps the face framed at both sizes. ── */}
+        <motion.div
+          className="absolute inset-x-0 top-0 overflow-hidden"
+          style={{ background: '#dfe4e6', willChange: 'height, border-radius' }}
+          initial={false}
+          animate={{ height: hover ? CARD_H : PHOTO_REST, borderRadius: hover ? 28 : 20 }}
+          transition={GLIDE}
+        >
+          {hasPhoto ? (
+            <img
+              src={builder.photo}
+              alt={builder.name}
+              loading="lazy"
+              decoding="async"
+              onError={() => setImgFailed(true)}
+              className="h-full w-full object-cover object-center"
+            />
+          ) : (
+            <div className="flex h-full w-full items-center justify-center bg-brand-100 font-display text-7xl font-extrabold text-ink-400">
+              {initials}
+            </div>
+          )}
+        </motion.div>
+
+        {/* ── Text panel. Sits at the bottom and STAYS PUT — same size, same place. On hover ONLY the
+             card expands (photo grows behind); the text just shifts to white over a soft scrim. ── */}
+        <div className="absolute inset-x-0 bottom-0 px-6 pb-6 pt-4">
+          {/* Legibility scrim — a gentle dark wash under the white text on hover (no solid panel). Tall
+              enough to fade the photo behind the whole text block, anchored to the panel bottom. */}
+          <motion.div
+            aria-hidden
+            className="pointer-events-none absolute inset-x-0 bottom-0 -top-24"
+            initial={false}
+            animate={{ opacity: hover ? 1 : 0 }}
+            transition={GLIDE}
+            style={{ background: 'linear-gradient(to top, rgba(20,22,24,0.68), rgba(20,22,24,0.32) 50%, rgba(20,22,24,0))' }}
+          />
+          <div className="relative">
+            <motion.h3
+              className="font-display text-[19px] font-extrabold tracking-tight"
+              initial={false}
+              animate={{ color: hover ? '#ffffff' : '#1a1a1a' }}
+              transition={GLIDE}
+            >
+              {builder.name}
+            </motion.h3>
+            <motion.p
+              className="mt-1.5 text-[12.5px] leading-snug"
+              initial={false}
+              animate={{ color: hover ? 'rgba(255,255,255,0.9)' : '#6b6b6b' }}
+              transition={GLIDE}
+            >
+              {builder.bio}
+            </motion.p>
+
+            {/* Stats + real CTA — the mockup's "312 · 48 · Follow", made honest (links out, no fake counts). */}
+            <div className="mt-4 flex items-center gap-4">
+              {builder.stats.map((s) => (
+                <a
+                  key={s.label}
+                  href={s.href}
+                  target="_blank"
+                  rel="noreferrer noopener"
+                  onClick={(e) => e.stopPropagation()}
+                  className={`flex items-center gap-1.5 transition-colors ${hover ? 'text-white/90 hover:text-white' : 'text-ink-700 hover:text-ink-900'}`}
+                  title={`${s.value} · ${s.label}`}
+                >
+                  <s.Icon size={15} className={hover ? 'text-white/70' : 'text-ink-500'} />
+                  <span className="text-[12.5px] font-semibold">{s.value}</span>
+                </a>
+              ))}
+              {/* CTA: dark pill at rest; on hover flips to a white pill (reads on the dark scrim). */}
+              <span
+                className={`ml-auto inline-flex items-center gap-1.5 rounded-full px-3.5 py-1.5 text-[12px] font-semibold transition-all group-hover:scale-[1.03] ${
+                  hover ? 'bg-white text-ink-900' : 'bg-ink-900 text-white'
+                }`}
+              >
+                {builder.ctaLabel}
+                <ArrowUpRight size={13} />
+              </span>
+            </div>
+          </div>
+        </div>
+      </motion.a>
+    </Reveal>
+  )
+}
 
 /** Fade-and-rise UP from below as a block scrolls into view (once). */
 function Reveal({ children, delay = 0, className }: { children: ReactNode; delay?: number; className?: string }) {
@@ -179,6 +354,47 @@ export const DoorLanding = memo(function DoorLanding({ setInput }: { setInput: (
               />
             </div>
           </Reveal>
+        </section>
+
+        {/* ── Builders — the people behind A Pack (sits just above the footer) ──── */}
+        <section className="cv-auto relative overflow-hidden border-t border-ink-900/10">
+          <div className="mx-auto max-w-6xl px-6 py-20">
+            <Reveal>
+              <Kicker>The builders</Kicker>
+              <h2 className="mt-5 max-w-2xl font-display text-3xl font-extrabold leading-tight tracking-tight text-ink-900 md:text-4xl">
+                Made by the people who send the pack.
+              </h2>
+            </Reveal>
+
+            <div className="mt-12 grid grid-cols-1 justify-items-center gap-14 md:grid-cols-2 md:gap-10">
+              {BUILDERS.map((b, i) => (
+                <div key={b.name} className="flex w-full max-w-[380px] flex-col items-center">
+                  <BuilderCard builder={b} delay={0.05 * i} />
+                  {/* Role + the direct social chips beneath the card. */}
+                  <Reveal delay={0.08 * i + 0.1} className="w-full">
+                    <p className="mt-6 text-center text-[12px] font-semibold uppercase tracking-[0.18em] text-ink-500">
+                      {b.role}
+                    </p>
+                    <div className="mt-4 flex flex-wrap justify-center gap-2">
+                      {b.links.map(({ Icon, label, href }) => (
+                        <a
+                          key={label}
+                          href={href}
+                          target="_blank"
+                          rel="noreferrer noopener"
+                          aria-label={label}
+                          title={label}
+                          className="inline-flex h-9 w-9 items-center justify-center rounded-full border-[2px] border-ink-900 bg-white text-ink-700 transition-all hover:-translate-y-0.5 hover:bg-cream-100 hover:text-ink-900"
+                        >
+                          <Icon size={15} />
+                        </a>
+                      ))}
+                    </div>
+                  </Reveal>
+                </div>
+              ))}
+            </div>
+          </div>
         </section>
 
         {/* ── Footer — a slot for each of the 6 hackathon deliverables + Qwen Cloud attribution ── */}
