@@ -31,8 +31,10 @@ export function DialogContent({
       <DialogOverlay />
       <RadixDialog.Content
         className={cn(
-          'fixed left-1/2 top-1/2 z-50 w-full max-w-lg -translate-x-1/2 -translate-y-1/2',
-          'rounded-lg border border-border bg-surface p-6 shadow-soft',
+          // Mobile: a bottom sheet, edge to edge, capped height, rounded top only. sm+: a centered card.
+          'fixed inset-x-0 bottom-0 top-auto z-50 max-h-[92dvh] w-full translate-x-0 translate-y-0 overflow-y-auto',
+          'rounded-t-2xl border border-border bg-surface p-5 shadow-soft',
+          'sm:inset-x-auto sm:bottom-auto sm:left-1/2 sm:top-1/2 sm:max-h-[85dvh] sm:max-w-lg sm:-translate-x-1/2 sm:-translate-y-1/2 sm:rounded-lg sm:p-6',
           'data-[state=open]:animate-in data-[state=closed]:animate-out',
           'data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0',
           'data-[state=closed]:zoom-out-95 data-[state=open]:zoom-in-95',
@@ -41,7 +43,7 @@ export function DialogContent({
         {...props}
       >
         {children}
-        <DialogClose className="absolute right-4 top-4 rounded-sm opacity-50 hover:opacity-100 focus:outline-none">
+        <DialogClose className="absolute right-2 top-2 rounded-md p-2 opacity-50 hover:opacity-100 focus:outline-none">
           <X className="h-4 w-4" />
         </DialogClose>
       </RadixDialog.Content>

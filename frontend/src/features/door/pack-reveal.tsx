@@ -24,13 +24,15 @@ import { PACK_SLOTS, PACK_ACCENT, BASE_SCALE, PHASE, slotScreen, spreadAt, lerp,
 
 const clamp01 = (x: number) => Math.max(0, Math.min(1, x))
 
-// Concrete jobs people hand the Pack — specific deliverables, plain English.
+// The moat — what sets the Pack apart from a lone agent. Not the jobs (anyone claims those); the
+// accountability no one else ships: proof, price, a head-to-head, a replay, a memory you control.
+// These map 1:1 to the shipped features (Receipts, Estimate, Scorecard, Flight Recorder, Elder).
 const USE_CASES = [
-  'Map a market: the players, the sizing, the real risks.',
-  'Run due diligence on a company before you sign.',
-  'Compare two tools and back the pick with evidence.',
-  'Fact-check a report against the live web, line by line.',
-  'Turn a folder of PDFs into one cited brief.',
+  'Every claim carries a receipt.',
+  'See the price before it spends a cent.',
+  'Watch it beat a lone agent, head to head.',
+  'Replay every decision it made.',
+  'It remembers, and you can overrule it.',
 ]
 
 /** Floating role icon + one-line note, pinned over its wolf; fades in only while the pack holds. */
@@ -120,7 +122,7 @@ function StageInner({
             className="mb-8 text-[11px] font-semibold uppercase tracking-[0.28em] text-brand-600"
             style={{ opacity: valueKickerOpacity }}
           >
-            What you can use it for
+            Why a pack, not one agent
           </motion.p>
           <div className="flex flex-col gap-5">
             {USE_CASES.map((t, i) => (
@@ -162,7 +164,7 @@ function StaticFallback() {
         ))}
       </div>
       <div className="mt-20">
-        <p className="text-[11px] font-semibold uppercase tracking-[0.28em] text-brand-600">What you can use it for</p>
+        <p className="text-[11px] font-semibold uppercase tracking-[0.28em] text-brand-600">Why a pack, not one agent</p>
         <div className="mt-6 flex flex-col gap-4">
           {USE_CASES.map((t) => (
             <p key={t} className="text-3xl font-bold leading-tight tracking-tight text-ink-900 font-display md:text-4xl">

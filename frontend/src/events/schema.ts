@@ -399,7 +399,8 @@ export type WolfState = {
   thinking: boolean
   phase: WolfPhase | string | null
   last_text: string | null
-  status: 'active' | 'done' | 'error' | 'strayed' | 'healing'
+  // 'idle' = present but dormant (the standing Warden at rest; any wolf after the hunt ends).
+  status: 'idle' | 'active' | 'done' | 'error' | 'strayed' | 'healing'
   cost_usd: number
   parent_wolf_id: string | null
   /** The ordered phases/tools this wolf has passed through (consecutive dupes collapsed), so the

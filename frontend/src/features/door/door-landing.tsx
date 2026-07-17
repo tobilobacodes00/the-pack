@@ -1,18 +1,14 @@
-import { memo, useState, type FormEvent, type ReactNode } from 'react'
+import { memo, useState, type ReactNode } from 'react'
 import { motion } from 'framer-motion'
 import {
-  ArrowRight, ArrowUpRight, Github, Server, Workflow, PlayCircle, FileText, PenLine,
+  ArrowRight, ArrowUpRight, Github, Server, Workflow, PlayCircle, Figma,
   Linkedin, Twitter, Instagram, Mail, MessageCircle,
 } from 'lucide-react'
-import { toast } from '@/store/toast-store'
 import { PackReveal } from './pack-reveal'
 
 /**
- * The Door's landing — scrolls in below the hero chat on the intake screen (see door-page).
- * Deliberately lean: the pinned "meet the pack" reveal carries the story (who's on it + what it
- * gets you), then a big CTA and the footer close it out. The scroll runs a dark→light journey —
- * the dark hero warms into A Pack's cream, warm-brutalist palette (sage brand, forest-ink text +
- * outlines, chunky offset shadows, soft pastel per-role accents) as the pack fans out.
+ * The Door's landing. Scrolls in under the hero chat. The pinned reveal tells the story, the CTA
+ * closes, the footer credits. Dark hero warms into the cream brutalist palette as the pack fans out.
  */
 
 const toChat = () => window.scrollTo({ top: 0, behavior: 'smooth' })
@@ -24,30 +20,24 @@ const ASKS = [
   'Summarise the PDF I dropped and cross-check its claims against the web.',
 ]
 
-// A Pack is a submission to the Global AI Hackathon Series with Qwen Cloud. The footer carries
-// a slot for each of the six submission deliverables + the "Built with Qwen Cloud" attribution.
+// Hackathon submission links. The footer renders one slot per deliverable.
 const REPO = 'https://github.com/tobilobacodes00/the-pack'
 const HACKATHON = 'https://qwencloud-hackathon.devpost.com'
 
-// ⬇️ THE ONE PLACE TO EDIT: paste your real URLs here as you get them. Leave '' and the footer
-//    shows an "add link" placeholder for that deliverable. Pre-filled where we already have it.
+// Edit here. Empty strings render an "add link" placeholder in the footer.
 const SUBMISSION = {
-  repo: REPO, // public, open-source, with a LICENSE file visible at the top
-  backend: `${REPO}/blob/main/backend/app/qwen/client.py`, // proof: code calling Qwen Cloud / Alibaba Cloud
+  repo: REPO,
+  figma: '',
   architecture: `${REPO}/blob/main/docs/ARCHITECTURE.md`,
-  demoVideo: '', // ~3-min public video — YouTube / Vimeo / Facebook
-  devpost: HACKATHON, // your Devpost submission page (add your specific entry URL)
-  blog: '', // optional — blog / social post for the Blog Post Prize
+  demoVideo: '',
 }
 
-// The six deliverables, in submission order.
+// The submission deliverables, in order.
 const DELIVERABLES: Array<{ Icon: typeof Github; label: string; href: string; note?: string }> = [
   { Icon: Github, label: 'Source code', href: SUBMISSION.repo },
-  { Icon: Server, label: 'Alibaba Cloud backend', href: SUBMISSION.backend },
+  { Icon: Figma, label: 'Figma file', href: SUBMISSION.figma },
   { Icon: Workflow, label: 'Architecture diagram', href: SUBMISSION.architecture },
   { Icon: PlayCircle, label: 'Demo video', href: SUBMISSION.demoVideo },
-  { Icon: FileText, label: 'Devpost submission', href: SUBMISSION.devpost },
-  { Icon: PenLine, label: 'Blog post', href: SUBMISSION.blog, note: 'optional' },
 ]
 
 // Context links beside the brand block.
@@ -70,7 +60,7 @@ const CONTEXT: Array<{ h: string; links: Array<{ t: string; href: string }> }> =
   },
 ]
 
-// The people who built A Pack. Edit this list to add a builder.
+// The people who built A Pack. Add a builder by pushing to this list.
 type BuilderStat = { Icon: typeof Github; value: string; label: string; href: string }
 type Builder = {
   name: string
@@ -87,7 +77,7 @@ const BUILDERS: Builder[] = [
   {
     name: 'Tobiloba Sulaimon',
     role: 'Fullstack Engineer · Founder of AuTrans',
-    bio: 'Fullstack engineer building technology that understands how Africans talk. I built A Pack end to end — the wolves, the live canvas, and the engine underneath — to make AI research something you can actually watch and trust.',
+    bio: 'Fullstack engineer building technology that understands how Africans talk. I built A Pack end to end, the wolves, the live canvas, and the engine underneath, to make AI research something you can actually watch and trust.',
     photo: 'https://i.postimg.cc/CxHXd1vK/myself_(1).png',
     site: 'https://tobilobasulaimon.com',
     ctaLabel: 'Visit site',
@@ -109,32 +99,42 @@ const BUILDERS: Builder[] = [
       },
     ],
   },
+  {
+    name: 'Joanna',
+    role: 'Frontend Developer',
+    bio: "Frontend developer who turns UI/UX designs into clean, accessible, high-performance code with React, Next.js, TypeScript, and Tailwind. She polished A Pack's front end, refining the interface and interactions until every screen felt right.",
+    photo: '/devbyte.jpeg',
+    site: '',
+    ctaLabel: '',
+    stats: [],
+    links: [],
+  },
 ]
 
-// Smooth, GPU-friendly hover. The whole card lifts + scales; the photo (which fills the card behind
-// everything) scales up a touch; and the text panel slides UP to overlap the photo bottom, its
-// frosted-glass backdrop fading in — so the flat "state 1" morphs into the lifted "state 2".
-// EVERYTHING animates on transform/opacity only (translate/scale/opacity) — no margin/aspect-ratio,
-// so it's 60fps with no layout thrash. Spring on the lift so it glides rather than snaps.
+// Hover motion. Spring on the card lift, a shared ease for the rest. The card animates in place so
+// the page never reflows.
 const CARD_SPRING = { type: 'spring' as const, stiffness: 240, damping: 24, mass: 0.9 }
 const GLIDE = { duration: 0.45, ease: [0.22, 1, 0.36, 1] as const }
-const CARD_H = 460 // fixed card height — nothing reflows the PAGE on hover (the card animates in place)
-const PHOTO_REST = 300 // resting photo height (a near-square window up top, face centered)
+const CARD_H = 450
+const PHOTO_REST = 300 // photo is a square window at rest; grows to fill the card on hover
 
-/** One builder profile card. Rests as the flat card (photo inset up top, text below); on hover it
- *  scales up and the text panel glides over the now-fuller photo on a frosted-glass panel. */
+/** A builder profile card. At rest: photo square up top, dark text on the white panel below. On hover
+ *  the card lifts, the photo grows to fill it, the white panel slides away, and the text turns white. */
 function BuilderCard({ builder, delay }: { builder: Builder; delay: number }) {
   const [hover, setHover] = useState(false)
   const [imgFailed, setImgFailed] = useState(false)
   const initials = builder.name.split(' ').map((w) => w[0]).slice(0, 2).join('')
   const hasPhoto = !!builder.photo && !imgFailed
 
+  // A card links out only if the builder has a site; otherwise it's a plain, still-hoverable block.
+  const linkProps = builder.site
+    ? { href: builder.site, target: '_blank', rel: 'noreferrer noopener' as const }
+    : {}
+
   return (
     <Reveal delay={delay} className="w-full [perspective:1200px]">
       <motion.a
-        href={builder.site}
-        target="_blank"
-        rel="noreferrer noopener"
+        {...linkProps}
         onHoverStart={() => setHover(true)}
         onHoverEnd={() => setHover(false)}
         onFocus={() => setHover(true)}
@@ -149,17 +149,18 @@ function BuilderCard({ builder, delay }: { builder: Builder; delay: number }) {
         }}
         transition={CARD_SPRING}
         style={{ height: CARD_H, transformOrigin: 'center bottom', willChange: 'transform' }}
-        className="group relative mx-auto block w-full max-w-[380px] overflow-hidden rounded-[28px] bg-white outline-none"
+        className={`group relative mx-auto block w-full max-w-[380px] overflow-hidden rounded-[28px] bg-white outline-none ${builder.site ? '' : 'cursor-default'}`}
       >
         {/* ── Photo. RESTING: a near-square window up top (face centered), text on white below —
              matching the mockup's state 1. HOVER: the window grows to fill the whole card so the
              photo bleeds full behind the glass (state 2). Only this card animates its own height —
              the page never reflows. object-center + object-cover keeps the face framed at both sizes. ── */}
+        {/* Photo: a square window up top at rest; grows to fill the whole card on hover. */}
         <motion.div
-          className="absolute inset-x-0 top-0 overflow-hidden"
-          style={{ background: '#dfe4e6', willChange: 'height, border-radius' }}
+          className="absolute inset-x-0 top-0 overflow-hidden rounded-[28px]"
+          style={{ background: '#dfe4e6', willChange: 'height' }}
           initial={false}
-          animate={{ height: hover ? CARD_H : PHOTO_REST, borderRadius: hover ? 28 : 20 }}
+          animate={{ height: hover ? CARD_H : PHOTO_REST }}
           transition={GLIDE}
         >
           {hasPhoto ? (
@@ -178,39 +179,50 @@ function BuilderCard({ builder, delay }: { builder: Builder; delay: number }) {
           )}
         </motion.div>
 
-        {/* ── Text panel. Sits at the bottom and STAYS PUT — same size, same place. On hover ONLY the
-             card expands (photo grows behind); the text just shifts to white over a soft scrim. ── */}
-        <div className="absolute inset-x-0 bottom-0 px-6 pb-6 pt-4">
-          {/* Legibility scrim — a gentle dark wash under the white text on hover (no solid panel). Tall
-              enough to fade the photo behind the whole text block, anchored to the panel bottom. */}
-          <motion.div
-            aria-hidden
-            className="pointer-events-none absolute inset-x-0 bottom-0 -top-24"
-            initial={false}
-            animate={{ opacity: hover ? 1 : 0 }}
-            transition={GLIDE}
-            style={{ background: 'linear-gradient(to top, rgba(20,22,24,0.68), rgba(20,22,24,0.32) 50%, rgba(20,22,24,0))' }}
-          />
-          <div className="relative">
-            <motion.h3
-              className="font-display text-[19px] font-extrabold tracking-tight"
-              initial={false}
-              animate={{ color: hover ? '#ffffff' : '#1a1a1a' }}
-              transition={GLIDE}
-            >
-              {builder.name}
-            </motion.h3>
-            <motion.p
-              className="mt-1.5 text-[12.5px] leading-snug"
-              initial={false}
-              animate={{ color: hover ? 'rgba(255,255,255,0.9)' : '#6b6b6b' }}
-              transition={GLIDE}
-            >
-              {builder.bio}
-            </motion.p>
+        {/* White panel: present at rest holding dark text below the photo; on hover it SLIDES DOWN out
+            of view (and fades) as the photo takes over. */}
+        <motion.div
+          aria-hidden
+          className="absolute inset-x-0 bottom-0 rounded-b-[28px] bg-white"
+          style={{ top: PHOTO_REST - 20 }}
+          initial={false}
+          animate={{ y: hover ? CARD_H : 0, opacity: hover ? 0 : 1 }}
+          transition={GLIDE}
+        />
 
-            {/* Stats + real CTA — the mockup's "312 · 48 · Follow", made honest (links out, no fake counts). */}
-            <div className="mt-4 flex items-center gap-4">
+        {/* Hover-only scrim so the white text reads once it's over the photo. */}
+        <motion.div
+          aria-hidden
+          className="pointer-events-none absolute inset-x-0 bottom-0 -top-28"
+          initial={false}
+          animate={{ opacity: hover ? 1 : 0 }}
+          transition={GLIDE}
+          style={{ background: 'linear-gradient(to top, rgba(18,20,22,0.8), rgba(18,20,22,0.4) 46%, rgba(18,20,22,0))' }}
+        />
+
+        {/* ── Text. Sits at the bottom, same place in both states — dark on the white panel at rest,
+             white over the photo on hover (the panel has slid away). ── */}
+        <div className="absolute inset-x-0 bottom-0 px-6 pb-6 pt-4">
+          <motion.h3
+            className="font-display text-[16px] font-extrabold leading-[1.25] tracking-tight pb-0.5"
+            initial={false}
+            animate={{ color: hover ? '#ffffff' : '#1a1a1a' }}
+            transition={GLIDE}
+          >
+            {builder.name}
+          </motion.h3>
+          <motion.p
+            className="mt-1 text-[11.5px] leading-snug"
+            initial={false}
+            animate={{ color: hover ? 'rgba(255,255,255,0.9)' : '#6b6b6b' }}
+            transition={GLIDE}
+          >
+            {builder.bio}
+          </motion.p>
+
+          {/* Stats + real CTA — honest (links out, no fake counts). Hidden when a builder has none. */}
+          {(builder.stats.length > 0 || builder.site) && (
+            <div className="mt-3.5 flex items-center gap-3.5">
               {builder.stats.map((s) => (
                 <a
                   key={s.label}
@@ -221,21 +233,22 @@ function BuilderCard({ builder, delay }: { builder: Builder; delay: number }) {
                   className={`flex items-center gap-1.5 transition-colors ${hover ? 'text-white/90 hover:text-white' : 'text-ink-700 hover:text-ink-900'}`}
                   title={`${s.value} · ${s.label}`}
                 >
-                  <s.Icon size={15} className={hover ? 'text-white/70' : 'text-ink-500'} />
-                  <span className="text-[12.5px] font-semibold">{s.value}</span>
+                  <s.Icon size={14} className={hover ? 'text-white/70' : 'text-ink-500'} />
+                  <span className="text-[11.5px] font-semibold">{s.value}</span>
                 </a>
               ))}
-              {/* CTA: dark pill at rest; on hover flips to a white pill (reads on the dark scrim). */}
-              <span
-                className={`ml-auto inline-flex items-center gap-1.5 rounded-full px-3.5 py-1.5 text-[12px] font-semibold transition-all group-hover:scale-[1.03] ${
-                  hover ? 'bg-white text-ink-900' : 'bg-ink-900 text-white'
-                }`}
-              >
-                {builder.ctaLabel}
-                <ArrowUpRight size={13} />
-              </span>
+              {builder.site && builder.ctaLabel && (
+                <span
+                  className={`ml-auto inline-flex items-center gap-1 rounded-full px-3 py-1.5 text-[11px] font-semibold transition-all group-hover:scale-[1.03] ${
+                    hover ? 'bg-white text-ink-900' : 'bg-ink-900 text-white'
+                  }`}
+                >
+                  {builder.ctaLabel}
+                  <ArrowUpRight size={12} />
+                </span>
+              )}
             </div>
-          </div>
+          )}
         </div>
       </motion.a>
     </Reveal>
@@ -274,13 +287,6 @@ export const DoorLanding = memo(function DoorLanding({ setInput }: { setInput: (
     setInput(prompt)
     toChat()
   }
-  const [email, setEmail] = useState('')
-  const subscribe = (e: FormEvent) => {
-    e.preventDefault()
-    if (!email.trim()) return
-    toast({ title: "You're on the list. We'll keep you posted.", variant: 'success' })
-    setEmail('')
-  }
 
   return (
     <div className="relative w-full">
@@ -308,7 +314,8 @@ export const DoorLanding = memo(function DoorLanding({ setInput }: { setInput: (
                 Send the pack after<br />your next question.
               </h2>
               <p className="mx-auto mt-6 max-w-xl text-[15px] leading-relaxed text-ink-500">
-                Type it, speak it, or drop a file. Set a budget. Then watch the work happen, live.
+                Type it, speak it, or drop a file. See the price before it spends a cent, watch the
+                work happen live, and get a brief where every claim carries a receipt.
               </p>
               <button
                 onClick={toChat}
@@ -375,21 +382,23 @@ export const DoorLanding = memo(function DoorLanding({ setInput }: { setInput: (
                     <p className="mt-6 text-center text-[12px] font-semibold uppercase tracking-[0.18em] text-ink-500">
                       {b.role}
                     </p>
-                    <div className="mt-4 flex flex-wrap justify-center gap-2">
-                      {b.links.map(({ Icon, label, href }) => (
-                        <a
-                          key={label}
-                          href={href}
-                          target="_blank"
-                          rel="noreferrer noopener"
-                          aria-label={label}
-                          title={label}
-                          className="inline-flex h-9 w-9 items-center justify-center rounded-full border-[2px] border-ink-900 bg-white text-ink-700 transition-all hover:-translate-y-0.5 hover:bg-cream-100 hover:text-ink-900"
-                        >
-                          <Icon size={15} />
-                        </a>
-                      ))}
-                    </div>
+                    {b.links.length > 0 && (
+                      <div className="mt-4 flex flex-wrap justify-center gap-2">
+                        {b.links.map(({ Icon, label, href }) => (
+                          <a
+                            key={label}
+                            href={href}
+                            target="_blank"
+                            rel="noreferrer noopener"
+                            aria-label={label}
+                            title={label}
+                            className="inline-flex h-9 w-9 items-center justify-center rounded-full border-[2px] border-ink-900 bg-white text-ink-700 transition-all hover:-translate-y-0.5 hover:bg-cream-100 hover:text-ink-900"
+                          >
+                            <Icon size={15} />
+                          </a>
+                        ))}
+                      </div>
+                    )}
                   </Reveal>
                 </div>
               ))}
@@ -397,11 +406,11 @@ export const DoorLanding = memo(function DoorLanding({ setInput }: { setInput: (
           </div>
         </section>
 
-        {/* ── Footer — a slot for each of the 6 hackathon deliverables + Qwen Cloud attribution ── */}
+        {/* ── Footer — a slot for each submission deliverable + Qwen Cloud attribution ── */}
         <footer className="cv-auto border-t border-ink-900/10">
-          {/* The six submission deliverables. Filled slots link out; empty ones show "add link". */}
+          {/* The submission deliverables. Filled slots link out; empty ones show "add link". */}
           <Reveal>
-            <div className="mx-auto grid max-w-6xl grid-cols-1 gap-px bg-ink-900/10 sm:grid-cols-2 md:grid-cols-3">
+            <div className="mx-auto grid max-w-6xl grid-cols-1 gap-px bg-ink-900/10 sm:grid-cols-2 md:grid-cols-4">
               {DELIVERABLES.map(({ Icon, label, href, note }) =>
                 href ? (
                   <a
@@ -432,7 +441,7 @@ export const DoorLanding = memo(function DoorLanding({ setInput }: { setInput: (
             </div>
           </Reveal>
 
-          {/* Brand + attribution + subscribe · context columns. */}
+          {/* Brand + attribution · context columns. */}
           <div className="border-t border-ink-900/10">
             <Reveal>
               <div className="mx-auto grid max-w-6xl grid-cols-2 gap-10 px-6 py-16 md:grid-cols-4">
@@ -442,21 +451,9 @@ export const DoorLanding = memo(function DoorLanding({ setInput }: { setInput: (
                     <span className="font-display text-lg font-extrabold tracking-wide text-ink-900">A Pack</span>
                   </div>
                   <p className="mt-3 max-w-sm text-[13px] leading-relaxed text-ink-500">
-                    A research team you can watch. Built with Qwen models on Qwen Cloud, with the backend
-                    running on Alibaba Cloud.
+                    A research team you can watch, and audit. Built with Qwen models on Qwen Cloud,
+                    with the backend running on Alibaba Cloud.
                   </p>
-                  <form onSubmit={subscribe} className="mt-6 flex w-full max-w-md items-center gap-2">
-                    <input
-                      value={email}
-                      onChange={(e) => setEmail(e.target.value)}
-                      type="email"
-                      placeholder="name@email.com"
-                      className="flex-1 rounded-full border-[2px] border-ink-900 bg-cream-50 px-4 py-2.5 text-[14px] text-ink-900 outline-none transition-colors placeholder:text-ink-400 focus:border-brand-500"
-                    />
-                    <button type="submit" className="rounded-full bg-brand-500 px-5 py-2.5 text-[13px] font-semibold text-white shadow-chunk-sm transition-all hover:-translate-y-0.5 hover:shadow-chunk active:translate-y-0">
-                      Subscribe
-                    </button>
-                  </form>
                 </div>
                 {CONTEXT.map((c) => (
                   <div key={c.h}>

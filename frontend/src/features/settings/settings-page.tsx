@@ -6,7 +6,7 @@ import { useSpendSummary, useClearHunts, useResetData } from '@/api/hunts'
 import { toast } from '@/store/toast-store'
 import { color } from '@/lib/theme'
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/ui/dialog'
-import { HuntSidebar } from '@/features/door/hunt-sidebar'
+import { PageWithSidebar } from '@/features/door/page-with-sidebar'
 
 function money(n: number): string {
   return `$${(n ?? 0).toFixed(2)}`
@@ -44,12 +44,10 @@ export default function SettingsPage() {
   }
 
   return (
-    <div className="flex h-screen overflow-hidden" style={{ background: color.canvas }}>
-      <HuntSidebar onCollapse={() => navigate('/')} />
-      <div className="flex-1 overflow-y-auto">
-        <div className="mx-auto w-full max-w-[720px] px-6 py-10">
-          {/* Header */}
-          <div className="flex items-start gap-3 border-b pb-5" style={{ borderColor: '#dcdcd8' }}>
+    <PageWithSidebar>
+        <div className="mx-auto w-full max-w-[720px] px-5 py-8 sm:px-6 sm:py-10">
+          {/* Header — extra left room on mobile so it clears the fixed hamburger. */}
+          <div className="flex items-start gap-3 border-b pb-5 pl-12 md:pl-0" style={{ borderColor: '#dcdcd8' }}>
           <button onClick={() => navigate(-1)} className="mt-0.5 p-1 text-text-dim hover:text-ink-900" aria-label="Back">
             <ChevronLeft size={20} />
           </button>
@@ -151,7 +149,6 @@ export default function SettingsPage() {
           </div>
         </Section>
       </div>
-      </div>
 
       {/* Extracted-text viewer — "what the pack actually read from this file". Opens on a doc-row click. */}
       <Dialog open={viewDocId != null} onOpenChange={(o) => !o && setViewDocId(null)}>
@@ -177,6 +174,6 @@ export default function SettingsPage() {
           </div>
         </DialogContent>
       </Dialog>
-    </div>
+    </PageWithSidebar>
   )
 }

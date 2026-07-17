@@ -115,7 +115,7 @@ export function HuntSidebar({ onCollapse }: Props) {
   const hunts = huntData?.hunts ?? []
 
   return (
-    <div className="w-[300px] h-full flex flex-col min-h-0" style={{ background: color.surface, borderRight: `1px solid ${color.border}` }}>
+    <div className="w-[85vw] max-w-[300px] sm:w-[300px] h-full flex flex-col min-h-0" style={{ background: color.surface, borderRight: `1px solid ${color.border}` }}>
       <Header onCollapse={onCollapse} />
       
       <div className="px-3 pt-4 pb-1">
@@ -155,7 +155,7 @@ export function HuntSidebar({ onCollapse }: Props) {
                 ) : (
                   <button
                     onClick={(e) => { e.stopPropagation(); setMenuId(menuId === h.hunt_id ? null : h.hunt_id) }}
-                    className="shrink-0 opacity-0 group-hover:opacity-100 transition-opacity p-0.5 text-muted hover:text-text"
+                    className="shrink-0 opacity-60 sm:opacity-0 sm:group-hover:opacity-100 transition-opacity p-2 text-muted hover:text-text"
                     aria-label="More"
                   >
                     <MoreVertical size={16} />
@@ -205,7 +205,7 @@ export function HuntSidebar({ onCollapse }: Props) {
               </button>
               <button
                 onClick={() => deleteInstinct.mutate(it.instinct_id)}
-                className="shrink-0 opacity-0 group-hover:opacity-100 transition-opacity p-0.5 text-muted hover:text-[#EF4444]"
+                className="shrink-0 opacity-60 sm:opacity-0 sm:group-hover:opacity-100 transition-opacity p-2 text-muted hover:text-[#EF4444]"
                 aria-label="Delete instinct"
               >
                 <Trash2 size={15} />

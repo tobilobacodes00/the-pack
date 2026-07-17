@@ -4,7 +4,8 @@ import { cn } from '@/lib/utils'
 
 export const ToastProvider = RadixToast.Provider
 export const ToastViewport = () => (
-  <RadixToast.Viewport className="fixed bottom-4 right-4 z-[100] flex max-h-screen w-[380px] flex-col gap-2 outline-none" />
+  // Mobile: span the width with side insets so a toast never overflows a narrow screen. sm+: the fixed panel.
+  <RadixToast.Viewport className="fixed inset-x-3 bottom-3 z-[100] flex max-h-screen w-auto flex-col gap-2 outline-none sm:inset-x-auto sm:right-4 sm:bottom-4 sm:w-[380px]" />
 )
 
 interface ToastProps extends RadixToast.ToastProps {

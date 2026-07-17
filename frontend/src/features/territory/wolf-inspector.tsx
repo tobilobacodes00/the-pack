@@ -56,7 +56,7 @@ export function WolfInspector({ wolf, onClose }: { wolf: WolfState; onClose: () 
       role="dialog"
       aria-label={`${lab.label} details`}
       style={{
-        position: 'absolute', top: 16, right: 16, zIndex: 15, width: 300,
+        position: 'absolute', top: 16, right: 16, zIndex: 15, width: 'min(300px, calc(100vw - 32px))',
         background: color.surface, border: '1px solid #dcdcd8', borderRadius: 14,
         boxShadow: '0 8px 30px rgba(26,26,26,0.16)', overflow: 'hidden',
         animation: 'inspector-in 200ms cubic-bezier(0.22,1,0.36,1)',

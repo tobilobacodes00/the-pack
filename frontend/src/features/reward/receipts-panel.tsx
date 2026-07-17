@@ -111,7 +111,7 @@ export function ReceiptsPanel({ receipts, loading, onCancel }: Props) {
   if (!receipts) {
     return (
       <div className="flex h-full flex-col">
-        <div className="flex flex-1 items-center justify-center px-8 text-center">
+        <div className="flex flex-1 items-center justify-center px-5 sm:px-8 text-center">
           <div>
             <FileSearch size={22} className="mx-auto text-muted" />
             <p className="mt-3 text-[15px] font-semibold text-ink-900">No receipts yet</p>
@@ -136,7 +136,7 @@ export function ReceiptsPanel({ receipts, loading, onCancel }: Props) {
 
   return (
     <div className="flex h-full flex-col">
-      <div className="flex-1 overflow-y-auto px-8 py-8">
+      <div className="flex-1 overflow-y-auto px-5 sm:px-8 py-8">
         <div className="mx-auto max-w-[620px]">
           <div className="flex items-center gap-3">
             <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-emerald-500/10">

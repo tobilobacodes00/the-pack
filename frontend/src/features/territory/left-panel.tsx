@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { ChevronLeft, PanelLeftClose, PanelLeftOpen, Loader2, SquarePen } from 'lucide-react'
 import { useNavigate } from 'react-router-dom'
+import { useIsMobile } from '@/hooks/use-is-mobile'
 import { color } from '@/lib/theme'
 import type { HuntState, HuntStatus, WolfState } from '@/events/schema'
 import { ROLE_DESC, numberWord } from './roles'
@@ -83,7 +84,10 @@ const iconBtn: React.CSSProperties = {
 
 export function LeftPanel({ huntState }: LeftPanelProps) {
   const navigate = useNavigate()
-  const [collapsed, setCollapsed] = useState(false)
+  const isMobile = useIsMobile()
+  // On a phone the roster starts as the compact corner square so it never covers the canvas/chat; on
+  // desktop it opens as the full rail. The user can still toggle either way.
+  const [collapsed, setCollapsed] = useState(isMobile)
 
   // Roles from the plan's canonical team (with leads), grouped by role — NOT plan.wolves (wolf-ids).
   const roles = rosterRoles(planRoleList(huntState.plan))
@@ -105,7 +109,7 @@ export function LeftPanel({ huntState }: LeftPanelProps) {
   }
 
   return (
-    <div style={{ ...cardBase, width: 300 }}>
+    <div style={{ ...cardBase, width: isMobile ? 'min(300px, 80vw)' : 300 }}>
       {/* Header */}
       <div
         style={{

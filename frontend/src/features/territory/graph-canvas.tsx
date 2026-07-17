@@ -30,9 +30,9 @@ const X_SPREAD = 230
 // How far a roaming healer (Warden) sits from the wolf it's tending (px, to the right).
 const HEALER_OFFSET = NODE + 24
 
-/** Map a live wolf's status to a canvas tone. Absent wolf (idle/plan states) → grey idle. */
+/** Map a live wolf's status to a canvas tone. Absent OR idle wolf → grey idle. */
 function wolfTone(w?: WolfState): AgentTone {
-  if (!w) return 'idle'
+  if (!w || w.status === 'idle') return 'idle'
   if (w.status === 'done') return 'done'
   if (w.status === 'strayed' || w.status === 'error') return 'strayed'
   if (w.status === 'healing') return 'healing'

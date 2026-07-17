@@ -18,10 +18,12 @@ interface Props {
 
 function Row({ lone, label, pack }: { lone: ReactNode; label: string; pack: ReactNode }) {
   return (
-    <div className="grid grid-cols-[1fr_auto_1fr] items-center gap-4 py-3">
-      <div className="text-right text-[15px] text-ink-700 tabular-nums">{lone}</div>
-      <div className="w-[112px] text-center text-[12px] text-muted">{label}</div>
-      <div className="text-left text-[15px] font-medium text-text tabular-nums">{pack}</div>
+    // Keep the lone-vs-pack comparison side by side; on mobile the middle label column and gaps shrink
+    // so the two value columns keep room for numbers/currency/time.
+    <div className="grid grid-cols-[1fr_auto_1fr] items-center gap-2 py-3 sm:gap-4">
+      <div className="text-right text-[13.5px] text-ink-700 tabular-nums sm:text-[15px]">{lone}</div>
+      <div className="w-[76px] text-center text-[11px] text-muted sm:w-[112px] sm:text-[12px]">{label}</div>
+      <div className="text-left text-[13.5px] font-medium text-text tabular-nums sm:text-[15px]">{pack}</div>
     </div>
   )
 }
@@ -38,7 +40,7 @@ export function ScorecardPanel({ scorecard, loading, running, failed, onRun, onC
   if (!scorecard) {
     return (
       <div className="flex h-full flex-col">
-        <div className="flex flex-1 items-center justify-center px-8 text-center">
+        <div className="flex flex-1 items-center justify-center px-5 sm:px-8 text-center">
           {running ? (
             // In flight: the lone wolf is genuinely re-running the same task solo right now.
             <div>
@@ -91,7 +93,7 @@ export function ScorecardPanel({ scorecard, loading, running, failed, onRun, onC
 
   return (
     <div className="flex h-full flex-col">
-      <div className="flex-1 overflow-y-auto px-8 py-10">
+      <div className="flex-1 overflow-y-auto px-5 sm:px-8 py-10">
         <div className="mx-auto max-w-[560px]">
           <div className="flex justify-center">
             <div className="flex h-14 w-14 items-center justify-center rounded-full bg-[#F59E0B]/15">

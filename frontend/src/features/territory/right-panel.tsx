@@ -89,7 +89,7 @@ export function RightPanel({ huntId, huntState, messages, onApprove, onEditForma
 
   return (
     <div
-      className="w-[320px] shrink-0 h-full flex flex-col min-h-0 overflow-hidden"
+      className="w-full sm:w-[320px] shrink-0 h-full flex flex-col min-h-0 overflow-hidden"
       style={{ background: color.surface, border: `1px solid ${color.border}`, borderRadius: 16 }}
     >
       <ChatColumn

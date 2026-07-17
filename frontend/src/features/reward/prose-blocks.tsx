@@ -26,7 +26,7 @@ export function ProseBlocks({ blocks, onClaimClick }: Props) {
         }
         const ids = uniqueSorted(b.source_ids)
         return (
-          <div key={i} className="flex items-start justify-between gap-8">
+          <div key={i} className="flex items-start justify-between gap-2 sm:gap-8">
             {ids.length ? (
               <p
                 onClick={(e) => onClaimClick(ids, e.currentTarget)}

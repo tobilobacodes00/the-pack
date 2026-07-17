@@ -13,6 +13,7 @@ import { TerritoryFooter, composerVisible, composerPlaceholder } from '../territ
 import { useReward } from '../reward/use-reward'
 import { useHuntToast } from '../territory/use-hunt-toast'
 import { ChatColumn } from './chat-column'
+import { HeroTypewriter } from './hero-typewriter'
 import { HiddenFileInput } from './hidden-file-input'
 import { HuntSidebar } from './hunt-sidebar'
 import { DoorLanding } from './door-landing'
@@ -54,7 +55,7 @@ export default function DoorPage() {
           title: action === 'subhunt' ? 'Digging deeper' : 'New hunt launched',
           description:
             action === 'subhunt'
-              ? "Taking you to it — approve the plan and the pack folds it into your brief."
+              ? 'Taking you to it. Approve the plan and the pack folds it into your brief.'
               : 'Taking you to the new hunt.',
           variant: 'default',
         })
@@ -169,7 +170,7 @@ export default function DoorPage() {
 
   return (
     <div
-      className={isTerritory ? 'h-screen flex flex-col overflow-hidden' : 'min-h-screen flex flex-col'}
+      className={isTerritory ? 'h-dvh flex flex-col overflow-hidden' : 'min-h-dvh flex flex-col'}
       style={{ backgroundColor: isTerritory ? color.canvas : warm.cream }}
       onDragEnter={onDragEnter}
       onDragOver={onDragOver}
@@ -205,7 +206,7 @@ export default function DoorPage() {
           cream door it inherits the page's warm bg. `z-20` lifts the whole hero (nav + chat +
           composer + presets + cue) above DoorLanding's z-10 layer so the fixed wolf sits BEHIND it
           — the transparent hero lets the faint wolf show in the gaps but never over the composer. */}
-      <div className={isTerritory ? 'flex-1 flex flex-col min-h-0 overflow-hidden' : 'relative z-20 h-screen flex flex-col'}>
+      <div className={isTerritory ? 'flex-1 flex flex-col min-h-0 overflow-hidden' : 'relative z-20 h-dvh flex flex-col'}>
       {/* Top nav — intake only, and only while the sidebar is collapsed (the sidebar carries its own
           header). The roster carries the branding once we're in territory. */}
       <AnimatePresence>
@@ -232,19 +233,31 @@ export default function DoorPage() {
       </AnimatePresence>
 
       <div className="flex-1 relative overflow-hidden min-h-0">
-        {/* Past-Hunts sidebar — intake only, slides in from the left when the hamburger is tapped. */}
+        {/* Past-Hunts sidebar — intake only, slides in from the left when the hamburger is tapped.
+            On mobile a tap-to-close scrim sits behind it (the sidebar is a full overlay there). */}
         <AnimatePresence>
           {!isTerritory && sidebarOpen && (
-            <motion.div
-              key="sidebar"
-              initial={{ x: -300, opacity: 0 }}
-              animate={{ x: 0, opacity: 1 }}
-              exit={{ x: -300, opacity: 0 }}
-              transition={MORPH}
-              className="absolute left-0 top-0 bottom-0 z-30"
-            >
-              <HuntSidebar onCollapse={() => setSidebarOpen(false)} />
-            </motion.div>
+            <>
+              <motion.div
+                key="sidebar-scrim"
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                exit={{ opacity: 0 }}
+                transition={MORPH}
+                onClick={() => setSidebarOpen(false)}
+                className="absolute inset-0 z-20 bg-black/40 sm:hidden"
+              />
+              <motion.div
+                key="sidebar"
+                initial={{ x: -300, opacity: 0 }}
+                animate={{ x: 0, opacity: 1 }}
+                exit={{ x: -300, opacity: 0 }}
+                transition={MORPH}
+                className="absolute left-0 top-0 bottom-0 z-30"
+              >
+                <HuntSidebar onCollapse={() => setSidebarOpen(false)} />
+              </motion.div>
+            </>
           )}
         </AnimatePresence>
 
@@ -266,16 +279,17 @@ export default function DoorPage() {
           )}
         </AnimatePresence>
 
-        {/* Left roster — floating overlay on top of the canvas */}
+        {/* Left roster — floating overlay on top of the canvas. It sizes itself (52px collapsed corner
+            square on mobile, 300px rail on desktop), so the wrapper just fades in and hugs content. */}
         <AnimatePresence>
           {isTerritory && (
             <motion.div
               key="roster"
-              initial={{ width: 0, opacity: 0 }}
-              animate={{ width: 300, opacity: 1 }}
-              exit={{ width: 0, opacity: 0 }}
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
               transition={MORPH}
-              className="absolute left-3 top-3 bottom-3 z-20 overflow-hidden flex"
+              className="absolute left-2 top-2 sm:left-3 sm:top-3 bottom-2 sm:bottom-3 z-20 overflow-visible flex"
             >
               <LeftPanel huntState={huntState} />
             </motion.div>
@@ -291,7 +305,8 @@ export default function DoorPage() {
               animate={{ x: 0, opacity: 1 }}
               exit={{ opacity: 0 }}
               transition={MORPH}
-              className="absolute right-3 top-3 bottom-3 w-[320px] z-20 flex flex-col min-h-0 overflow-hidden"
+              // Mobile: a bottom sheet spanning the width, capped height. Desktop: the right-side column.
+              className="absolute inset-x-2 bottom-2 top-auto h-[62dvh] sm:inset-x-auto sm:right-3 sm:top-3 sm:bottom-3 sm:h-auto sm:w-[320px] z-20 flex flex-col min-h-0 overflow-hidden"
               style={{ background: color.surface, border: `1px solid ${color.border}`, borderRadius: 16 }}
             >
               <ChatColumn
@@ -310,16 +325,20 @@ export default function DoorPage() {
               animate={{ opacity: 1 }}
               exit={{ opacity: 0, scale: 0.98 }}
               transition={MORPH}
-              className={`absolute top-0 bottom-0 right-0 ${sidebarOpen ? 'left-[300px]' : 'left-0'} flex flex-col items-center justify-center px-4 pb-10 min-h-0`}
+              // On mobile the sidebar is a full overlay (with a scrim), so the chat never shifts right;
+              // on desktop it slides the content over by the sidebar width.
+              className={`absolute top-0 bottom-0 right-0 left-0 ${sidebarOpen ? 'sm:left-[300px]' : 'sm:left-0'} flex flex-col items-center justify-center overflow-y-auto px-4 py-8 min-h-0`}
             >
               <div className="w-full max-w-[700px] flex flex-col gap-6">
-                <h1 className="font-display text-[32px] font-extrabold text-ink-900 text-center leading-tight tracking-tight">
-                  What should the pack hunt down?
-                </h1>
+                {/* Reserve the line so the composer never jumps as the rotating clause changes length.
+                    The question fits one line on desktop; a touch more room on mobile for a wrap. */}
+                <div className="min-h-[80px] flex items-center justify-center md:min-h-[52px]">
+                  <HeroTypewriter />
+                </div>
 
                 <ChatColumn variant="intake" {...door} />
 
-                <div className="grid grid-cols-3 gap-3">
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
                   {PRESETS.map((p) => (
                     <PresetCard key={p.id} preset={p} onClick={() => door.setInput(p.prompt)} />
                   ))}

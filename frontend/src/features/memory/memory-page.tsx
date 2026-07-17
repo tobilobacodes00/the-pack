@@ -179,7 +179,7 @@ export default function MemoryPage() {
   const archived = lessons.filter((l) => l.status === 'archived')
 
   return (
-    <div className="flex h-screen overflow-hidden" style={{ background: color.canvas }}>
+    <div className="flex h-dvh overflow-hidden" style={{ background: color.canvas }}>
       <HuntSidebar onCollapse={() => navigate('/')} />
       <div className="flex-1 overflow-y-auto">
         <div className="mx-auto w-full max-w-[720px] px-6 py-10">

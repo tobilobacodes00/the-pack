@@ -4,7 +4,7 @@ import { FlightRecorder } from '@/features/tracks/flight-recorder'
 
 function Centered({ children }: { children: React.ReactNode }) {
   return (
-    <div className="flex min-h-screen items-center justify-center bg-canvas px-6 text-center text-sm text-muted">
+    <div className="flex min-h-dvh items-center justify-center bg-canvas px-6 text-center text-sm text-muted">
       {children}
     </div>
   )

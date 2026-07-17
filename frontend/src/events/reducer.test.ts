@@ -175,29 +175,40 @@ describe('spend counter: tokens_spent is authoritative + idempotent', () => {
 })
 
 describe('Warden healing flow', () => {
-  it('a Warden heals a faulted scout: grey → healing → active, healer map set then cleared', () => {
+  it('a Warden heals a faulted scout: idle → healing → back to idle, healer map set then cleared', () => {
     seq = 0
     let s = apply(initialHuntState, spawn('scout-1', 'scout'))
     // fault: the scout strays and greys out
     s = apply(s, ev('stray_detected', 'engine', { wolf_id: 'scout-1', pattern: 'timeout', evidence_ref: 'art_x' }))
     expect(s.wolves['scout-1'].status).toBe('strayed')
 
-    // the Warden roams in and is dispatched to the patient
+    // the standing Warden is dormant until a fault: it spawns idle, not "working".
     s = apply(s, spawn('warden', 'warden'))
+    expect(s.wolves['warden'].status).toBe('idle')
     s = apply(s, ev('doctor_dispatched', 'warden', { doctor_id: 'warden', target_wolf_id: 'scout-1', reason: 'timeout' }))
     expect(s.wolves['scout-1'].status).toBe('healing')
-    expect(s.wolves['warden'].status).toBe('active')
     expect(s.healers['warden']).toBe('scout-1')
 
-    // healed: patient recovers, healer stands down and leaves the active-heal map
+    // healed: patient recovers; the STANDING Warden goes back to dormant/idle (not done), ready again.
     s = apply(s, ev('doctor_healed', 'warden', {
       doctor_id: 'warden', target_wolf_id: 'scout-1', action: 'reroute',
       note_plain_english: 'warden patched scout-1 after it stalled.',
     }))
     expect(s.wolves['scout-1'].status).toBe('active')
-    expect(s.wolves['warden'].status).toBe('done')
+    expect(s.wolves['warden'].status).toBe('idle')
     expect(s.healers['warden']).toBeUndefined()
     expect(s.activity.some((a) => a.text.includes('warden'))).toBe(true)
+  })
+
+  it('when the hunt ends, no wolf still reads as working (Warden idle, others done)', () => {
+    seq = 0
+    let s = apply(initialHuntState, spawn('scout-1', 'scout'), spawn('warden', 'warden'))
+    expect(s.wolves['scout-1'].status).toBe('active')
+    expect(s.wolves['warden'].status).toBe('idle')
+    s = apply(s, ev('hunt_completed', 'engine', { final_artifact_id: 'art_final', totals: {} }))
+    expect(s.status).toBe('completed')
+    expect(s.wolves['scout-1'].status).toBe('done') // was mid-flight → settled to done
+    expect(s.wolves['warden'].status).toBe('idle') // the standing medic stays dormant, never "working"
   })
 
   it('two faults at once → two Wardens, each mapped to its own patient (parallel)', () => {

@@ -52,6 +52,19 @@ function setWolf(state: HuntState, wolf_id: string, patch: Partial<WolfState>): 
   }
 }
 
+/** Settle the roster when a hunt ends: no wolf should still read as "working". A wolf that was mid-
+ *  flight becomes 'done'; the standing Warden (and any idle node) goes dormant. Faulted wolves keep
+ *  their honest 'strayed'/'error' state. Replay-safe (pure function of the current statuses). */
+function settleWolves(state: HuntState): HuntState {
+  const wolves: HuntState['wolves'] = {}
+  for (const [id, w] of Object.entries(state.wolves)) {
+    let status = w.status
+    if (w.status === 'active' || w.status === 'healing') status = w.role === 'warden' ? 'idle' : 'done'
+    wolves[id] = status === w.status ? w : { ...w, status, phase: null }
+  }
+  return { ...state, wolves, healers: {} }
+}
+
 /** Record a phase/tool step in a wolf's timeline, collapsing a repeat of the current phase so
  *  "reading, reading, reading" stays one "reading" step. Rebuilt on replay → replay-safe. */
 function pushPhase(state: HuntState, wolf_id: string, phase: string): HuntState {
@@ -143,7 +156,9 @@ export function huntReducer(state: HuntState, event: HuntEvent): HuntState {
             thinking: event.payload.thinking,
             phase: null,
             last_text: null,
-            status: 'active',
+            // The Warden is a STANDING medic — it just sits there, dormant, until a wolf faults; it
+            // only lights up ('healing') while tending one. Every other wolf starts working ('active').
+            status: event.payload.role === 'warden' ? 'idle' : 'active',
             cost_usd: 0,
             parent_wolf_id: event.payload.parent_wolf_id ?? null,
             phaseHistory: [],
@@ -304,11 +319,16 @@ export function huntReducer(state: HuntState, event: HuntEvent): HuntState {
     }
 
     case 'doctor_healed': {
-      // Patient recovers; the healer stands down (dimmed) and drops out of the active-heal map.
+      // Patient recovers and the healer stands down. The STANDING Warden (bare id "warden") goes back
+      // to dormant/idle, ready for the next fault; a transient CLONE (warden-2, …) spun up just for this
+      // heal is finished ('done', dimmed) and drops out of the active-heal map.
       const { [event.payload.doctor_id]: _done, ...healers } = next.healers
+      const healer = next.wolves[event.payload.doctor_id]
+      const healerRests: WolfState['status'] =
+        healer?.role === 'warden' && event.payload.doctor_id === 'warden' ? 'idle' : 'done'
       const recovered = setWolf(
         setWolf(next, event.payload.target_wolf_id, { status: 'active' }),
-        event.payload.doctor_id, { status: 'done' },
+        event.payload.doctor_id, { status: healerRests },
       )
       return pushActivity(
         { ...recovered, healers },
@@ -378,7 +398,7 @@ export function huntReducer(state: HuntState, event: HuntEvent): HuntState {
 
     case 'hunt_completed':
       return {
-        ...next,
+        ...settleWolves(next),
         status: 'completed',
         final_artifact_id: event.payload.final_artifact_id,
         totals: event.payload.totals as Record<string, unknown>,
@@ -386,10 +406,10 @@ export function huntReducer(state: HuntState, event: HuntEvent): HuntState {
       }
 
     case 'hunt_failed':
-      return { ...next, status: 'failed', ended_at: event.ts }
+      return { ...settleWolves(next), status: 'failed', ended_at: event.ts }
 
     case 'hunt_stopped':
-      return { ...next, status: 'stopped', ended_at: event.ts }
+      return { ...settleWolves(next), status: 'stopped', ended_at: event.ts }
 
     case 'benchmark_started':
       return next

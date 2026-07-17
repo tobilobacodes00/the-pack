@@ -41,7 +41,8 @@ export function RewardShell({ open, onClose, header, children, drawer, overlay }
                 animate={{ opacity: 1, scale: 1, y: 0 }}
                 exit={{ opacity: 0, scale: 0.98, y: 10 }}
                 transition={{ duration: 0.28, ease: EASE }}
-                className="fixed left-1/2 top-1/2 z-50 flex h-[min(88vh,880px)] w-[min(1040px,94vw)] -translate-x-1/2 -translate-y-1/2 flex-col overflow-hidden rounded-2xl border border-border bg-white shadow-soft"
+                // Mobile: full-screen. Desktop: a centered card.
+                className="fixed inset-0 z-50 flex h-dvh w-full flex-col overflow-hidden border-border bg-white shadow-soft sm:left-1/2 sm:top-1/2 sm:inset-auto sm:h-[min(88vh,880px)] sm:w-[min(1040px,94vw)] sm:-translate-x-1/2 sm:-translate-y-1/2 sm:rounded-2xl sm:border"
               >
                 <RadixDialog.Title className="sr-only">The Reward</RadixDialog.Title>
                 {header}

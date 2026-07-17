@@ -21,26 +21,19 @@ export default function TerritoryPage() {
   useHuntToast(huntState.status)
 
   return (
-    <div
-      style={{
-        height: '100vh',
-        position: 'relative',
-        overflow: 'hidden',
-        background: color.canvas,
-      }}
-    >
-      {/* Full-bleed canvas; the sidebars float on top of it. */}
-      <div style={{ position: 'absolute', inset: 0, display: 'flex', zIndex: 0 }}>
+    <div className="relative h-dvh overflow-hidden" style={{ background: color.canvas }}>
+      {/* Full-bleed canvas; the panels float on top of it. */}
+      <div className="absolute inset-0 z-0 flex">
         <GraphCanvas huntState={huntState} />
       </div>
 
-      {/* Left roster — floating overlay */}
-      <div style={{ position: 'absolute', left: 12, top: 12, bottom: 12, zIndex: 20, display: 'flex' }}>
+      {/* Left roster — floating overlay. Sizes itself (52px collapsed on mobile, 300px rail on desktop). */}
+      <div className="absolute left-2 top-2 sm:left-3 sm:top-3 bottom-2 sm:bottom-3 z-20 flex overflow-visible">
         <LeftPanel huntState={huntState} />
       </div>
 
-      {/* Chat — floating overlay */}
-      <div style={{ position: 'absolute', right: 12, top: 12, bottom: 12, zIndex: 20, display: 'flex' }}>
+      {/* Chat — a bottom sheet on mobile, the right-side column on desktop. */}
+      <div className="absolute inset-x-2 bottom-2 top-auto h-[62dvh] sm:inset-x-auto sm:right-3 sm:top-3 sm:bottom-3 sm:h-auto z-20 flex">
         <RightPanel
           huntId={huntId!}
           huntState={huntState}

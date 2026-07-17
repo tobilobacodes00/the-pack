@@ -67,7 +67,7 @@ export function ProvenancePopover({ top, left, sources, onClose }: Props) {
     <div
       ref={ref}
       style={{ top, left }}
-      className="absolute z-[60] w-[300px] max-w-[86%] rounded-xl border border-border bg-white p-4 shadow-soft"
+      className="absolute z-[60] w-[min(300px,88vw)] rounded-xl border border-border bg-white p-4 shadow-soft"
     >
       <div className="flex items-center gap-2">
         <span className="h-2 w-2 shrink-0 rounded-full" style={{ background: w.color }} />

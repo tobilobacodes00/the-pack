@@ -85,7 +85,7 @@ export default function InstinctsPage() {
     navigate('/', { state: { instinct: toReusedInstinct(it) } })
 
   return (
-    <div className="h-screen flex overflow-hidden" style={{ background: color.canvas }}>
+    <div className="h-dvh flex overflow-hidden" style={{ background: color.canvas }}>
       <AnimatePresence>
         {sidebarOpen && (
           <motion.div

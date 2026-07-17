@@ -41,7 +41,7 @@ export function FlightRecorder({ title, raw, briefHref, briefLabel = 'Read the b
   const atEnd = index >= events.length
 
   return (
-    <div className="flex h-screen flex-col bg-canvas">
+    <div className="flex h-dvh flex-col bg-canvas">
       {/* Header */}
       <header className="flex shrink-0 items-center gap-3 border-b border-border px-5 py-3">
         <div className="min-w-0 flex-1">

@@ -6,7 +6,7 @@ import { ReadingView } from '@/features/reward/reading-view'
 
 function Centered({ children }: { children: React.ReactNode }) {
   return (
-    <div className="flex min-h-screen items-center justify-center bg-canvas px-6 text-center text-sm text-muted">
+    <div className="flex min-h-dvh items-center justify-center bg-canvas px-6 text-center text-sm text-muted">
       {children}
     </div>
   )
@@ -29,7 +29,7 @@ export default function SharePage() {
   }
 
   return (
-    <div className="min-h-screen bg-canvas">
+    <div className="min-h-dvh bg-canvas">
       <div className="mx-auto max-w-[900px]">
         {/* The receipts-forward move: a shared brief always offers its own replay — how the
             answer was produced, not just the answer. */}

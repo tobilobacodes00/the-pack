@@ -26,7 +26,10 @@ export function ReadingView({ brief, dateISO, projectName }: Props) {
     if (!picked.length || !art) return
     const ar = art.getBoundingClientRect()
     const cr = anchor.getBoundingClientRect()
-    const left = Math.max(0, Math.min(cr.left - ar.left, ar.width - 312))
+    // Keep the popover fully inside the article. Its width is min(300, 88vw); reserve that much room
+    // on the right so a citation near the edge doesn't push it off-screen on a narrow viewport.
+    const popW = Math.min(300, ar.width - 24)
+    const left = Math.max(0, Math.min(cr.left - ar.left, ar.width - popW - 12))
     setProv({ top: cr.bottom - ar.top + 6, left, sources: picked })
   }
 
