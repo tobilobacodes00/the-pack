@@ -21,7 +21,7 @@ jobs:
         working-directory: backend
     steps:
       - uses: actions/checkout@v4
-      - uses: astral-sh/setup-uv@v3
+      - uses: astral-sh/setup-uv@v7
       - run: uv python install 3.12
       - run: uv sync --extra dev
       - run: uv run pytest -q --randomly-seed=0 # the SAME offline gate backend.yml runs
@@ -37,7 +37,7 @@ jobs:
       QWEN_API_KEY: ${{ secrets.QWEN_API_KEY }}
     steps:
       - uses: actions/checkout@v4
-      - uses: astral-sh/setup-uv@v3
+      - uses: astral-sh/setup-uv@v7
       - run: uv python install 3.12
       - run: uv sync --extra dev
       # Only tests/live. They skip themselves when QWEN_API_KEY is empty, so an unconfigured secret is a
