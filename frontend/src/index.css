@@ -108,6 +108,12 @@
     0% { transform: translate(0%, 0%); opacity: 1; }
     100% { transform: translate(100%, 0%); opacity: 0; }
   }
+
+  /* Toast countdown bar: shrinks left-to-right over the toast's lifetime. */
+  @keyframes toast-timer {
+    from { transform: scaleX(1); }
+    to { transform: scaleX(0); }
+  }
 }
 
 * {

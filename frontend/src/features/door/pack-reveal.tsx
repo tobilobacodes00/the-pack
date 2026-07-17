@@ -7,6 +7,7 @@ import {
   useMotionValue,
   type MotionValue,
 } from 'framer-motion'
+import { useIsBelowLg } from '@/hooks/use-is-mobile'
 import { IdleGlyph } from '@/features/territory/agent-glyph'
 import { ROLE_DESC } from '@/features/territory/roles'
 import { PackCanvas, type PackDrive } from './pack-canvas'
@@ -140,7 +141,7 @@ function StaticFallback() {
   const Head = ({ role, size = 96 }: { role: string; size?: number }) => {
     const accent = PACK_ACCENT[role]
     return (
-      <div className="flex w-[200px] flex-col items-center">
+      <div className="flex w-[150px] flex-col items-center sm:w-[190px]">
         <IdleGlyph role={role} tone="active" size={size} accent={accent?.ring} outline />
         <p className="mt-3 text-[13px] font-bold capitalize font-display" style={{ color: accent?.ink }}>{role}</p>
         <p className="mt-1.5 rounded-lg px-2 py-1 text-center text-[11.5px] leading-snug text-ink-700" style={{ backgroundColor: accent?.wash }}>
@@ -151,23 +152,32 @@ function StaticFallback() {
   }
   const rows: string[][] = [['alpha'], ['beta', 'elder'], ['scout', 'tracker', 'sentinel', 'howler']]
   return (
-    <div className="mx-auto max-w-6xl px-6 py-24">
+    <div className="mx-auto max-w-6xl px-5 py-16 sm:px-6 sm:py-20 md:py-24">
       <p className="text-[11px] font-semibold uppercase tracking-[0.28em] text-ink-500">The pack</p>
-      <h2 className="mt-3 text-3xl font-extrabold tracking-tight text-ink-900 font-display md:text-4xl">One request. A whole team on it.</h2>
-      <div className="mt-14 flex flex-col items-center gap-12">
+      <h2
+        className="mt-3 font-extrabold tracking-tight text-ink-900 font-display"
+        style={{ fontSize: 'clamp(1.5rem, 4vw, 2.25rem)' }}
+      >
+        One request. A whole team on it.
+      </h2>
+      <div className="mt-10 flex flex-col items-center gap-8 sm:mt-14 sm:gap-12">
         {rows.map((row, i) => (
-          <div key={i} className="flex flex-wrap justify-center gap-x-8 gap-y-10">
+          <div key={i} className="flex flex-wrap justify-center gap-x-6 gap-y-8 sm:gap-x-8 sm:gap-y-10">
             {row.map((r) => (
               <Head key={r} role={r} size={i === 0 ? 108 : 84} />
             ))}
           </div>
         ))}
       </div>
-      <div className="mt-20">
+      <div className="mt-14 sm:mt-20">
         <p className="text-[11px] font-semibold uppercase tracking-[0.28em] text-brand-600">Why a pack, not one agent</p>
-        <div className="mt-6 flex flex-col gap-4">
+        <div className="mt-6 flex flex-col gap-3 sm:gap-4">
           {USE_CASES.map((t) => (
-            <p key={t} className="text-3xl font-bold leading-tight tracking-tight text-ink-900 font-display md:text-4xl">
+            <p
+              key={t}
+              className="font-bold leading-tight tracking-tight text-ink-900 font-display"
+              style={{ fontSize: 'clamp(1.35rem, 3.5vw, 2.25rem)' }}
+            >
               {t}
             </p>
           ))}
@@ -178,7 +188,12 @@ function StaticFallback() {
 }
 
 export function PackReveal(): ReactNode {
-  const reduce = useReducedMotion() ?? false
+  // The scroll-jacked WebGL reveal is a wide-DESKTOP experience — on phones AND tablets (or reduced
+  // motion) the absolutely-positioned wolf + captions + use-cases overlap and break, so fall back to
+  // the clean, flow-based static layout below the lg breakpoint.
+  const reduceMotion = useReducedMotion() ?? false
+  const belowLg = useIsBelowLg()
+  const reduce = reduceMotion || belowLg
   const trackRef = useRef<HTMLDivElement>(null)
   const driveRef = useRef<PackDrive>({ spread: 0, presence: 0.34, alphaX: 0, alphaY: 0, alphaScaleMul: 1, warm: 1 })
   const valueMv = useMotionValue(0)

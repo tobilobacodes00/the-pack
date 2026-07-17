@@ -111,7 +111,12 @@ export function RewardModal({ huntId, open, onClose }: Props) {
   const handleSaveInstinct = (name?: string) => {
     const payload = buildInstinctPayload(name || briefTitle, prompt, plan)
     createInstinct.mutate(payload, {
-      onSuccess: () => toast({ variant: 'success', title: 'Saved as Instinct' }),
+      onSuccess: () =>
+        toast({
+          variant: 'success',
+          title: 'Saved as Instinct',
+          description: 'Find it under Instincts → Your instincts.',
+        }),
       onError: (e) => toast({ variant: 'danger', title: 'Could not save', description: String(e) }),
     })
   }

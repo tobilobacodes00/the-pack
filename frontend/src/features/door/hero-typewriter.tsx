@@ -22,7 +22,10 @@ export const HeroTypewriter = memo(function HeroTypewriter() {
   const { text } = useTypewriter(MOAT_LINES, { typeMs: 52, deleteMs: 26, holdMs: 1700, gapMs: 300 })
 
   return (
-    <h1 className="font-display text-[30px] font-extrabold text-ink-900 text-center leading-tight tracking-tight md:text-[38px]">
+    <h1
+      className="font-display font-extrabold text-ink-900 text-center leading-tight tracking-tight"
+      style={{ fontSize: 'clamp(1.5rem, 4.5vw, 2.375rem)' }}
+    >
       What should the pack{' '}
       {/* Rotating clause. aria-live lets a screen reader hear each phrase settle. */}
       <span className="relative inline-block text-brand-600" aria-live="polite">

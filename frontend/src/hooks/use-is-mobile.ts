@@ -20,3 +20,22 @@ export function useIsMobile(): boolean {
     () => false,
   )
 }
+
+// Match a custom max-width query reactively. For sections (like the scroll-jacked pack reveal) that
+// only make sense on a large desktop and should fall back to a simple layout on phones AND tablets.
+function subscribeMax(max: number, cb: () => void): () => void {
+  const mq = window.matchMedia(`(max-width: ${max}px)`)
+  mq.addEventListener('change', cb)
+  return () => mq.removeEventListener('change', cb)
+}
+
+const TABLET_MAX = 1023 // below Tailwind `lg` — phones and tablets
+
+/** True on phones and tablets (below the `lg` breakpoint). */
+export function useIsBelowLg(): boolean {
+  return useSyncExternalStore(
+    (cb) => subscribeMax(TABLET_MAX, cb),
+    () => window.matchMedia(`(max-width: ${TABLET_MAX}px)`).matches,
+    () => false,
+  )
+}

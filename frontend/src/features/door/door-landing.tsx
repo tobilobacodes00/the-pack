@@ -307,13 +307,18 @@ export const DoorLanding = memo(function DoorLanding({ setInput }: { setInput: (
 
         {/* ── Big CTA (statement + button + brand mark) ────────────────────────── */}
         <section className="cv-auto relative overflow-hidden border-t border-ink-900/10">
-          <div className="relative mx-auto max-w-6xl px-6 pt-28 pb-14 text-center">
+          <div className="relative mx-auto max-w-6xl px-5 pt-16 pb-12 text-center sm:px-6 sm:pt-24 md:pt-28 md:pb-14">
             <Reveal>
               <Kicker>Get started</Kicker>
-              <h2 className="mx-auto mt-6 max-w-4xl font-display text-5xl font-extrabold leading-[1.0] tracking-tight text-ink-900 md:text-7xl">
+              {/* Fluid headline: scales continuously with the viewport so tablets get a sensible size,
+                  not the desktop 72px jammed onto an 800px screen. */}
+              <h2
+                className="mx-auto mt-6 max-w-4xl font-display font-extrabold leading-[1.02] tracking-tight text-ink-900"
+                style={{ fontSize: 'clamp(2rem, 6vw, 4.5rem)' }}
+              >
                 Send the pack after<br />your next question.
               </h2>
-              <p className="mx-auto mt-6 max-w-xl text-[15px] leading-relaxed text-ink-500">
+              <p className="mx-auto mt-5 max-w-xl text-[14px] leading-relaxed text-ink-500 sm:mt-6 sm:text-[15px]">
                 Type it, speak it, or drop a file. See the price before it spends a cent, watch the
                 work happen live, and get a brief where every claim carries a receipt.
               </p>
@@ -356,7 +361,7 @@ export const DoorLanding = memo(function DoorLanding({ setInput }: { setInput: (
                 aria-hidden
                 loading="lazy"
                 decoding="async"
-                className="relative h-40 w-auto opacity-95"
+                className="relative h-28 w-auto opacity-95 sm:h-32 md:h-40"
                 style={{ filter: 'drop-shadow(0 18px 40px rgba(23,58,32,0.22))' }}
               />
             </div>
@@ -365,15 +370,15 @@ export const DoorLanding = memo(function DoorLanding({ setInput }: { setInput: (
 
         {/* ── Builders — the people behind A Pack (sits just above the footer) ──── */}
         <section className="cv-auto relative overflow-hidden border-t border-ink-900/10">
-          <div className="mx-auto max-w-6xl px-6 py-20">
+          <div className="mx-auto max-w-6xl px-5 py-14 sm:px-6 sm:py-16 md:py-20">
             <Reveal>
               <Kicker>The builders</Kicker>
-              <h2 className="mt-5 max-w-2xl font-display text-3xl font-extrabold leading-tight tracking-tight text-ink-900 md:text-4xl">
+              <h2 className="mt-4 max-w-2xl font-display text-2xl font-extrabold leading-tight tracking-tight text-ink-900 sm:mt-5 sm:text-3xl md:text-4xl">
                 Made by the people who send the pack.
               </h2>
             </Reveal>
 
-            <div className="mt-12 grid grid-cols-1 justify-items-center gap-14 md:grid-cols-2 md:gap-10">
+            <div className="mt-10 grid grid-cols-1 justify-items-center gap-10 sm:mt-12 sm:grid-cols-2 sm:gap-8 md:gap-10">
               {BUILDERS.map((b, i) => (
                 <div key={b.name} className="flex w-full max-w-[380px] flex-col items-center">
                   <BuilderCard builder={b} delay={0.05 * i} />
@@ -418,7 +423,7 @@ export const DoorLanding = memo(function DoorLanding({ setInput }: { setInput: (
                     href={href}
                     target="_blank"
                     rel="noreferrer noopener"
-                    className="group flex items-center justify-between bg-cream-50 px-6 py-6 transition-colors hover:bg-cream-100"
+                    className="group flex items-center justify-between bg-cream-50 px-5 py-5 transition-colors hover:bg-cream-100 sm:px-6 sm:py-6"
                   >
                     <span className="flex items-center gap-3 text-[14px] font-semibold text-ink-900">
                       <Icon size={18} className="text-brand-500" />
@@ -428,7 +433,7 @@ export const DoorLanding = memo(function DoorLanding({ setInput }: { setInput: (
                     <ArrowUpRight size={18} className="text-ink-400 transition-all group-hover:-translate-y-0.5 group-hover:translate-x-0.5 group-hover:text-brand-600" />
                   </a>
                 ) : (
-                  <div key={label} className="flex items-center justify-between bg-cream-50 px-6 py-6">
+                  <div key={label} className="flex items-center justify-between bg-cream-50 px-5 py-5 sm:px-6 sm:py-6">
                     <span className="flex items-center gap-3 text-[14px] font-semibold text-ink-400">
                       <Icon size={18} className="text-ink-400" />
                       {label}
@@ -441,11 +446,12 @@ export const DoorLanding = memo(function DoorLanding({ setInput }: { setInput: (
             </div>
           </Reveal>
 
-          {/* Brand + attribution · context columns. */}
+          {/* Brand + attribution · context columns. Single column on phones, two on small tablets,
+              four across on desktop — the brand block spans the full row until it's four-up. */}
           <div className="border-t border-ink-900/10">
             <Reveal>
-              <div className="mx-auto grid max-w-6xl grid-cols-2 gap-10 px-6 py-16 md:grid-cols-4">
-                <div className="col-span-2">
+              <div className="mx-auto grid max-w-6xl grid-cols-1 gap-8 px-5 py-12 sm:grid-cols-2 sm:gap-10 sm:px-6 sm:py-14 md:grid-cols-4 md:py-16">
+                <div className="sm:col-span-2">
                   <div className="flex items-center gap-2.5">
                     <img src="/pack-logo.svg" className="h-7 w-auto" alt="" loading="lazy" decoding="async" />
                     <span className="font-display text-lg font-extrabold tracking-wide text-ink-900">A Pack</span>
