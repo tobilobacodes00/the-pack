@@ -77,11 +77,11 @@ export function PlanCard({ huntId, plan, onApprove, onEdit, onEditFormation, app
       }}
     >
       <p style={{ margin: 0, fontSize: 15, fontWeight: 600, color: color.text }}>
-        Alpha proposed Formation
+        Alpha’s proposed formation
       </p>
       <p style={{ margin: '8px 0 0', fontSize: 13, color: color.dim, lineHeight: 1.6 }}>
-        This is a list of formation Alpha has proposed for this hunt. Would you like to start
-        hunt or Edit formations
+        This is the pack Alpha put together for this hunt. Start the hunt, or edit the formation
+        first.
       </p>
 
       {/* Depth — how comprehensive the brief should be (editable before you approve). */}

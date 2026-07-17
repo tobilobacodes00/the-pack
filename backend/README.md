@@ -3,14 +3,14 @@
 FastAPI · asyncio · Pydantic v2 · the OpenAI SDK pointed at Qwen's compatible endpoint ·
 asyncpg. Owns the whole brain (Alpha loop, wolves, tools, Standoffs, Strays, Holds, the
 Boundary), **all** REST commands, and **all** writes — it appends every event to the Redis
-stream and archives it to Postgres (Doc 04 §2).
+stream and archives it to Postgres.
 
 ## Layout
 
 ```
 app/
   config.py            env-driven settings + the model-tier registry
-  main.py              the REST API surface (Doc 04 §6) — commands return 202
+  main.py              the REST API surface — commands return 202
   events/models.py     the Event envelope + the frozen-schema loader
   bus/redis_stream.py  XADD writer + XRANGE replay over Redis Streams (the seam)
   qwen/client.py       the single inference chokepoint (tiers, thinking, accounting)

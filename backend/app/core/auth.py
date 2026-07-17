@@ -1,7 +1,7 @@
-"""Optional shared-token auth gate (Doc 04 §04, D5).
+"""Optional shared-token auth gate.
 
-Accounts are deliberately out of scope for this build (`PARKING_LOT.md` — "accounts/login (D5)").
-This is the proportionate stand-in: when `settings.api_auth_token` is set, every request must carry
+Full user accounts are deliberately out of scope for this build; this is the proportionate
+stand-in: when `settings.api_auth_token` is set, every request must carry
 `Authorization: Bearer <token>` except a small allowlist (health probes, the public share view, and
 the OpenAPI docs). Empty token ⇒ the gate is a no-op, so local-first development is unaffected.
 

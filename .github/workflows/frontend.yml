@@ -1,6 +1,6 @@
 name: frontend
 
-# Owned by the frontend team. Runs only when frontend/ changes.
+# Runs only when frontend/ changes.
 on:
   push:
     branches: [main, "setup/**", "feat/**", "fix/**"]

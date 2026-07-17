@@ -1,6 +1,6 @@
 name: gateway
 
-# Owned by the backend team (Tobi owns engine + gateway). Runs only when gateway/ changes.
+# Runs only when gateway/ changes.
 on:
   push:
     branches: [main, "setup/**", "feat/**", "fix/**"]

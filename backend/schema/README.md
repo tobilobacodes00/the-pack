@@ -1,9 +1,9 @@
 # Event schema v1 — the spine
 
-`events.schema.json` is the **frozen** contract (Doc 04 §3, target freeze June 12). It is
-the single source of truth and the frontend↔backend seam. Treat it like a public API.
+`events.schema.json` is the **frozen** contract. It is the single source of truth and the
+frontend↔backend seam. Treat it like a public API.
 
-## Rules (Doc 04 §3.1)
+## Rules
 
 - `seq` is strictly increasing **per hunt**.
 - Events are **append-only**. They are never edited.
@@ -34,5 +34,6 @@ Lone-Wolf benchmark all read the **same** stream. Build one, get all six.
 ## Changing the schema
 
 A schema change is a pull request that updates: this file, the Pydantic models, the
-frontend types, and any affected fixtures — together, in one PR. After June 12 the bar is
-high; additive-only where possible.
+frontend types, and any affected fixtures — together, in one PR. The bar is high:
+additive-only where possible (new event types or new optional fields), never a rename or
+re-type of an existing one.

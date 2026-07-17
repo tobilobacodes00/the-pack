@@ -1,10 +1,21 @@
 # A Pack
 
-A multi-agent orchestrator you can **watch**. You give the pack a task; a team of AI wolves —
-Alpha (orchestrator), Beta (planner), Scouts (researchers), Tracker (analyst), Sentinel
-(critic), Howler (writer) — plan it, run it, and surface decisions to you live on a visual
-canvas (the Territory). Every action is a typed, append-only event; the UI is a pure function
-of that event stream.
+**A multi-agent research orchestrator you can watch — and audit.**
+
+You give the pack a task; a team of AI wolves — Alpha (orchestrator), Beta (planner), Scouts
+(researchers), Tracker (analyst), Sentinel (critic), Howler (writer), Elder (memory) — plan it,
+run it, and surface every decision to you live on a visual canvas (the Territory). Every action
+is a typed, append-only event, and the UI is a pure function of that event stream — so nothing
+happens off-screen.
+
+What sets it apart from a single agent is **accountability**: every claim in the brief carries a
+**receipt** (its source, who found it, whether the page was read); you see the **price before it
+spends a cent**; you can run it **head-to-head against a lone agent** and score both; **replay**
+every decision; and its **memory is yours to veto**.
+
+> Built for the Qwen Cloud Global AI Hackathon. All inference runs on **Qwen models via Alibaba
+> Cloud Model Studio / DashScope** (`backend/app/qwen/client.py`), and every generated artifact is
+> stored in **Alibaba Cloud OSS** (`backend/app/storage/oss.py`).
 
 ## Architecture
 
@@ -90,14 +101,16 @@ WebSocket request to `{{gatewayWs}}/hunts/{{hunt_id}}/stream?from_seq=0` and app
 | --- | --- | --- |
 | POST | `/hunts` | Open a hunt (202; starts planning) |
 | GET | `/hunts/:id` | Snapshot — `state` + `last_seq` |
+| POST | `/hunts/:id/rehearse` | Price + time a plan before running (the Estimate) |
 | POST | `/hunts/:id/plan/approve` | Approve plan, set the Boundary |
-| POST | `/hunts/:id/holds/:hold_id/resolve` | Answer an open Hold |
-| POST | `/hunts/:id/inputs` | Add input mid-hunt *(NEXT)* |
+| POST | `/hunts/:id/inputs` | Add input mid-hunt |
 | POST | `/hunts/:id/stop` | Stop the hunt |
-| POST | `/hunts/:id/resume` | Resume from checkpoint *(NEXT)* |
-| POST | `/hunts/:id/benchmark` | Lone Wolf vs Pack *(NEXT)* |
-| GET | `/hunts/:id/tracks/export` | Full event log for a hunt |
-| GET / POST | `/instincts` | Saved plan presets |
+| POST | `/hunts/:id/resume` | Resume from checkpoint |
+| POST | `/hunts/:id/benchmark` · GET `/scorecard` | Lone Wolf vs Pack, scored |
+| GET | `/hunts/:id/receipts` | Per-claim provenance for the brief (the Receipts) |
+| GET | `/hunts/:id/tracks/export` | Full event log — replayed by the Flight Recorder |
+| POST | `/hunts/:id/share` · GET `/share/:token` | Public, shareable brief + receipts |
+| GET / PATCH / DELETE | `/memory` | The Elder's lessons — visible, editable, vetoable |
 | WS | `/hunts/:id/stream?from_seq=n` | **(gateway)** live event stream |
 
 ## Going live with Qwen

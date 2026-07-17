@@ -1,12 +1,10 @@
-# AGENTS.md — engineering policy for Pack
+# Contributing to The Pack
 
-Tool-agnostic rules for any coding agent or contributor working in this repo. (Claude Code reads its
-own config from `CLAUDE.md`/`~/.claude`; this file is the substantive policy those should point at.)
+Engineering policy for this repo. These rules exist because most of them were a real bug once.
 
-## Architecture invariants (enforced — do not break)
+## Architecture invariants (enforced)
 
-`backend/scripts/check_architecture.py` runs in CI and pre-commit and will FAIL a change that breaks
-these. They exist because each was a real bug once:
+`backend/scripts/check_architecture.py` runs in CI and pre-commit and will FAIL a change that breaks these:
 
 - **Every LLM call goes through `QwenClient`** (`backend/app/qwen/client.py`). Never call
   `chat.completions.create(...)` anywhere else — that chokepoint owns retries, the per-hunt circuit
@@ -14,7 +12,7 @@ these. They exist because each was a real bug once:
   documented exception (`tools/vision.py`, multimodal) is listed explicitly in the guard.
 - **The SSRF blocklist keeps the CGNAT range** (`backend/app/tools/_ssrf.py` `_is_blocked` references
   `_CGNAT`). Python's `ipaddress` stdlib doesn't flag `100.64.0.0/10`, but Alibaba's metadata IP
-  (`100.100.100.200`, our own deploy target) lives there.
+  (`100.100.100.200`, the deploy target) lives there.
 
 ## Security posture
 
@@ -33,14 +31,14 @@ these. They exist because each was a real bug once:
 
 `backend/schema/events.schema.json` is FROZEN. Extend it **additively only** — new event types or new
 **optional** payload fields, never rename/remove/re-type an existing one. Every emit validates against
-it at write time. Mirror any additive field into the frontend zod schema (`frontend/src/events/schema.ts`).
+it at write time. Mirror any additive field into the frontend Zod schema (`frontend/src/events/schema.ts`).
 
 ## Testing discipline
 
 - The offline suite must stay green: `cd backend && uv run pytest -q`. FakeQwen (no key) makes it
   hermetic; a live Qwen/Postgres key is never required for the default suite.
 - CI pins `--randomly-seed=0` (pytest-randomly) for a reproducible non-file order that surfaces
-  shared-state leaks. Two `test_outbox_relay.py` tests need a live Postgres and are expected to skip/fail
+  shared-state leaks. Two `test_outbox_relay.py` tests need a live Postgres and are expected to skip
   without one — that is environmental, not a regression.
 - A bug fix ships with a test that pins the exact regression. A new invariant ships with a test proving
   its guard FIRES on a violation, not just passes today.
@@ -55,5 +53,4 @@ on any FAIL.
 
 ## Commits
 
-Conventional-commit style (`feat(scope):`, `fix(scope):`). Write commits as if authored solo — **no bot
-attribution / Co-Authored-By footers.** Commit only files relevant to the logical change.
+Conventional-commit style (`feat(scope):`, `fix(scope):`). Commit only files relevant to the logical change.

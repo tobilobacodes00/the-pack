@@ -1,6 +1,6 @@
 name: backend
 
-# Owned by the backend team. Runs only when backend/ changes.
+# Runs only when backend/ changes.
 on:
   push:
     branches: [main, "setup/**", "feat/**", "fix/**"]
