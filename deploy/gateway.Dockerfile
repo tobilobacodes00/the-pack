@@ -7,9 +7,12 @@ COPY gateway/Cargo.toml gateway/Cargo.lock ./
 COPY gateway/src ./src
 RUN cargo build --release --locked
 
-FROM debian:stable-slim
+# Pinned to bookworm: Debian 13 (trixie) slim dropped `adduser` from the base image, which broke the
+# floating `stable-slim` tag. `adduser` is installed explicitly below regardless, so this is belt +
+# suspenders — the pin keeps the runtime stable, the package guarantees the command exists.
+FROM debian:bookworm-slim
 RUN apt-get update \
-    && apt-get install -y --no-install-recommends ca-certificates curl \
+    && apt-get install -y --no-install-recommends ca-certificates curl adduser \
     && rm -rf /var/lib/apt/lists/* \
     && adduser --system --no-create-home --group pack
 COPY --from=build /src/target/release/pack-gateway /usr/local/bin/pack-gateway
