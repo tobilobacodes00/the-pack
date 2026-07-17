@@ -16,7 +16,7 @@
   .rule{height:1.6px;background:var(--hair);margin:28px 0 0;}
 
   /* The canvas is an absolute-positioned coordinate space so nodes sit spatially, left→right. */
-  .canvas{position:relative;width:1616px;height:820px;margin:34px auto 0;}
+  .canvas{position:relative;width:1616px;height:900px;margin:34px auto 0;}
 
   .node{position:absolute;background:#fff;border:1.9px solid var(--ink);border-radius:18px;padding:20px 24px;}
   .node .t{font-size:22px;font-weight:700;letter-spacing:-.3px;line-height:1.14;}
@@ -57,84 +57,91 @@
   <div class="rule"></div>
 
   <div class="canvas">
-    <svg class="wires" width="1616" height="820" viewBox="0 0 1616 820">
+    <svg class="wires" width="1616" height="900" viewBox="0 0 1616 900">
       <defs>
         <marker id="ah" markerWidth="11" markerHeight="11" refX="8" refY="5" orient="auto"><path d="M1,1 L9,5 L1,9" fill="none" stroke="#15171c" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></marker>
         <marker id="ahg" markerWidth="11" markerHeight="11" refX="8" refY="5" orient="auto"><path d="M1,1 L9,5 L1,9" fill="none" stroke="#8b93a1" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></marker>
       </defs>
 
-      <!-- WRITE PATH (solid): browser → nginx → engine → postgres -->
-      <path d="M300,150 L470,150" fill="none" stroke="#15171c" stroke-width="2" marker-end="url(#ah)"/>
-      <path d="M760,150 L820,150 L820,240" fill="none" stroke="#15171c" stroke-width="2" marker-end="url(#ah)"/>
+      <!-- WRITE PATH (solid) -->
+      <!-- frontend → nginx -->
+      <path d="M310,150 L500,150" fill="none" stroke="#15171c" stroke-width="2" marker-end="url(#ah)"/>
+      <!-- nginx → engine -->
+      <path d="M645,230 L645,290" fill="none" stroke="#15171c" stroke-width="2" marker-end="url(#ah)"/>
       <!-- engine → qwen cloud (calls out) -->
-      <path d="M1120,300 L1300,300" fill="none" stroke="#15171c" stroke-width="2" marker-end="url(#ah)"/>
+      <path d="M1150,360 L1300,360" fill="none" stroke="#15171c" stroke-width="2" marker-end="url(#ah)"/>
       <!-- engine → postgres (one write) -->
-      <path d="M820,420 L820,520" fill="none" stroke="#15171c" stroke-width="2" marker-end="url(#ah)"/>
+      <path d="M645,470 L645,560" fill="none" stroke="#15171c" stroke-width="2" marker-end="url(#ah)"/>
+      <!-- postgres ↔ neon (physically lives on) -->
+      <path d="M1090,620 L1300,620" fill="none" stroke="#15171c" stroke-width="2" marker-end="url(#ah)"/>
 
-      <!-- READ PATH (dashed): postgres → redis(upstash) → gateway → browser -->
-      <path d="M1120,570 L1300,570" fill="none" stroke="#8b93a1" stroke-width="2" stroke-dasharray="8 6" marker-end="url(#ahg)"/>
-      <path d="M1400,620 L1400,690 L560,690" fill="none" stroke="#8b93a1" stroke-width="2" stroke-dasharray="8 6"/>
-      <path d="M560,690 L560,600" fill="none" stroke="#8b93a1" stroke-width="2" stroke-dasharray="8 6" marker-end="url(#ahg)"/>
-      <!-- gateway → browser (live events, the return) -->
-      <path d="M300,570 L200,570 L200,220" fill="none" stroke="#8b93a1" stroke-width="2" stroke-dasharray="8 6" marker-end="url(#ahg)"/>
+      <!-- READ PATH (dashed): postgres → redis(upstash) → gateway → frontend -->
+      <!-- postgres → redis (relay) -->
+      <path d="M560,620 L440,620" fill="none" stroke="#8b93a1" stroke-width="2" stroke-dasharray="8 6" marker-end="url(#ahg)"/>
+      <!-- redis → gateway (fan-out) -->
+      <path d="M230,700 L230,760" fill="none" stroke="#8b93a1" stroke-width="2" stroke-dasharray="8 6" marker-end="url(#ahg)"/>
+      <!-- gateway → frontend (live events, the return up the left) -->
+      <path d="M150,760 L60,760 L60,230" fill="none" stroke="#8b93a1" stroke-width="2" stroke-dasharray="8 6" marker-end="url(#ahg)"/>
     </svg>
 
-    <!-- flow labels -->
-    <div class="flab" style="left:340px;top:130px;">1 · command</div>
-    <div class="flab r" style="left:1160px;top:280px;">calls</div>
-    <div class="flab" style="left:836px;top:456px;">2 · one write</div>
-    <div class="flab r" style="left:1150px;top:550px;">3 · relay</div>
-    <div class="flab r" style="left:900px;top:668px;">4 · fan-out</div>
-    <div class="flab" style="left:150px;top:400px;transform:rotate(-90deg);transform-origin:left;">5 · live events · WSS</div>
+    <!-- flow labels — kept in the clear gaps between nodes so no connector or zone border clips them -->
+    <div class="flab" style="left:322px;top:118px;">1 · command</div>
+    <div class="flab" style="left:660px;top:250px;">REST</div>
+    <div class="flab r" style="left:1185px;top:328px;">calls</div>
+    <div class="flab" style="left:322px;top:508px;">2 · one write</div>
+    <div class="flab" style="left:1160px;top:588px;">stored on</div>
+    <div class="flab" style="left:462px;top:560px;">3 · relay</div>
+    <div class="flab" style="left:250px;top:730px;">4 · fan-out</div>
+    <div class="flab" style="left:8px;top:470px;transform:rotate(-90deg);transform-origin:left;">5 · live events · WSS</div>
 
     <!-- FRONTEND (left) -->
-    <div class="node" style="left:0;top:104px;width:300px;">
+    <div class="node" style="left:20px;top:104px;width:290px;">
       <div class="t">Frontend · React</div>
       <div class="s">The browser. The screen is a pure function of the event log — a reducer over the stream.</div>
       <div class="tags"><span class="tag">CQRS read model</span></div>
     </div>
 
-    <!-- ALIBABA CLOUD ECS zone -->
-    <div class="zone" style="left:440px;top:40px;width:700px;height:600px;">
+    <!-- ALIBABA CLOUD ECS zone (compute only) -->
+    <div class="zone" style="left:490px;top:60px;width:660px;height:600px;">
       <div class="zonetag">☁ Alibaba Cloud &nbsp;<span>· ECS — our compute</span></div>
     </div>
-    <div class="node soft" style="left:470px;top:110px;width:290px;">
+    <div class="node soft" style="left:520px;top:120px;width:270px;">
       <div class="t">nginx edge</div>
       <div class="s">TLS · auth · one origin for /api and /ws.</div>
     </div>
-    <div class="node" style="left:600px;top:250px;width:520px;">
+    <div class="node" style="left:520px;top:300px;width:600px;">
       <div class="t">Backend · Engine (FastAPI)</div>
       <div class="s">One brain. Runs the wolf pack, does the thinking, owns every write. Answers 202 at once — the real result arrives on the stream.</div>
       <div class="tags"><span class="tag">wolf pack</span><span class="tag">spend gate</span><span class="tag">emitter</span></div>
     </div>
-    <div class="node fill" style="left:600px;top:520px;width:520px;">
+    <div class="node fill" style="left:520px;top:560px;width:590px;">
       <div class="t">Database · PostgreSQL</div>
       <div class="s">The append-only event log — the single source of truth. Composite key (hunt_id, seq): no gaps, no dupes.</div>
     </div>
 
-    <!-- QWEN CLOUD (right, brain) -->
-    <div class="node fill" style="left:1300px;top:230px;width:300px;">
+    <!-- QWEN CLOUD (right, the brain) -->
+    <div class="node fill" style="left:1300px;top:290px;width:300px;">
       <div class="t">Qwen Cloud</div>
       <div class="s">Qwen max / plus / flash — the LLM, vision & voice models the pack reasons with (DashScope).</div>
       <span class="badge">AI models · Alibaba</span>
     </div>
 
-    <!-- NEON (right, managed postgres) -->
-    <div class="node dash" style="left:1300px;top:500px;width:300px;">
+    <!-- NEON (right, where Postgres physically lives) -->
+    <div class="node dash" style="left:1300px;top:560px;width:300px;">
       <div class="t">Neon</div>
       <div class="s">Serverless Postgres (neon.tech) — where the event log physically lives. TLS-only.</div>
       <span class="host">managed data</span>
     </div>
 
-    <!-- UPSTASH / redis (read path copy) -->
-    <div class="node dash" style="left:440px;top:520px;width:260px;">
+    <!-- REDIS / UPSTASH (read-path copy, left of the zone) -->
+    <div class="node dash" style="left:170px;top:560px;width:270px;">
       <div class="t">Redis Streams</div>
-      <div class="s">A fast copy of the log, one stream per hunt.</div>
+      <div class="s">A fast copy of the log, one stream per hunt, built for reading.</div>
       <span class="host">Upstash · managed</span>
     </div>
 
-    <!-- RUST GATEWAY (read path fan-out, below/left) -->
-    <div class="node soft" style="left:60px;top:520px;width:240px;">
+    <!-- RUST GATEWAY (read-path fan-out, bottom-left) -->
+    <div class="node soft" style="left:150px;top:760px;width:280px;">
       <div class="t">Rust gateway</div>
       <div class="s">Read-only WebSocket fan-out. Tails the stream, pushes to every watcher.</div>
     </div>
