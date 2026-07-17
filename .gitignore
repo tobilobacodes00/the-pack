@@ -22,3 +22,7 @@ Thumbs.db
 
 # --- Logs ---
 *.log
+
+# --- Diagram render scratch (intermediate screenshots/crops; only the final PNGs are kept) ---
+docs/diagram-src/raw_*.png
+docs/diagram-src/preview_*.png
