@@ -8,6 +8,9 @@ describe('RewardEmpty', () => {
     expect(screen.getByText(/Fetching the Reward/i)).toBeTruthy()
     rerender(<RewardEmpty kind="missing" />)
     expect(screen.getByText(/No brief yet/i)).toBeTruthy()
+    // A terminal hunt with no brief must read honestly, not "still bringing this hunt home".
+    rerender(<RewardEmpty kind="ended" />)
+    expect(screen.getByText(/ended before it produced a brief/i)).toBeTruthy()
   })
 
   it('prefers an explicit message', () => {

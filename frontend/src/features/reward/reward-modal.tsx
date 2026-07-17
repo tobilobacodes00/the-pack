@@ -77,6 +77,10 @@ export function RewardModal({ huntId, open, onClose }: Props) {
 
   const projects = useProjects(open && !!snap.data?.project_id)
   const prompt = snap.data?.task ?? ''
+  // A hunt that died (or was stopped) never produced a brief. Distinguish that terminal case from a
+  // hunt still in flight, so the empty state reads honestly ("ended") instead of the optimistic
+  // "still bringing this hunt home" — the #1 thing that made a reaped hunt look broken.
+  const huntEnded = snap.data?.state === 'failed' || snap.data?.state === 'stopped_by_user'
   const dateISO = snap.data?.updated_at ?? snap.data?.created_at ?? null
   const projectName =
     projects.data?.find((p) => p.project_id === snap.data?.project_id)?.label ?? null
@@ -218,7 +222,7 @@ export function RewardModal({ huntId, open, onClose }: Props) {
       ) : brief.isLoading ? (
         <RewardEmpty kind="loading" />
       ) : brief.isError || !brief.data?.content ? (
-        <RewardEmpty kind="missing" />
+        <RewardEmpty kind={huntEnded ? 'ended' : 'missing'} />
       ) : (
         <>
           {showFirstInstinct && (

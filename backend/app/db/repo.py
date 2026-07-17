@@ -328,14 +328,33 @@ class Repo:
 
     async def list_unfinished_hunts(self) -> list[dict[str, Any]]:
         """Hunts in a non-terminal state — used on startup to reconcile any orphaned by a prior stop
-        (their in-memory Supervisor is gone)."""
+        (their in-memory Supervisor is gone). `last_event_age_s` is how long ago this hunt's most
+        recent event was written; the recovery pass uses it as a grace window so a hunt that was
+        still flushing events when a (graceful, fast) reload bounced isn't declared dead a heartbeat
+        too early — a genuinely crashed hunt is stale by seconds, so it's reaped as before."""
+        # NOTE: events.ts is stored as ISO-8601 TEXT while hunts.created_at is timestamptz — cast the
+        # event timestamp before MAX/COALESCE or Postgres raises a datatype mismatch (and the recovery
+        # pass, wrapped in try/except, would silently stop reaping). Verified against the live DB.
         rows = await self._pool.fetch(
             """
-            SELECT hunt_id, state FROM hunts
-            WHERE state NOT IN ('returned', 'failed', 'stopped_by_user')
+            SELECT h.hunt_id,
+                   h.state,
+                   EXTRACT(EPOCH FROM (now() - COALESCE(MAX(e.ts::timestamptz), h.created_at)))::float
+                     AS last_event_age_s
+            FROM hunts h
+            LEFT JOIN events e ON e.hunt_id = h.hunt_id
+            WHERE h.state NOT IN ('returned', 'failed', 'stopped_by_user')
+            GROUP BY h.hunt_id, h.state, h.created_at
             """
         )
-        return [{"hunt_id": r["hunt_id"], "state": r["state"]} for r in rows]
+        return [
+            {
+                "hunt_id": r["hunt_id"],
+                "state": r["state"],
+                "last_event_age_s": float(r["last_event_age_s"] or 0.0),
+            }
+            for r in rows
+        ]
 
     async def append_event(self, event: Event) -> None:
         """Insert the event and notify the relay, atomically.
