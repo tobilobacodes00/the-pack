@@ -66,7 +66,8 @@ export function AgentNode({ data }: NodeProps<AgentNodeType>) {
         alignItems: 'center',
         cursor: clickable ? 'pointer' : 'default',
       }}
-      onClick={clickable ? () => data.onSelect!(data.wolfId!) : undefined}
+      // The click is handled by ReactFlow's onNodeClick (graph-canvas) — a per-node onClick here
+      // would double-fire and toggle the selection straight back off.
       title={label ? label.label : data.role}
     >
       <div style={{ width: SIZE, height: SIZE, position: 'relative' }}>
