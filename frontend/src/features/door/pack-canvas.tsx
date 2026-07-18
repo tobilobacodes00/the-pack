@@ -18,14 +18,12 @@ export interface PackDrive {
 }
 
 /**
- * PackCanvas — the whole pack, ALIVE, in ONE WebGL context.
+ * PackCanvas — the whole pack, alive, in one WebGL context.
  *
- * Every member is the same logo-exact wolf head (shared mesh/shaders from wolf-mesh), drawn as a
- * separate instance in a single canvas: one GL context, one render loop, N draw calls with
- * per-instance uniforms (position, scale, pose, blink, opacity). That's how we get "every wolf
- * alive and reactive" without paying for N contexts + N loops — the exact trap the perf pass
- * closed. Scroll (progressRef, 0..1) fans them from one head into the triangle, back to one, then
- * slides that one aside. The loop parks itself whenever the scene scrolls out of view.
+ * Every member is the same wolf head (shared mesh/shaders from wolf-mesh), drawn as a separate
+ * instance: one GL context, one render loop, N draw calls with per-instance uniforms — avoids the
+ * N-contexts/N-loops perf trap. Scroll (progressRef, 0..1) fans them from one head into the
+ * triangle, back to one, then slides that one aside. Loop parks itself when scrolled out of view.
  */
 export function PackCanvas({
   driveRef,
@@ -91,8 +89,7 @@ export function PackCanvas({
       pulse: u('uPulse'), blink: u('uBlink'), earL: u('uEarL'), earR: u('uEarR'),
       jaw: u('uJaw'), glow: u('uGlow'), alpha: u('uAlpha'),
     }
-    // The wolf's palette is scroll-driven: glow-on-black on the dark hero, forest-ink-on-cream once
-    // the world warms up. Two triples, lerped per-frame by drive.warm and pushed as uniforms.
+    // Palette is scroll-driven: glow-on-black hero → forest-ink-on-cream, lerped per-frame by drive.warm.
     const uFill = u('uFill')
     const uEdge = u('uEdge')
     const uEye = u('uEye')
@@ -108,10 +105,8 @@ export function PackCanvas({
     const pulse = (x: number) => (x <= 0 || x >= 1 ? 0 : Math.sin(Math.PI * x))
     const rand = (a: number, b: number) => a + Math.random() * (b - a)
 
-    // Click TRICKS — clicking a wolf makes it DO something (the pack is alive, not décor). Each trick
-    // is a short choreography over the pose uniforms the shader already drives (yaw/pitch/roll/jaw/
-    // blink/glow/scale/offset); `dur` is its length in seconds. Picked at random per click, avoiding an
-    // immediate repeat so the same move rarely fires twice in a row.
+    // Clicking a wolf plays a short choreography over the shader's pose uniforms; `dur` is length in
+    // seconds. Picked at random per click, avoiding an immediate repeat.
     const TRICKS = ['wag', 'nod', 'howl', 'wink', 'perk', 'spark'] as const
     type Trick = (typeof TRICKS)[number]
     const TRICK_DUR: Record<Trick, number> = {
@@ -135,8 +130,7 @@ export function PackCanvas({
       earLStart: -10,
       nextEarR: rand(3, 8),
       earRStart: -10,
-      // Live screen position (clip space) + radius, refreshed each frame so the click hit-test knows
-      // where this wolf actually is; and the active trick + when it started (-10 = none).
+      // Live clip-space position + radius, refreshed each frame for the click hit-test.
       hitX: 0, hitY: 0, hitR: 0, drawn: false,
       trick: 'wag' as Trick, trickStart: -10, lastTrick: undefined as Trick | undefined,
     }))
@@ -148,10 +142,8 @@ export function PackCanvas({
     }
     window.addEventListener('pointermove', onMove, { passive: true })
 
-    // Click a wolf → it does a random trick. Hit-test in clip space against each wolf's live position
-    // (aspect-corrected on x, since clip space is square but the canvas isn't), nearest-first, and only
-    // if the click actually lands on a drawn wolf — clicks on empty canvas do nothing (and never block
-    // the page's own scroll/links). We read positions the frame loop stamps onto each anim.
+    // Hit-test in clip space against each wolf's live position (aspect-corrected on x since clip
+    // space is square but the canvas isn't), nearest-first; empty-canvas clicks do nothing.
     const onPointerDown = (e: PointerEvent) => {
       const rect = canvas.getBoundingClientRect()
       if (e.clientX < rect.left || e.clientX > rect.right || e.clientY < rect.top || e.clientY > rect.bottom) {
@@ -207,9 +199,7 @@ export function PackCanvas({
       last = performance.now()
       raf = requestAnimationFrame(frame)
     }
-    // The wolf must run across the whole journey — the hero (a viewport ABOVE the spacer) through
-    // the closing section (below it) — so watch the spacer with a wide margin; it only parks when
-    // we're well past the section (deep in the footer / after the hunt starts).
+    // Wide margin so it only parks well past the section (deep in the footer / after hunt starts).
     const observed = observeRef?.current ?? container
     const io =
       typeof IntersectionObserver !== 'undefined'
@@ -240,17 +230,14 @@ export function PackCanvas({
       const presence = clamp01(drive.presence)
       const { alphaX, alphaY, alphaScaleMul } = drive
       if (presence < 0.015) {
-        // Faded out (e.g. rested into the static logo): clear so nothing lingers on the canvas.
         gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT)
         return
       }
 
-      // Smooth the cursor a touch.
       const k = 1 - Math.exp(-dt * 6)
       mouse.sx += (mouse.cx - mouse.sx) * k
       mouse.sy += (mouse.cy - mouse.sy) * k
 
-      // Recolour once per frame: glow-on-black → forest-ink-on-cream as the journey warms.
       const warm = clamp01(drive.warm)
       const fc = mix3(DARK.fill, WARM.fill, warm)
       const ec = mix3(DARK.edge, WARM.edge, warm)
@@ -263,16 +250,13 @@ export function PackCanvas({
 
       for (const a of anim) {
         a.drawn = false // stale until proven drawn this frame (so a culled wolf isn't clickable)
-        // Alpha is the lone wolf (full presence). The rest emerge from centre as the pack fans out.
+        // Alpha is the lone wolf (full presence); the rest emerge from centre as the pack fans out.
         const alpha = a.isAlpha ? presence : presence * spread
         if (alpha < 0.02) continue
         const slot = a.slot
-        // Alpha carries a lone-wolf offset (left for the value phase, down for the resting logo);
-        // all wolves ride out from centre to their triangle slot by `spread`.
         const ox = (a.isAlpha ? alphaX : 0) + slot.sx * spread
         const oy = (a.isAlpha ? alphaY : 0) + slot.sy * spread
-        // Alpha starts hero-sized (× the lone-wolf multiplier) and shrinks to its apex size in the
-        // triangle; the rest grow in from nothing.
+        // Alpha starts hero-sized and shrinks to apex size; the rest grow in from nothing.
         const sc = a.isAlpha
           ? lerp(HERO_SCALE * alphaScaleMul, slot.scale * BASE_SCALE, spread)
           : slot.scale * BASE_SCALE * spread
@@ -284,8 +268,8 @@ export function PackCanvas({
         const earL = pulse((s - a.earLStart) / 0.32)
         const earR = pulse((s - a.earRStart) / 0.32)
 
-        // Each wolf turns toward the cursor (relative to its own spot) + a slow idle sway. Alpha
-        // follows even as the lone hero wolf (spread 0); the rest only once they've fanned out.
+        // Each wolf turns toward the cursor + a slow idle sway. Alpha follows even as the lone
+        // hero wolf (spread 0); the rest only once fanned out.
         const follow = a.isAlpha ? 1 : spread
         let yaw = (mouse.sx - ox) * 0.34 * follow + Math.sin(s * 0.5 + a.phase) * 0.06
         let pitch = -mouse.sy * 0.16 * follow + Math.sin(s * 0.4 + a.phase) * 0.04
@@ -298,8 +282,7 @@ export function PackCanvas({
         let tEarR = earR
         let hop = 0
 
-        // Active click trick: layer a short choreography over the base pose. `t` is 0→1 across the
-        // trick's duration; `e` is a soft ease-out envelope so it starts snappy and settles.
+        // `t` is 0→1 across the trick's duration; `e` is a soft ease envelope.
         const dur = TRICK_DUR[a.trick]
         const t = (s - a.trickStart) / dur
         if (t >= 0 && t < 1) {
@@ -334,8 +317,7 @@ export function PackCanvas({
           }
         }
 
-        // Stamp this wolf's live position + a click radius (a touch bigger than the coin) for the
-        // hit-test, and mark it as drawn this frame.
+        // Stamp live position + click radius for the hit-test.
         a.hitX = ox
         a.hitY = oy + hop
         a.hitR = sc * 1.15

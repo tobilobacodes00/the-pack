@@ -1,7 +1,6 @@
-// Mirrors backend/app/engine/supervisor.py formation logic EXACTLY so the editor is WYSIWYG:
-// what the user builds here is precisely what the backend spawns. Any drift here silently
-// breaks note-keying (notes are keyed by the deterministic wolf_id) — keep these in lockstep
-// with `_wolf_ids` (:82-89) and `_build_team` (:92-118).
+// Mirrors backend/app/engine/supervisor.py EXACTLY so the editor is WYSIWYG. Drift here silently
+// breaks note-keying (keyed by the deterministic wolf_id) — keep in lockstep with
+// `_wolf_ids` (:82-89) and `_build_team` (:92-118).
 
 import { DEFAULT_IDLE_TEAM } from '../roles'
 
@@ -9,8 +8,7 @@ export type TeamEntry = { role: string; count: number }
 
 export const LEAD_ROLES = ['alpha', 'beta'] as const
 export const SUPPORT_ROLES = ['tracker', 'sentinel', 'howler', 'elder'] as const
-// The Warden (field-medic) is a FIXED ×1 standing member — always present, on the canvas from the
-// start, but locked (not user-editable), like the leads. Mirrors backend roster.FIXED_ROLES.
+// Warden is a fixed ×1 standing member, locked like the leads. Mirrors backend roster.FIXED_ROLES.
 export const FIXED_ROLES = ['warden'] as const
 // Canonical build order — supervisor `build_team` iterates exactly this (leads, scout, support, fixed).
 export const CORE_ORDER = ['alpha', 'beta', 'scout', 'tracker', 'sentinel', 'howler', 'elder', 'warden'] as const
@@ -21,8 +19,8 @@ export const MAX_SCOUTS = 5
 export const MIN_SUPPORT = 1
 export const MAX_SUPPORT = 3
 
-// Roles the user may add / increase. The Warden is a FIXED standing member (locked ×1, not editable);
-// the retired doctor and hunter aren't real roles. Leads are locked at 1, so they aren't addable either.
+// Roles the user may add/increase. Warden is fixed (locked ×1); doctor/hunter aren't real roles;
+// leads are locked at 1.
 export const SPAWNABLE_ROLES = ['scout', 'tracker', 'sentinel', 'howler', 'elder'] as const
 
 function clamp(n: number, lo: number, hi: number): number {
@@ -43,10 +41,8 @@ export function wolfIds(role: string, count: number): string[] {
     const n = Math.max(1, count)
     return Array.from({ length: n }, (_, i) => `scout-${i + 1}`)
   }
-  // Every non-scout role keeps its BARE name for the primary and suffixes only the extras —
-  // "tracker", "tracker-2", "tracker-3". Must mirror the backend's roster.wolf_ids exactly: the
-  // engine addresses the primary by its bare id, so a "tracker-1" primary (from a second tracker)
-  // would KeyError and fail the hunt. Keep this in lockstep with backend/app/engine/roster.py.
+  // Non-scout primary keeps its bare id ("tracker", not "tracker-1") — the engine addresses the
+  // primary by bare id, so a "tracker-1" primary would KeyError. Mirror backend/app/engine/roster.py.
   const n = Math.max(1, count)
   return [role, ...Array.from({ length: n - 1 }, (_, i) => `${role}-${i + 2}`)]
 }
@@ -85,10 +81,9 @@ export function seedCounts(plan: { team?: TeamEntry[] | null; wolves?: string[] 
   return counts
 }
 
-/** The canonical role list to DISPLAY for a plan — the single source of truth for the roster + canvas.
- *  `plan.wolves` is a list of wolf-ids (scouts suffixed, support bare, NO leads), which breaks every
- *  role-keyed lookup; `plan.team` carries the real roles + counts + leads. Prefer team; fall back to
- *  normalizing wolves (strip the -N and re-force the canonical structure); else the idle pack. */
+/** The canonical role list to display for a plan. `plan.wolves` is wolf-ids (no leads), which breaks
+ *  role-keyed lookups; `plan.team` carries real roles + counts + leads. Prefer team, fall back to
+ *  normalizing wolves, else the idle pack. */
 export function planRoleList(
   plan: { team?: TeamEntry[] | null; wolves?: string[] | null } | null,
 ): string[] {

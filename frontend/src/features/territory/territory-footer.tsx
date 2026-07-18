@@ -14,17 +14,13 @@ type ApproveFn = ReturnType<typeof useApprovePlan>['mutate']
 const RUNNING = new Set(['running', 'hold', 'standoff', 'halted_boundary'])
 const DONE = new Set(['completed', 'failed', 'stopped'])
 
-/** The free-text composer is the input before a hunt exists (idle intake) AND once a hunt is terminal
- *  (completed/failed/stopped) — where the design shows "Ask Alpha anything about this plan…". While a
- *  hunt is mid-flight the footer renders exactly one step control instead, so the box is replaced by
- *  the moment's card and shows only that until the step resolves. */
+/** Composer shows before a hunt exists and once terminal; mid-flight the footer renders exactly
+ *  one step control instead, replacing the box until that step resolves. */
 export function composerVisible(status: string): boolean {
   return status === 'idle' || status === 'completed' || status === 'failed' || status === 'stopped'
 }
 
-/** Terminal-state composer placeholder — a completed hunt invites questions about the findings
- *  (Alpha answers grounded in the delivered brief), a dead one invites a retry. One source of
- *  truth for the live door AND the standalone territory. */
+/** Terminal-state composer placeholder — shared by the live door and standalone territory. */
 export function composerPlaceholder(status: string): string | undefined {
   if (status === 'completed') return 'Ask Alpha anything about what the pack found…'
   if (status === 'failed' || status === 'stopped') return 'Ask Alpha what happened, or line up the next hunt…'
@@ -88,11 +84,8 @@ interface Props {
   retrying?: boolean
 }
 
-/**
- * The status-driven bottom of the chat: the live spend·time line while a hunt runs/finishes, plus the
- * card for the moment — Hunt Summary (plan_ready), Hold (awaiting a call), Completion (result), or a
- * failed/stopped message. Shared by the live door and the standalone territory so both stay in sync.
- */
+/** The status-driven bottom of the chat: spend·time line plus the card for the moment
+ *  (plan/hold/completion/failure). Shared by the live door and standalone territory. */
 export function TerritoryFooter({ huntId, huntState, onApprove, approving, onEditFormation, onOpenReward, onRetry, retrying }: Props) {
   const s = huntState.status
   const showSpend = huntId && (RUNNING.has(s) || DONE.has(s))

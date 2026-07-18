@@ -12,10 +12,9 @@ export interface PackSlot {
   z: number
 }
 
-// Apex-first. Alpha front & largest (bottom); the open top row (Scout/Tracker/Sentinel/Howler)
-// is the widest — a downward-pointing triangle with no base.
-// Columns are INTERLEAVED between rows (mid wolves sit in the gaps of the top row) so no
-// caption ever falls straight onto the head below it.
+// Apex-first: Alpha front & largest, the open top row (Scout/Tracker/Sentinel/Howler) widest —
+// a downward-pointing triangle with no base. Columns interleave between rows so no caption
+// ever falls straight onto the head below it.
 export const PACK_SLOTS: PackSlot[] = [
   { role: 'alpha', sx: 0.0, sy: -0.42, scale: 1.0, z: 7 },
   { role: 'beta', sx: -0.4, sy: -0.02, scale: 0.8, z: 6 },

@@ -1,4 +1,4 @@
-"""Strategy contract — the shape every research strategy plugs into (Doc 04 §04).
+"""Strategy contract — the shape every research strategy plugs into.
 
 A strategy owns the EXECUTION phase of a hunt: after the user approves Beta's plan and the
 pack is spawned, the Supervisor hands control to the chosen strategy's `execute(engine)`. The
@@ -83,9 +83,8 @@ class Merged:
 
     summary: str
     claims: list[str] = field(default_factory=list)
-    # Parallel to `claims` (same index) — the numbered source(s) backing each claim, from the same
-    # registry `numbered_sources(sources)` mints. A claim with no backing source is `[]`. Kept
-    # parallel rather than folding {text, source_ids} into `claims` itself so every existing string
+    # Parallel to `claims` (same index) — the numbered source(s) backing each claim. A claim with no
+    # backing source is `[]`. Kept parallel (not folded into `claims`) so every existing string
     # consumer (refine.py, benchmark.py, stored artifacts) keeps working unchanged.
     claims_src: list[list[int]] = field(default_factory=list)
     conflict: Conflict | None = None
@@ -119,20 +118,18 @@ class StandoffOutcome:
 
 PLAN_SCHEMA: dict = {
     "type": "object",
-    # est_cost/est_time are NOT asked of Beta — it can't ground token pricing or search latency, and
-    # its guess used to override the correct per-depth default. The engine derives them in
-    # _normalize_plan and keeps them on the emitted payload. Beta spends its budget on angles + depth.
+    # est_cost/est_time are NOT asked of Beta — it can't ground token pricing or search latency. The
+    # engine derives them in _normalize_plan; Beta spends its budget on angles + depth.
     "required": ["summary", "queries", "assumptions", "depth"],
     "properties": {
         "summary": {"type": "string"},
         # one search angle per scout — this is what makes the hunt topic-aware.
         "queries": {"type": "array", "items": {"type": "string"}},
         "assumptions": {"type": "array", "items": {"type": "string"}},
-        # v3: how deep the brief should go — Beta sizes depth to the task like it sizes the scouts.
         # Required so a real model commits to a judgment; _clamp_depth still defaults a missing/
         # invalid value to "standard". Scales the merge/draft targets and can upgrade the strategy.
         "depth": {"type": "string", "enum": ["brief", "standard", "deep"]},
-        # v2: the team Alpha should build — Beta sizes the pack to the task (mainly the scout count).
+        # the team Alpha should build — Beta sizes the pack to the task (mainly the scout count).
         "team": {
             "type": "array",
             "items": {
@@ -157,10 +154,9 @@ MERGE_SCHEMA: dict = {
     "required": ["summary", "claims"],
     "properties": {
         "summary": {"type": "string"},
-        # Each claim names the NUMBER(s) of the source(s) (from the numbered Sources list) that back
-        # it, so the citation survives into the draft instead of being re-guessed by Howler. A plain
-        # string claim (legacy / a model that ignores the shape) is still accepted — merge() coerces
-        # either shape; this schema is documentary (the client never validates against it at runtime).
+        # Each claim names the NUMBER(s) of the source(s) that back it, so the citation survives into
+        # the draft instead of being re-guessed by Howler. A plain string claim is still accepted —
+        # merge() coerces either shape; this schema is documentary (never validated at runtime).
         "claims": {
             "type": "array",
             "items": {
@@ -224,7 +220,7 @@ CONFLICT_DECIDE_SCHEMA: dict = {
     },
 }
 
-# v2: Howler writes the brief as TAGGED BLOCKS so every line carries its sources (the gate for
+# Howler writes the brief as TAGGED BLOCKS so every line carries its sources (the gate for
 # click-any-line → source). `source_ids` index the numbered source list given in the draft context.
 DRAFT_SCHEMA: dict = {
     "type": "object",
@@ -245,9 +241,8 @@ DRAFT_SCHEMA: dict = {
     },
 }
 
-# v2 (deepened): the Elder's end-of-hunt distillation — ONE typed, durable lesson for next time.
-# `kind` types the lesson so recall can surface it as guidance (a preference vs. a topic insight),
-# not a flat log line; `lesson` is one specific, reusable sentence.
+# The Elder's end-of-hunt distillation — ONE typed, durable lesson for next time. `kind` types the
+# lesson so recall can surface it as guidance, not a flat log line; `lesson` is one reusable sentence.
 DISTILL_SCHEMA: dict = {
     "type": "object",
     "required": ["kind", "lesson"],

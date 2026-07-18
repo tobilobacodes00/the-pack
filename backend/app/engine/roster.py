@@ -7,30 +7,30 @@ each role's tier/thinking/budget filled from ROLE_SPEC, and flattens a team into
 
 from __future__ import annotations
 
-# v2: Alpha builds the team per task. Each role's tier/thinking/default per-wolf budget cap is fixed
-# here (parsing prose from the prompt frontmatter is unreliable); Beta proposes only the SHAPE — how
-# many scouts, mainly. Alpha + Beta lead every hunt; the support roles always join; scouts vary.
+# Alpha builds the team per task. Each role's tier/thinking/default per-wolf budget cap is fixed here
+# (parsing prose from the prompt frontmatter is unreliable); Beta proposes only the SHAPE — how many
+# scouts, mainly. Alpha + Beta lead every hunt; the support roles always join; scouts vary.
 ROLE_SPEC: dict[str, tuple[str, bool, float]] = {
     # role:    (model_tier, thinking, default per-wolf budget cap USD)
     "alpha": ("max", True, 0.15),
     "beta": ("plus", True, 0.10),
     "scout": ("flash", False, 0.10),
-    "tracker": ("plus", True, 0.30),  # v3: deep_dive merges twice + find_gaps = 3 plus calls
+    "tracker": ("plus", True, 0.30),  # deep_dive merges twice + find_gaps = 3 plus calls
     "sentinel": ("max", True, 0.20),
     "howler": (
         "plus",
         False,
         0.40,
-    ),  # v3: headroom for a comprehensive deep draft (single dispatch)
-    "elder": ("flash", False, 0.05),  # v2 memory agent — wired in Phase 2.6
-    "doctor": ("flash", False, 0.05),  # v2 field medic — retired, superseded by the Warden
-    "warden": ("flash", False, 0.05),  # v3 roaming healer — spawned on-demand to heal faults
+    ),  # headroom for a comprehensive deep draft (single dispatch)
+    "elder": ("flash", False, 0.05),  # memory agent
+    "doctor": ("flash", False, 0.05),  # retired, superseded by the Warden
+    "warden": ("flash", False, 0.05),  # roaming healer — spawned on-demand to heal faults
 }
 
-# v3: the scout tier scales with the brief's depth — a deep hunt does real fact-extraction with
-# reasoning (plus + thinking), not snippet-skimming on flash. brief/standard are absent on purpose so
-# they fall through to ROLE_SPEC["scout"] at CALL time (a test monkeypatch of that entry still governs
-# them). Resolved at spawn (post-approve), never baked into the team (which stays depth-agnostic).
+# The scout tier scales with the brief's depth — a deep hunt does real fact-extraction with reasoning
+# (plus + thinking), not snippet-skimming on flash. brief/standard fall through to ROLE_SPEC["scout"]
+# at CALL time (a test monkeypatch of that entry still governs them). Resolved at spawn (post-approve),
+# never baked into the team (which stays depth-agnostic).
 SCOUT_DEPTH_SPEC: dict[str, tuple[str, bool, float]] = {"deep": ("plus", True, 0.15)}
 
 
@@ -46,10 +46,10 @@ def scout_spec(depth: str) -> tuple[str, bool, float]:
     return (tier, thinking, max(budget, base[2]))
 
 
-# Canvas order: leads → the variable scouts → support (incl. the v2 Elder, the memory agent).
+# Canvas order: leads → the variable scouts → support (incl. the Elder, the memory agent).
 LEAD_ROLES = ["alpha", "beta"]
 SUPPORT_ROLES = ["tracker", "sentinel", "howler", "elder"]
-# v3: the Warden (field-medic) is a STANDING member of every pack — always ×1, on the canvas from the
+# The Warden (field-medic) is a STANDING member of every pack — always ×1, on the canvas from the
 # start, idle until an agent faults (then it roams to heal). It is FIXED (like the leads): the user
 # can't remove or clone it in the editor, but the engine still auto-clones it for simultaneous faults.
 FIXED_ROLES = ["warden"]

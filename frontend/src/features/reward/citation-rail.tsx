@@ -4,9 +4,8 @@ interface Props {
 }
 
 /**
- * The right-margin citation numbers for one block — sits in the reading gutter, aligned to the top
- * of its paragraph. Muted until hover; click opens that block's provenance. An empty (but reserved)
- * cell keeps the text column aligned for paragraphs with no citations.
+ * Right-margin citation numbers for one block. An empty (but reserved) cell keeps the text column
+ * aligned for paragraphs with no citations.
  */
 export function CitationRail({ ids, onClick }: Props) {
   if (!ids.length) return <div className="w-6 shrink-0" aria-hidden />

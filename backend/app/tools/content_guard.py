@@ -1,4 +1,4 @@
-"""Content-injection screening for scraped third-party web text (Doc 04 — security).
+"""Content-injection screening for scraped third-party web text.
 
 Every page a scout deep-reads flows, verbatim, into a wolf's prompt. Pack's wolves are SINGLE-TURN:
 there's no back-and-forth in which a wolf could "notice" a poisoned instruction and refuse — whatever
@@ -16,9 +16,8 @@ scraped text is produced (search_provider._read_chain):
      template can signal to the model that everything inside is DATA to analyze, never instructions to
      follow — defense in depth for the injections the patterns miss.
 
-Deliberately conservative and reversible: it masks a matched span with a visible marker rather than
-deleting content, so a benign page that happens to quote an injection example is degraded (the quote
-is masked) but not lost. Real research content is untouched.
+Deliberately conservative and reversible: masks a matched span with a visible marker rather than
+deleting content, so a benign page quoting an injection example is degraded but not lost.
 """
 
 from __future__ import annotations
@@ -96,13 +95,11 @@ _CGNAT = ipaddress.ip_network(
 
 
 def is_fetchable_url(url: str) -> bool:
-    """Fail-CLOSED pre-fetch policy gate: return True only for a URL safe to hand to a reader. This is
-    the ONE screen applied at the top of the reader chain, BEFORE any reader (incl. the paid ones that
-    fetch server-side) touches the URL — previously only DirectReader's own SSRF pin guarded fetches,
-    so a URL that never reached DirectReader was unscreened. Deliberately conservative: anything it
-    can't confidently clear (bad parse, non-http(s), internal host, private/metadata IP literal) is
-    DENIED. It does NOT resolve DNS — that async, network-dependent, rebinding-safe check stays in
-    _ssrf.assert_public_url for the direct pinned fetch; this is the cheap synchronous first gate."""
+    """Fail-CLOSED pre-fetch policy gate: True only for a URL safe to hand to a reader. The ONE screen
+    applied at the top of the reader chain, BEFORE any reader (incl. paid ones that fetch server-side)
+    touches the URL. Deliberately conservative: anything it can't confidently clear (bad parse,
+    non-http(s), internal host, private/metadata IP literal) is DENIED. Does NOT resolve DNS — that
+    check stays in _ssrf.assert_public_url; this is the cheap synchronous first gate."""
     try:
         parts = urlsplit(url)
     except ValueError:

@@ -29,7 +29,6 @@ export function TracksDrawer({ open, onClose, events, loading, totals, huntId }:
           animate={{ x: 0, opacity: 1 }}
           exit={{ x: 340, opacity: 0 }}
           transition={{ duration: 0.25, ease: EASE }}
-          // Mobile: an absolute full-width overlay over the brief. Desktop: an in-flow side column.
           className="absolute inset-0 z-10 flex h-full w-full flex-col border-l border-border bg-cream-50 sm:static sm:z-auto sm:w-[340px] sm:shrink-0"
         >
           <div className="flex h-[52px] shrink-0 items-center justify-between border-b border-border px-4">

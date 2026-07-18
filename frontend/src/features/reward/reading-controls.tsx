@@ -44,10 +44,8 @@ function RailButton({
 }
 
 /**
- * The reading-view control rail — pinned to the RIGHT of the reward modal (design). Zoom the brief
- * text in/out and nudge the reading column up/down a small step at a time on each click. Reading is
- * HTML prose (not paginated), so "zoom" scales the article font and the arrows step-scroll the
- * column — genuinely functional, no faked pages.
+ * Reading-view control rail, pinned bottom-right. Reading is HTML prose (not paginated), so "zoom"
+ * scales the article font and the arrows step-scroll the column.
  */
 export function ReadingControls({ zoom, onZoomIn, onZoomOut, onStepUp, onStepDown, minZoom, maxZoom }: Props) {
   return (

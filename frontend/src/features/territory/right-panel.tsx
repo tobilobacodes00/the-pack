@@ -37,9 +37,6 @@ export function RightPanel({ huntId, huntState, messages, onApprove, onEditForma
 
   const qc = useQueryClient()
   const navigate = useNavigate()
-  // React to what the chat's Alpha DID beyond replying: a refine re-worked the brief (refresh the
-  // reward's reading view + format tabs), a follow-up hunt was launched (surface it so the Packmaster
-  // can jump to the new hunt as it runs).
   const onAskAction = useCallback(
     (action: AskAction, newHuntId: string | null) => {
       if (action === 'refined') {
@@ -47,10 +44,8 @@ export function RightPanel({ huntId, huntState, messages, onApprove, onEditForma
         void qc.invalidateQueries({ queryKey: ['hunts', huntId, 'artifacts'] })
         toast({ title: 'Brief updated', description: 'Alpha re-worked the brief above.', variant: 'default' })
       } else if ((action === 'subhunt' || action === 'new_hunt') && newHuntId) {
-        // A follow-up is a NEW hunt that lands in plan_ready awaiting approval — navigate there (like
-        // retry below) so the Packmaster approves the plan and watches it run, instead of leaving it to
-        // starve at the approval gate and get reaped as failed on the next engine restart.
-        // Claim it for this browser (created outside useCreateHunt) so it stays in local history.
+        // Navigate to the new hunt (lands in plan_ready) so it doesn't starve at the approval gate
+        // and get reaped as failed on the next engine restart.
         rememberHunt(newHuntId)
         void qc.invalidateQueries({ queryKey: ['hunts'] })
         toast({

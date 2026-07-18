@@ -4,14 +4,12 @@ A `SearchProvider` turns a query into ranked hits and a url into readable text. 
 
 * `CannedProvider` — DETERMINISTIC synthetic hits, no network, so the offline hunt stays
   reproducible with no keys (and tests stay hermetic).
-* `MultiProvider` — DuckDuckGo only (free, keyless, the one engine proven reliable — see
-  `search_providers_enabled` history), deep-reading via a keyless reader chain (Jina free tier →
-  DirectReader raw fetch).
+* `MultiProvider` — DuckDuckGo only (free, keyless, the one engine proven reliable), deep-reading
+  via a keyless reader chain (Jina free tier → DirectReader raw fetch).
 
 `make_search_provider()` builds the MultiProvider when a model key is configured; if NO real key is
-configured it returns Canned, so the engine still runs end to end offline (Doc 04 §07). There is
-deliberately no other search vendor wired in — DuckDuckGo + keyless readers is the whole research
-retrieval layer.
+configured it returns Canned, so the engine still runs end to end offline. There is deliberately no
+other search vendor wired in — DuckDuckGo + keyless readers is the whole research retrieval layer.
 """
 
 from __future__ import annotations
@@ -82,17 +80,15 @@ class CannedProvider:
         return f"[offline] readable text extracted from {url}."
 
 
-# Fan-out timing — defaults mirror config, but read from `settings` at call time so a .env override
-# (or a test monkeypatch of these module globals) takes effect. BUDGET is the hard ceiling; SOFT is
-# the early return once we have ground, so a hung upstream can't make every search wait it out —
-# which, under parallel scouts, pileup-throttles most of them to zero hits.
+# Read from `settings` at call time so a .env override / test monkeypatch takes effect. BUDGET is the
+# hard ceiling; SOFT is the early return once we have ground, so a hung upstream can't pileup-throttle
+# every parallel scout to zero hits.
 _SEARCH_BUDGET_S = settings.search_budget_s
 _SEARCH_SOFT_S = settings.search_soft_s
 
-# Ranking: raw `score` is provider-specific and not comparable across sources — DuckDuckGo emits
-# rank-position only, no real 0-1 relevance, so it degrades to pure rank below (its best hit still
-# floats instead of sinking on a 0.0 score). `canned` (the offline demo provider) is the one source
-# that does emit trustworthy 0-1 relevance.
+# Raw `score` is provider-specific and not comparable across sources — DuckDuckGo emits rank-position
+# only, no real 0-1 relevance, so it degrades to pure rank below. `canned` is the one source that does
+# emit trustworthy 0-1 relevance.
 _REAL_SCORE = frozenset({"canned"})
 _RANK_W = 0.6
 _REL_W = 0.4
@@ -103,9 +99,8 @@ _PROVIDER_SEM: dict[str, asyncio.Semaphore] = {}
 
 
 def _sem(name: str) -> asyncio.Semaphore:
-    # Cap concurrent calls to the SAME upstream. Sized so a full pack (3-5 scouts, each searching +
-    # broadening) doesn't serialize on one fast provider — that pileup, not the providers, is what
-    # left most scouts with zero hits while one got them all. Tunable via settings.
+    # Sized so a full pack (3-5 scouts) doesn't serialize on one fast provider — that pileup, not the
+    # providers, is what left most scouts with zero hits while one got them all.
     return _PROVIDER_SEM.setdefault(name, asyncio.Semaphore(settings.search_provider_concurrency))
 
 
@@ -141,22 +136,20 @@ class MultiProvider:
                 n = len(r)
                 for idx, h in enumerate(r):
                     if not h.url or host_key(h.url) in _BLOCKED_HOSTS:
-                        continue  # junk-domain blocklist (link shorteners) — exact host match
-                    # Position within THIS provider's own list (its own relevance order), captured
-                    # per-hit so a shared sub name / non-deterministic task order can't confuse it.
+                        continue  # junk-domain blocklist (link shorteners), exact host match
+                    # Position within THIS provider's own list, captured per-hit so a shared sub name
+                    # / non-deterministic task order can't confuse it.
                     rank[id(h)] = 1.0 - idx / max(1, n)
                     key = canonical_url(h.url)
                     cur = best.get(key)
-                    # Keep the higher RAW score on a cross-provider collision (unchanged survivor rule
-                    # — blending decides ORDER, never which duplicate wins).
+                    # Keep the higher RAW score on a cross-provider collision — blending decides
+                    # ORDER, never which duplicate wins.
                     if cur is None or h.score > cur.score:
                         best[key] = h
 
-        # Phase 1 — gather whatever returns within the soft window (never longer than the hard budget,
-        # so a patched/tiny budget still bounds the whole fan-out). The soft window is sized in config
-        # to clear the enabled providers' measured latency (DuckDuckGo answers well inside it), so a
-        # first attempt gets its real ground HERE — that sizing, not a Phase-2 change, is what fixed
-        # the "dead ends" timeout. Once we hold ANY ground we return promptly and never block on a
+        # Phase 1 — gather whatever returns within the soft window (never longer than the hard budget).
+        # The soft window is sized to clear the enabled providers' measured latency, so a first attempt
+        # gets its real ground HERE. Once we hold ANY ground we return promptly and never block on a
         # hung upstream (the pileup that used to starve parallel scouts to zero).
         soft = min(_SEARCH_SOFT_S, _SEARCH_BUDGET_S)
         done, pending = await asyncio.wait(set(tasks), timeout=soft)
@@ -174,8 +167,8 @@ class MultiProvider:
     ) -> list[SearchHit]:
         """Order hits by a coherent blended score (never the raw cross-provider score). rank_component
         = within-provider position; relevance_component = the raw 0-1 score ONLY from providers that
-        emit real relevance, else it degrades to the rank component (so 0.0-score providers don't
-        always sink). Then a soft, gated domain-diversity nudge. Neither ever DROPS a hit."""
+        emit real relevance, else it degrades to the rank component. Then a soft, gated domain-
+        diversity nudge. Neither ever DROPS a hit."""
 
         def blended(h: SearchHit) -> float:
             rc = rank.get(id(h), 0.0)
@@ -183,8 +176,8 @@ class MultiProvider:
             return _RANK_W * rc + _REL_W * rel
 
         ordered = sorted(hits, key=blended, reverse=True)
-        # Soft domain diversity: nudge the 2nd+ hit from the same host down (never drop). Gated so it
-        # can't bury a legitimately single-source narrow topic.
+        # Nudge the 2nd+ hit from the same host down (never drop) — gated so it can't bury a
+        # legitimately single-source narrow topic.
         if settings.search_domain_diversity and len({host_key(h.url) for h in ordered}) >= 3:
             seen: dict[str, int] = {}
             scored = []
@@ -208,20 +201,17 @@ class MultiProvider:
         )
 
     async def _read_chain(self, url: str) -> str:
-        # Fail-closed pre-fetch gate: screen the URL BEFORE any reader (including the paid ones that
-        # fetch server-side) touches it — an internal/metadata/non-http URL is denied here rather than
-        # relying on each reader's own ad-hoc protection (only DirectReader had one).
+        # Fail-closed: screen the URL BEFORE any reader (incl. paid ones that fetch server-side)
+        # touches it, rather than relying on each reader's own ad-hoc protection.
         if not is_fetchable_url(url):
             logging.getLogger("pack").warning("content guard blocked unsafe fetch URL: %s", url)
             return ""
-        # Priority chain (Jina free tier → DirectReader raw fetch): first reader to return text wins.
-        # Each reader carries its own timeout, so the chain is bounded even if an early one is slow.
+        # First reader to return text wins; each carries its own timeout so the chain stays bounded.
         for reader in self._readers:
             text = await reader.read(url)
             if text:
-                # Screen scraped third-party text for prompt-injection before it's cached and fed into
-                # a single-turn wolf's prompt — a hostile page can't slip "ignore your instructions"
-                # into the reasoning turn. Masks offending spans; real content is untouched.
+                # Screen for prompt-injection before it's cached and fed into a single-turn wolf's
+                # prompt — a hostile page can't slip "ignore your instructions" into the reasoning turn.
                 result = scan_content(text)
                 if result.hits:
                     logging.getLogger("pack").warning(
@@ -238,9 +228,8 @@ class MultiProvider:
 
 def make_search_provider() -> SearchProvider:
     """DuckDuckGo (free, keyless) is the only search upstream — no other vendor is wired in. Deep
-    reads go through the keyless reader chain: Jina's free tier first, DirectReader (raw fetch) as
-    the fallback. Only a pure offline demo (no model key → FakeQwen brain) falls back to Canned so
-    the no-key run stays deterministic.
+    reads go through the keyless reader chain: Jina's free tier first, DirectReader as the fallback.
+    Only a pure offline demo (no model key) falls back to Canned so the no-key run stays deterministic.
     """
     if not settings.qwen_api_key:  # offline/demo: FakeQwen brain + deterministic Canned search
         return CannedProvider()

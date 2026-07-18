@@ -15,12 +15,10 @@ export interface TypewriterOptions {
 }
 
 /**
- * A type → hold → backspace → next-phrase typewriter, driven by chained timeouts (no interval drift,
- * and every timer is cleared on unmount / phrase-list change). Returns the currently-visible slice of
- * the active phrase plus a `done` flag (true once the last phrase is fully typed when loop=false).
+ * A type → hold → backspace → next-phrase typewriter, driven by chained timeouts (no interval
+ * drift). Returns the visible slice of the active phrase plus a `done` flag.
  *
- * Honours prefers-reduced-motion: no animation, just the first phrase shown in full and settled. This
- * is the accessible fallback AND what a screen reader gets — the caret and motion are decoration.
+ * Honours prefers-reduced-motion: shows the first phrase in full, settled — the accessible fallback.
  */
 export function useTypewriter(phrases: string[], opts: TypewriterOptions = {}) {
   const { typeMs = 55, deleteMs = 28, holdMs = 1600, gapMs = 320, loop = true } = opts
@@ -28,8 +26,7 @@ export function useTypewriter(phrases: string[], opts: TypewriterOptions = {}) {
 
   const [text, setText] = useState(() => (phrases[0] ?? ''))
   const [done, setDone] = useState(reduce)
-  // Keep the latest phrases/opts in a ref so the effect that owns the timer chain doesn't tear down
-  // and restart on every parent re-render (which would restart the animation mid-phrase).
+  // Ref so the effect owning the timer chain doesn't restart on every parent re-render.
   const stateRef = useRef({ phrases, typeMs, deleteMs, holdMs, gapMs, loop })
   stateRef.current = { phrases, typeMs, deleteMs, holdMs, gapMs, loop }
 

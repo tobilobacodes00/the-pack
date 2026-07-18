@@ -1,4 +1,4 @@
-"""FakeQwen — the deterministic, offline brain (Doc 04 §07, F14 fallback).
+"""FakeQwen — the deterministic, offline brain.
 
 When there is no API key, the whole system still runs end to end: REST → Supervisor →
 Emitter → Postgres → relay → Redis → gateway → canvas. The only thing swapped out is the
@@ -7,9 +7,9 @@ engine makes (plan, findings, merge, critique, gaps), a deterministic object SHA
 requested `response_schema` and woven from the actual task — so the dynamic engine exercises
 the same code path offline, topic-aware, with realistic synthetic usage so the Boundary moves.
 
-It is deterministic: same spec in, same result out (no clocks, no randomness). The moment a
-real `QWEN_API_KEY` lands, `QwenClient` stops routing here — zero change to the Supervisor or
-the event stream.
+Deterministic: same spec in, same result out (no clocks, no randomness). The moment a real
+`QWEN_API_KEY` lands, `QwenClient` stops routing here — zero change to the Supervisor or the
+event stream.
 """
 
 from __future__ import annotations
@@ -21,9 +21,8 @@ from app.config import TIER_REGISTRY
 from app.qwen import pricing
 from app.qwen.types import CallSpec, CompletionResult
 
-# Synthetic token usage per tier (input, output) — sized so cost is visible on the Boundary
-# meter but a full multi-step hunt (scouts + merge + critique + a real Standoff + draft) stays
-# comfortably inside the $0.50 first-hunt cap. Real Qwen calls are cheaper still.
+# Sized so cost is visible on the Boundary meter but a full hunt stays inside the $0.50
+# first-hunt cap. Real Qwen calls are cheaper still.
 _USAGE_BY_TIER: dict[str, tuple[int, int]] = {
     "flash": (20_000, 5_000),
     "plus": (28_000, 7_000),
@@ -43,8 +42,8 @@ def _task_of(spec: CallSpec) -> str:
 
 
 def _user_content_of(spec: CallSpec) -> str:
-    """The full latest user message — some intents (deep_scout_step) need to see the whole running
-    context, not just the one-line task, to return a stateful-looking-but-pure decision."""
+    """The full latest user message — deep_scout_step needs the whole running context, not just
+    the one-line task, to return a stateful-looking-but-pure decision."""
     for m in reversed(spec.messages or []):
         if m.get("role") == "user":
             return str(m.get("content", ""))
@@ -52,16 +51,15 @@ def _user_content_of(spec: CallSpec) -> str:
 
 
 def _deep_scout_step(task: str, context: str) -> dict:
-    """A deterministic decision for one turn of the bounded deep_scout loop. FakeQwen is STATELESS, so
-    it can't count turns in a variable — instead it reads the running context the loop feeds back in
-    (which grows one "[turn N] …" line per turn) and dispatches on that. Scripted arc: turn 1 search →
-    turn 2 fetch the first hit → turn 3+ finish. Pure: same context in, same decision out."""
+    """A deterministic decision for one turn of the bounded deep_scout loop. FakeQwen is STATELESS,
+    so it dispatches on the running context (grows one "[turn N] …" line per turn) instead of
+    counting turns. Scripted arc: turn 1 search → turn 2 fetch the first hit → turn 3+ finish."""
     did_search = "] searched " in context
     did_fetch = "] fetched " in context
     if not did_search:
         return {"action": "search", "query": f"{task} overview", "reason": "start broad"}
     if not did_fetch:
-        # Fetch a stable synthetic URL for this task (matches what the canned search would surface).
+        # Matches what the canned search would surface.
         return {"action": "fetch", "url": "https://example.com/1", "reason": "read the top hit"}
     return {
         "action": "finish",
@@ -84,7 +82,7 @@ def _offline_result(intent: str, task: str) -> tuple[str, dict | None]:
                 f"{task} — risks, context, and outlook",
             ],
             "assumptions": [f"scope: {task}", "recent sources", "briefing format"],
-            # No est_cost/est_time — Beta no longer estimates; the engine derives them per depth.
+            # No est_cost/est_time — the engine derives them per depth.
             "depth": "standard",
         }
         return summary, parsed
@@ -124,7 +122,7 @@ def _offline_result(intent: str, task: str) -> tuple[str, dict | None]:
         }
         return "Two gaps remain; sending the pack back in.", parsed
     if intent == "distill":
-        # The Elder's end-of-hunt lesson — a typed, reusable line woven from the task (offline).
+        # The Elder's end-of-hunt lesson — a typed, reusable line woven from the task.
         lesson = f"On {task}, primary sources beat aggregators — start there next time."
         return lesson, {"kind": "what-worked", "lesson": lesson}
     if intent == "standoff_challenge":
@@ -132,15 +130,14 @@ def _offline_result(intent: str, task: str) -> tuple[str, dict | None]:
     if intent == "standoff_defend":
         return "Fair point — I'll pull a corroborating source before it goes in the brief.", None
     if intent == "standoff_judge":
-        # Structured verdict so Alpha's ruling is load-bearing. "drop" keeps the offline flagged
-        # claim removed → the offline brief is unchanged by the ruling being honored.
+        # "drop" keeps the offline flagged claim removed — the brief is unchanged by the ruling.
         return (
             "Alpha's call: drop — no second source stands this claim up.",
             {"verdict": "drop", "rationale": "No source on the table backs the claim."},
         )
     if intent == "conflict_decide":
-        # Alpha's wild-mode conflict decision (offline never actually hits this — FakeQwen's merge
-        # returns conflict=None — but keep it structured for the unit tests that drive it directly).
+        # Offline never actually hits this (merge returns conflict=None); kept for tests that drive
+        # it directly.
         return (
             f"Alpha weighs the options on {task} and takes the better-sourced call.",
             {"choice": "", "rationale": "The evidence best supports this option."},
@@ -152,9 +149,8 @@ def _offline_result(intent: str, task: str) -> tuple[str, dict | None]:
         )
         return text, None
     if intent == "route_intent":
-        # Offline intent router — a deterministic keyword heuristic over the latest message (woven into
-        # `task` by the caller) so the offline conversation still routes sensibly. The live model does
-        # this far better; this just keeps hermetic tests meaningful.
+        # A deterministic keyword heuristic so the offline conversation still routes sensibly —
+        # the live model does this far better; this just keeps hermetic tests meaningful.
         low = task.lower()
         if any(
             w in low
@@ -190,7 +186,7 @@ def _offline_result(intent: str, task: str) -> tuple[str, dict | None]:
         # The pack should win on depth + citations — that's the whole point of the Scorecard.
         return "Scored both briefings.", {"pack": 0.88, "lone": 0.62}
     if intent == "draft":
-        # v3: Howler writes TAGGED blocks so each line carries its sources (trace).
+        # Howler writes TAGGED blocks so each line carries its sources (trace).
         blocks: list[dict[str, object]] = [
             {"text": f"What the pack found on {task}, from cited sources.", "source_ids": [1]},
             {"text": f"The leading players in {task} are taking shape.", "source_ids": [1, 2]},
@@ -216,7 +212,6 @@ class FakeQwen:
         text: str
         parsed: dict | None
         if (spec.intent or "") == "deep_scout_step":
-            # Needs the full running context (not just the one-line task) to pick the next move.
             decision = _deep_scout_step(task, _user_content_of(spec))
             text, parsed = json.dumps(decision), decision
         else:

@@ -1,17 +1,12 @@
 import { wolfLabel } from '@/features/reward/lib/wolf-label'
 
 /**
- * A short title for one activity beat, derived client-side from the wolf and its narration (the beat
- * stores only the wolf_id + body text — no authored title). Renders as the muted heading above the
- * body line in the collapsed status log, e.g. "Scout update", "Tracker working", "Sentinel challenging".
- *
- * Best-effort labels: the role sets the default verb (a Howler writes, a Sentinel challenges, a
- * Tracker cross-references), and a light read of the text upgrades it to a handoff ("Scout passing to
- * Tracker") when the beat clearly narrates one. This is decoration over the real body text below it,
- * so a slightly generic title is fine — the body always carries the specifics.
+ * A short title for one activity beat, derived client-side (the beat stores only wolf_id + body
+ * text, no authored title), e.g. "Scout update", "Tracker working". The role sets a default verb;
+ * a light read of the text upgrades it to a handoff ("Scout passing to Tracker") when it narrates one.
  */
 
-// The default action verb per role — what that wolf is doing when it narrates a beat.
+// Default action verb per role.
 const ROLE_ACTION: Record<string, string> = {
   alpha: 'directing',
   beta: 'planning',

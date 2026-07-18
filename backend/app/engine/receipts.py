@@ -8,17 +8,14 @@ Sentinel's critique artifact, and the standoff events): no model calls, no re-de
 pack couldn't verify something, the receipts say so — they never invent a status.
 
 Field notes on the join (why this is exact, not fuzzy):
-- `numbered_sources()` is THE single numbering function; both the merge registry the Tracker
-  cited into and the final artifact's persisted `sources` come from the same deterministic
-  dedupe of the same underlying list — so a claim's source ids resolve 1-based into
-  `final.content.sources` directly.
-- The final artifact persists `claims_src` IN LOCKSTEP with `claims` (finish() writes both from
-  the same `Merged`), so a claim's citation ids are read BY POSITION (`claims[i] ↔ claims_src[i]`)
-  — never re-derived by matching claim text. Two claims of identical text but different sources
-  therefore resolve to their own ids, not both to the first occurrence.
+- `numbered_sources()` is THE single numbering function; both the merge registry and the final
+  artifact's persisted `sources` come from the same deterministic dedupe of the same underlying
+  list, so a claim's source ids resolve 1-based into `final.content.sources` directly.
+- The final artifact persists `claims_src` IN LOCKSTEP with `claims`, so a claim's citation ids
+  are read BY POSITION (`claims[i] ↔ claims_src[i]`) — never re-derived by matching claim text.
+  Two claims of identical text but different sources therefore resolve to their own ids.
 - Legacy artifacts predating that field fall back to a CONSUME-ON-MATCH join against the merge
-  draft (pair each claim to the first unconsumed merge row of the same text), which preserves the
-  same duplicate-safe behaviour without the persisted ids.
+  draft (pair each claim to the first unconsumed merge row of the same text).
 - `dropped` is a MULTISET difference of merge vs final claims (pair off survivors, report the
   leftovers) — so dropping one of two identical-text merge rows is counted exactly once.
 - Only the challenge join reuses the engine's own fuzzy matcher (`_claim_matches`) — the exact
@@ -39,8 +36,8 @@ _MEMORY_PREFIX = "memory://"
 
 
 def _coerce_src_rows(raw: object) -> list[list[int]]:
-    """Normalize a persisted `claims_src` (list of int-lists) — drop bools, coerce numerics, and
-    treat any non-list row as empty. One place, used for both the final artifact and the merge draft."""
+    """Normalize a persisted `claims_src` (list of int-lists) — drop bools, coerce numerics, treat
+    any non-list row as empty. Used for both the final artifact and the merge draft."""
     if not isinstance(raw, list):
         return []
     return [
@@ -85,10 +82,8 @@ async def build_receipts(repo: Repo, hunt_id: str, task: str = "") -> dict[str, 
         return None
 
     # Pair each final claim with ITS citation ids by position — the exact, identity-preserving join.
-    # `finish()` persists `claims`/`claims_src` in lockstep (claims[i] ↔ claims_src[i]); we zip them
-    # BEFORE filtering so a blank claim can never shift the pairing. This is what makes two claims of
-    # identical text but different sources resolve correctly, instead of both collapsing onto the
-    # first text-match (the bug the text `.index()` join had).
+    # `finish()` persists `claims`/`claims_src` in lockstep; zip them BEFORE filtering so a blank
+    # claim can never shift the pairing (avoids the old text `.index()` join bug).
     raw_claims = [str(c) for c in (content.get("claims") or [])]
     raw_claims_src = _coerce_src_rows(content.get("claims_src"))
     have_final_src = bool(raw_claims_src)  # older artifacts (pre-fix) won't carry claims_src
@@ -105,17 +100,15 @@ async def build_receipts(repo: Repo, hunt_id: str, task: str = "") -> dict[str, 
     merge_claims = [str(c) for c in (merge.get("claims") or [])]
     merge_src: list[list[int]] = _coerce_src_rows(merge.get("claims_src"))
 
-    # The Sentinel persists a critique artifact on BOTH paths — a genuine review AND a timeout/faulted
-    # "did not complete" placeholder — so artifact-existence alone is not proof it ran. The completed
-    # flag (finish path True, `_unverified()` path False) is the honest signal; older artifacts that
-    # predate the flag were all genuine completions, so they default True.
+    # The Sentinel persists a critique artifact on BOTH a genuine review AND a timeout/faulted
+    # placeholder, so artifact-existence alone isn't proof it ran — the completed flag is the honest
+    # signal (older artifacts predate the flag and default True).
     critique = await _artifact_content(repo, hunt_id, "critique")
     critique_ran = bool(critique) and bool(critique.get("completed", True))
     issues: list[dict[str, Any]] = [
         i for i in (critique.get("issues") or []) if isinstance(i, dict)
     ]
-    # When the Sentinel didn't complete, surface WHY (the placeholder's own message) so the UI can
-    # show the real reason, not just a bare "did not run".
+    # Surface WHY when the Sentinel didn't complete, not just a bare "did not run".
     review_note = ""
     if critique and not critique_ran:
         review_note = next(
@@ -145,10 +138,9 @@ async def build_receipts(repo: Repo, hunt_id: str, task: str = "") -> dict[str, 
                 return i
         return None
 
-    # Fallback join for legacy artifacts that predate `claims_src` on the final brief: pair each
-    # final claim against the merge rows CONSUME-ON-MATCH — the first unconsumed merge row whose text
-    # equals the claim. Repeated claims then pair off against successive merge occurrences in order,
-    # instead of every duplicate collapsing onto the first (the old `list.index()` bug).
+    # Fallback join for legacy artifacts that predate `claims_src`: pair each final claim against the
+    # merge rows CONSUME-ON-MATCH (the first unconsumed merge row whose text equals the claim), so
+    # repeated claims pair off in order instead of collapsing onto the first.
     _unconsumed = list(range(len(merge_claims)))
 
     def _consume_src_for(claim: str) -> list[int]:
@@ -191,12 +183,10 @@ async def build_receipts(repo: Repo, hunt_id: str, task: str = "") -> dict[str, 
             }
         )
 
-    # Enforcement on display: merge claims that never reached the brief were dropped (by the
-    # Sentinel's verdict via apply_critique, or restructured away by a re-merge). This is a MULTISET
-    # difference, not a set one: two merge rows of identical text where the brief kept only one means
-    # exactly one was dropped. Pair each surviving final claim off against one unconsumed merge
-    # occurrence; whatever merge rows remain unpaired are the genuine drops. (On the exact path the
-    # main loop didn't consume merge rows, so we do the pairing here from a fresh pool.)
+    # Merge claims that never reached the brief were dropped (Sentinel verdict or re-merge). This is
+    # a MULTISET difference, not a set one: two merge rows of identical text where the brief kept
+    # only one means exactly one was dropped. Pair each surviving final claim off against one
+    # unconsumed merge occurrence; whatever remains unpaired are the genuine drops.
     survivors = list(claims)
     remaining = list(range(len(merge_claims)))
     for claim in survivors:
@@ -217,7 +207,7 @@ async def build_receipts(repo: Repo, hunt_id: str, task: str = "") -> dict[str, 
             }
         )
 
-    # Who found what — the division of labor, from the sources' own `by` tags.
+    # Division of labor, from the sources' own `by` tags.
     wolves: dict[str, dict[str, int]] = {}
     for s in sources:
         by = str(s.get("by") or "")

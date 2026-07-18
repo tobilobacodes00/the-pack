@@ -1,7 +1,5 @@
-// The role avatar (ringed disc + glyph) and its tone colour — extracted from agent-node so it
-// carries NO @xyflow/react dependency. This lets the marketing landing (PackReveal) reuse the
-// exact pack avatars without pulling React Flow onto its critical path. agent-node re-exports
-// these for the territory canvas.
+// Extracted from agent-node so it carries no @xyflow/react dependency — lets the marketing
+// landing (PackReveal) reuse the pack avatars without pulling React Flow onto its critical path.
 import { ROLE_COLOR } from './roles'
 
 /** Live state of an agent on the canvas — drives colour + glow. */
@@ -9,13 +7,11 @@ export type AgentTone = 'idle' | 'active' | 'done' | 'strayed' | 'healing'
 
 export const GLYPH_SIZE = 80
 
-// Glyph colour for a tone: idle grey, strayed/sick grey (a faulted agent reads as dimmed/down until a
-// Warden reaches it), healing cyan, else the role colour.
 export function toneColor(role: string, tone: AgentTone): string {
   if (tone === 'idle') return 'currentColor' // dormant — charcoal ink
-  if (tone === 'strayed') return '#9A9A9A' // down/faulted — dim grey
-  if (tone === 'healing') return '#22B8CF' // cyan — a Warden is reaching it
-  return ROLE_COLOR[role] ?? '#6B6B6B' // active / done — the role's colour
+  if (tone === 'strayed') return '#9A9A9A' // faulted, dimmed until a Warden reaches it
+  if (tone === 'healing') return '#22B8CF' // a Warden is reaching it
+  return ROLE_COLOR[role] ?? '#6B6B6B'
 }
 
 // Idle icons verbatim from the design; each viewBox centres on the glyph's ref point, so paths need no transform.
@@ -95,17 +91,12 @@ const ICONS: Record<string, IconDef> = {
 function iconFor(role: string): IconDef {
   if (ICONS[role]) return ICONS[role]
   if (role === 'hunter') return ICONS.tracker
-  // The healers share the shield/medic mark (elder glyph) — the Warden supersedes the Doctor.
-  if (role === 'doctor' || role === 'warden') return ICONS.elder
+  if (role === 'doctor' || role === 'warden') return ICONS.elder // share the medic mark
   return ICONS.alpha
 }
 
-/**
- * The grey idle avatar for a role — three concentric rings + the role's glyph,
- * taken verbatim from the "idle state" design. Shared by the canvas node, the
- * roster, and the marketing landing so an inactive pack reads identically everywhere.
- * `size` only scales the render; the 80-unit viewBox (centred on the glyph) is preserved.
- */
+/** The grey idle avatar for a role — three concentric rings + the role's glyph. Shared by the
+ *  canvas node, roster, and landing so an inactive pack reads identically everywhere. */
 export function IdleGlyph({
   role,
   size = GLYPH_SIZE,
@@ -129,15 +120,12 @@ export function IdleGlyph({
   const viewBox = `${cx - GLYPH_SIZE / 2} ${cy - GLYPH_SIZE / 2} ${GLYPH_SIZE} ${GLYPH_SIZE}`
   const idle = tone === 'idle'
   const done = tone === 'done'
-  // Charcoal coin (the logo grey) always; an idle agent's glyph is a dim grey, an ACTIVE one lights up
-  // in its role/state colour — so the pack carries colour while the chrome stays monochrome.
   const tc = accent ?? toneColor(role, tone)
   const color = idle ? '#8a8a8a' : tc
   const ring = idle ? '#9a9a9a' : tc
   const halo = idle ? '#ebeae6' : tc
   const discFill = '#1a1a1a' // charcoal ink coin
-  // Ease every colour/opacity change so a tone flip (idle→active→done→strayed) glides instead of
-  // snapping — the "refined, clearly-alive" feel. GPU-cheap (paint-only props).
+  // Ease so a tone flip (idle→active→done→strayed) glides instead of snapping.
   const ease = 'stroke 400ms ease, fill 400ms ease, opacity 400ms ease, color 400ms ease'
 
   return (
@@ -161,8 +149,7 @@ export function IdleGlyph({
         style={{ transition: ease }}
       />
       {icon}
-      {/* Done badge — a small check disc at the coin's lower-right. Only when the caller opts in AND
-          the wolf has actually finished, so "done" is instantly distinct from "active". */}
+      {/* Done badge — only when the caller opts in AND the wolf has finished. */}
       {showDone && done && (
         <g style={{ transformOrigin: `${cx + 20}px ${cy + 20}px` }} className="glyph-done-pop">
           <circle cx={cx + 20} cy={cy + 20} r="9" fill={ring} stroke="#1a1a1a" strokeWidth="1.5" />

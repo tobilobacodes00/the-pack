@@ -89,7 +89,7 @@ from app.tools.redact import redact_event
 
 router = APIRouter(tags=["hunts"])
 
-# Allowed download formats — must stay in sync with forge._RENDERERS (guarded by a test).
+# Must stay in sync with forge._RENDERERS (guarded by a test).
 _DOWNLOADABLE = {"md", "html", "pdf", "docx", "xlsx", "pptx", "png"}
 
 
@@ -111,14 +111,12 @@ async def create_hunt(
 
     Watch `hunt_created` → `plan_proposed` arrive on the stream, then POST `/plan/approve`.
     """
-    # Admission gate: once shutdown has begun, refuse new work with 503 so a hunt isn't spawned into a
-    # process whose pool/registry is being torn down (a load balancer retries the 503 elsewhere).
+    # Refuse new work once shutdown has begun — don't spawn a hunt into a pool/registry being torn down.
     if draining:
         return JSONResponse(
             status_code=503, content={"detail": "pack is shutting down — try again shortly"}
         )
-    # Concurrency gate: reject rather than spawn an unbounded background task under load. No await
-    # between locked() and acquire(), so the check-then-acquire can't race (single-threaded loop).
+    # No await between locked() and acquire() — check-then-acquire can't race (single-threaded loop).
     if slots is not None:
         if slots.locked():
             return JSONResponse(
@@ -134,16 +132,16 @@ async def create_hunt(
     if body.instinct_id:
         inst = await repo.get_instinct(body.instinct_id)
         if inst is not None:
-            # An Instinct contributes its proven SHAPE (formation + strategy) to a FRESH task — never
-            # its old baked-in job. The task must come from `input`; we don't resurrect spec["task"].
+            # An Instinct contributes its proven SHAPE (formation + strategy) to a FRESH task, never
+            # its old baked-in job — never resurrect spec["task"].
             spec = inst.get("spec") or {}
             strategy = body.strategy or str(spec.get("strategy") or strategy)
             team = spec.get("team")
             if isinstance(team, list) and team:
                 seed_team = team
 
-    # A hunt needs a real task. Reject an empty one cleanly instead of launching a bare hunt (this
-    # also closes the old trap where an instinct with no `input` silently re-ran its saved task).
+    # Reject an empty task instead of launching a bare hunt — also closes the trap where an instinct
+    # with no `input` silently re-ran its saved task.
     if not raw_input.strip():
         if slots is not None:
             slots.release()
@@ -163,7 +161,7 @@ async def create_hunt(
             parent_hunt_id=None,
         )
     except BaseException:
-        if slots is not None:  # nothing will run → don't leak the slot
+        if slots is not None:  # nothing will run — don't leak the slot
             slots.release()
         raise
     return _accepted({"hunt_id": hunt_id, "state": "planning"})
@@ -182,10 +180,9 @@ async def _launch_hunt(
     slots: asyncio.Semaphore | None,
     parent_hunt_id: str | None,
 ) -> None:
-    """Create a hunt row + spawn its Supervisor task. Shared by the front-door `POST /hunts` and the
-    chat-driven follow-up sub-hunt, so a hunt launched from a conversation is a first-class hunt with
-    the same lifecycle, events, and slot accounting. `parent_hunt_id` records provenance when this is a
-    follow-up spun off an existing brief (so the frontend can thread it under the original)."""
+    """Create a hunt row + spawn its Supervisor task. Shared by `POST /hunts` and the chat-driven
+    follow-up sub-hunt so both are first-class hunts with the same lifecycle/events/slot accounting.
+    `parent_hunt_id` records provenance so the frontend can thread a follow-up under the original."""
     await repo.create_hunt(hunt_id, source, raw_input, strategy)
     if parent_hunt_id:
         await repo.set_parent_hunt(hunt_id, parent_hunt_id)
@@ -378,10 +375,8 @@ async def benchmark(
     task_desc = snap.get("raw_input", "") or "the task"
 
     async def _guarded() -> None:
-        # A fire-and-forget benchmark that raises after the 202 must fail LOUDLY, not vanish: without
-        # this, an exception in run_benchmark (a provider error, a non-numeric judge response) kills
-        # the task silently, no benchmark_completed ever lands, and the Scorecard poll spins forever.
-        # We log it so it's diagnosable; the frontend poll is separately bounded so the UI recovers.
+        # Without this, an exception in run_benchmark kills the task silently — no benchmark_completed
+        # ever lands and the Scorecard poll spins forever. Log it so it's diagnosable.
         try:
             await run_benchmark(hunt_id, emitter, repo, client, task_desc)
         except Exception:  # noqa: BLE001 — background boundary: never let it die unlogged
@@ -609,11 +604,8 @@ async def rehearse_hunt(hunt_id: str, body: RehearseBody) -> dict:
 # ---------------------------------------------------------------------------
 
 
-# The frontend tags Alpha's turns with role "alpha" (its own UI convention). DashScope/OpenAI only
-# accept system|assistant|user|tool|function — sending "alpha" (or any other custom role) back in the
-# history 400s the whole call ("alpha is not one of [...]"), which surfaced as an intermittent
-# "Something went wrong" the moment a conversation had any prior Alpha turn. Map roles to the standard
-# set before ANY history reaches the model: alpha/assistant → assistant, everything else → user.
+# DashScope/OpenAI only accept system|assistant|user|tool|function — the frontend's "alpha" role
+# 400s the whole call if sent back in history. Map to the standard set before it reaches the model.
 def _model_history(messages: list[dict]) -> list[dict]:
     out: list[dict] = []
     for m in messages:
@@ -632,10 +624,9 @@ async def intake(
     client: QwenClient = Depends(get_client),
     repo: Repo = Depends(get_repo),
 ) -> JSONResponse:
-    """Front-door gate, now state-aware: Alpha is ONE continuous lead. If the conversation already has
-    a running or delivered hunt (body.hunt_id), the injected [HUNT STATE] header stops it re-asking
-    scoping questions or relaunching — it converses about the live/finished hunt instead. Only a fresh,
-    hunt-less turn can signal ready. No hunt is created here — the frontend creates one on ready=true."""
+    """Front-door gate, state-aware: if body.hunt_id has a running or delivered hunt, the injected
+    [HUNT STATE] header stops it re-asking scoping questions or relaunching. Only a fresh, hunt-less
+    turn can signal ready. No hunt is created here — the frontend creates one on ready=true."""
     msgs = [m for m in body.messages if m.get("content")]
     last = last_user(msgs)
 
@@ -644,8 +635,7 @@ async def intake(
     hunt_in_flight = bucket in ("active", "delivered", "dead")
 
     if client.offline:
-        # A hunt already exists for this thread → never relaunch; just acknowledge (the state-aware
-        # live model gives a real reply; offline stays deterministic).
+        # A hunt already exists for this thread → never relaunch; just acknowledge.
         if hunt_in_flight:
             ack = {
                 "active": "The pack is on it right now — I'll bring back what they find.",
@@ -699,15 +689,13 @@ async def intake(
         reply = safe_reply(text)
         ready = False
         brief = ""
-    # Safety net: a hunt already in flight for this thread must never trigger a second launch, even if
-    # the model slips and says ready=true — the state header should prevent it, but belt-and-braces.
+    # Belt-and-braces: never trigger a second launch even if the model slips and says ready=true.
     if hunt_in_flight:
         ready, brief = False, ""
     if ready and not brief:
         brief = last.strip()[:200]
     if ready:
-        # On launch the composer locks — a trailing question would strand the Packmaster. The prompt
-        # forbids it; this guarantees it (drops a dangling final question if the model slipped).
+        # On launch the composer locks — a trailing question would strand the Packmaster.
         reply = strip_trailing_question(reply)
     return JSONResponse({"reply": reply, "ready": ready, "brief": brief})
 
@@ -798,8 +786,8 @@ async def intake_stream(
                 brief = last.strip()[:200]
             if ready:
                 reply = strip_trailing_question(reply)
-            # On a launch turn the streamed tokens may have included a trailing question; signal the
-            # client to REPLACE the streamed text with this cleaned reply so nothing dangles.
+            # Streamed tokens may have included a trailing question; tell the client to REPLACE the
+            # streamed text with this cleaned reply.
             done = {
                 "type": "done",
                 "reply": reply,
@@ -824,11 +812,9 @@ _ASK_BRIEF_BUDGET = 6_000
 
 
 async def _ask_system(repo: Repo, hunt_id: str, *, full_brief: bool = False) -> str:
-    """Alpha's side-chat system prompt, built on the ONE state-aware Alpha (persona + live [HUNT STATE]
-    header via alpha_system) plus the chat rules. The state header already carries a SUMMARY of the
-    delivered brief; `full_brief=True` additionally injects the brief's FULL text + sources — used on a
-    refine turn where Alpha needs the exact wording to re-angle it (the sliding-window-plus-summary
-    pattern: cheap by default, full fidelity only when editing)."""
+    """Alpha's side-chat system prompt: persona + live [HUNT STATE] header + chat rules. The header
+    already carries a SUMMARY of the delivered brief; `full_brief=True` additionally injects the
+    brief's FULL text + sources — used on a refine turn where Alpha needs the exact wording."""
     chat_gate = (
         "You're in the side-chat about this hunt. Answer in plain English, present tense, warm and "
         "concise. Never expose internal machinery. Ground answers in the hunt's real findings; if a "
@@ -858,8 +844,7 @@ async def _ask_system(repo: Repo, hunt_id: str, *, full_brief: bool = False) -> 
     return system
 
 
-# Routes that DO something to the brief vs. routes that just talk. Only the "act" routes run the
-# router's side effects (refine / sub-hunt / steer); everything else is a plain grounded reply.
+# Only these routes trigger side effects (refine / sub-hunt / steer); everything else is a plain reply.
 _ACT_ROUTES = {"refine_patch", "refine_rewrite", "new_subhunt", "new_hunt", "retry"}
 
 
@@ -873,22 +858,20 @@ async def _act_on_intent(
     slots: asyncio.Semaphore | None,
     draining: bool = False,
 ) -> dict:
-    """Carry out what the router decided, INTERPRETED THROUGH the live hunt state. Returns
-    {action, hunt_id?, reply_hint} — reply_hint is a short truthful line Alpha weaves into its reply so
-    the Packmaster knows what just happened. Falls back to a plain answer on anything it can't do."""
+    """Carry out what the router decided, interpreted through the live hunt state. Returns
+    {action, hunt_id?, reply_hint} — reply_hint is a short truthful line Alpha weaves into its reply.
+    Falls back to a plain answer on anything it can't do."""
     r = route["route"]
     _header, bucket = await hunt_state_header(repo, hunt_id)
-    # Steering a live hunt (add_input) stays allowed during drain — that hunt is already in-flight and
-    # will drain normally. Only SPAWNING a NEW follow-up hunt is refused below (same 503 posture as
-    # create_hunt), phrased as a graceful chat answer rather than an HTTP error since this is the chat path.
+    # Steering a live hunt stays allowed during drain (it's already in-flight); only spawning a NEW
+    # follow-up hunt is refused below, as a graceful chat answer rather than an HTTP error.
     _draining_answer = {
         "action": "answer",
         "hunt_id": None,
         "reply_hint": "The pack's winding down for a moment — ask me again shortly and I'll launch that.",
     }
 
-    # A hunt still running: a "do more" request STEERS the live hunt instead of spawning a duplicate
-    # or being ignored (Cursor's addFollowup pattern), routed through the existing add_input command.
+    # A "do more" request on a running hunt STEERS it instead of spawning a duplicate or being ignored.
     if bucket == "active" and r in ("new_subhunt", "refine_patch", "refine_rewrite"):
         await registry.send(hunt_id, {"type": "add_input", "text": message, "kind": "note"})
         return {
@@ -897,7 +880,7 @@ async def _act_on_intent(
             "reply_hint": "I've passed that to the pack while they're still out — they'll fold it in.",
         }
 
-    # Delivered brief + a refine → re-draft from the SAME findings (no re-scout). Cheap and fast.
+    # Delivered brief + a refine → re-draft from the SAME findings (no re-scout).
     if bucket == "delivered" and r in ("refine_patch", "refine_rewrite"):
         art = await repo.get_final_artifact(hunt_id)
         if art is not None:
@@ -921,7 +904,7 @@ async def _act_on_intent(
                 "reply_hint": "The pack's at capacity right now — give it a moment and I'll launch that.",
             }
         parent = hunt_id if r == "new_subhunt" else None
-        # A sub-hunt's task is scoped by the follow-up message + what it extends; a new_hunt stands alone.
+        # A sub-hunt's task is scoped by the follow-up message + what it extends.
         if r == "new_subhunt":
             snap = await repo.get_hunt_snapshot(hunt_id)
             topic = str((snap or {}).get("raw_input") or "").strip()
@@ -963,10 +946,9 @@ async def _act_on_intent(
             "reply_hint": hint,
         }
 
-    # RETRY — re-run the same job from the beginning. The load-bearing case: a hunt that FAILED or was
-    # stopped before delivering, where the Packmaster says "start again / try it again". Alpha actually
-    # relaunches (a fresh hunt with the same task) instead of only offering to. If they asked to adjust
-    # the focus ("retry but narrow to React"), the message rides along so the re-run is steered.
+    # RETRY — re-run the same job from the beginning (a failed/stopped hunt, or "run it again"). Alpha
+    # actually relaunches instead of only offering to. An adjustment ("retry but narrow to React")
+    # rides along so the re-run is steered.
     if r == "retry":
         if draining:
             return _draining_answer
@@ -980,8 +962,7 @@ async def _act_on_intent(
         base_task = str((snap or {}).get("raw_input") or "").strip()
         if not base_task:
             return {"action": "answer", "hunt_id": None, "reply_hint": ""}
-        # Fold an adjustment into the re-run task only when the message clearly adds direction (more
-        # than a bare "retry"/"start again"); otherwise re-run the task verbatim.
+        # Fold an adjustment into the re-run task only if it adds real direction beyond a bare "retry".
         adjust = message.strip()
         bare = {
             "",
@@ -1036,7 +1017,7 @@ async def _compose_ask_reply(
     full_brief: bool,
 ) -> str:
     """Generate Alpha's spoken reply. When the router took an action, its truthful `reply_hint` is
-    handed to Alpha to phrase in its own voice (so 'I've re-worked the brief' is real, not invented)."""
+    handed to Alpha to phrase in its own voice, so 'I've re-worked the brief' is real, not invented."""
     system = await _ask_system(repo, hunt_id, full_brief=full_brief)
     hint = outcome.get("reply_hint") or ""
     turns = _model_history(history)
@@ -1067,9 +1048,9 @@ async def ask_alpha(
     slots: asyncio.Semaphore | None = Depends(get_hunt_slots),
     draining: bool = Depends(get_draining),
 ) -> JSONResponse:
-    """The ONE Alpha side-chat, now a smart dispatcher: it classifies each message against the live
-    hunt state and either answers, refines the brief in place, steers a running hunt, or launches a
-    scoped follow-up — then replies in Alpha's voice. Multi-turn; carries the full history."""
+    """The Alpha side-chat dispatcher: classifies each message against the live hunt state and either
+    answers, refines the brief in place, steers a running hunt, or launches a scoped follow-up — then
+    replies in Alpha's voice. Multi-turn; carries the full history."""
     history = [m for m in body.messages if m.get("content")]
     message = body.question or last_user(history) or ""
     if not history and message:
@@ -1077,8 +1058,7 @@ async def ask_alpha(
 
     route = await route_intent(client, repo, hunt_id, message, history)
     outcome = {"action": "answer", "hunt_id": None, "reply_hint": ""}
-    # Only act on a confident classification (research's confidence cascade: <0.5 → treat as a plain
-    # answer/ask rather than firing an expensive/irreversible action on a guess).
+    # <0.5 confidence → treat as a plain answer rather than firing an irreversible action on a guess.
     if (
         route["route"] in _ACT_ROUTES
         and route["confidence"] >= 0.5

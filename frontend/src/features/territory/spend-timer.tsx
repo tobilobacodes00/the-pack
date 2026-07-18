@@ -11,10 +11,9 @@ function mmss(s: number): string {
   return `${String(m).padStart(2, '0')}:${String(sec).padStart(2, '0')}`
 }
 
-// The clock ticks while the pack is actively working. `halted_boundary` is deliberately EXCLUDED:
-// during a Boundary halt the hunt waits (unbounded) for the human to raise the cap — the backend
-// re-anchors its measured clock on resume, so the live clock must freeze here too or it over-reads
-// and the done-state snaps backward.
+// `halted_boundary` is deliberately excluded: the hunt waits unbounded for the human to raise the
+// cap, and the backend re-anchors its clock on resume, so the live clock must freeze here too or
+// it over-reads and the done-state snaps backward.
 const RUNNING = new Set(['running', 'hold', 'standoff'])
 const DONE = new Set(['completed', 'failed', 'stopped'])
 
@@ -46,10 +45,8 @@ export function SpendTimer({
     return () => clearInterval(t)
   }, [running])
 
-  // Defensive fallback: the first wall-clock time we observed this hunt in a running/live state.
-  // The store-derived `started_at` (plan_approved ts) is the real anchor and is present in every
-  // normal flow; this ref only backstops the pathological case where a live hunt is shown without
-  // that event in state (e.g. a store rehydrated mid-run) so the clock never freezes at 0:00.
+  // Fallback anchor for the pathological case where a live hunt is shown without `started_at` in
+  // state (e.g. a store rehydrated mid-run) — so the clock never freezes at 0:00.
   const clientStartRef = useRef<number | null>(null)
   if ((running || done) && clientStartRef.current === null) clientStartRef.current = Date.now()
 
@@ -59,12 +56,9 @@ export function SpendTimer({
       ? Number(totals.cost_usd)
       : huntState.boundary.spent_usd
 
-  // Anchor priority: real measured totals once done → started_at..ended_at (both server timestamps,
-  // for a done hunt with no measured time_s — failed/stopped never set totals) → started_at..now
-  // while running → the client-observed fallback. There is always an anchor, so the timer can't
-  // stick at 0:00 — and a done hunt is never measured against wall-clock "now" (which on a hunt
-  // reopened long after it ended would read the whole elapsed gap as runtime, not its actual
-  // duration).
+  // Anchor priority: measured totals once done → started_at..ended_at → started_at..now while
+  // running → client-observed fallback. A done hunt is never measured against wall-clock "now",
+  // which on a hunt reopened long after it ended would read the whole gap as runtime.
   let elapsed = 0
   if (done && totals && totals.time_s != null) {
     elapsed = Number(totals.time_s)
@@ -96,8 +90,7 @@ export function SpendTimer({
         {expanded ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
       </button>
 
-      {/* Expanded (chevron only): the pack's beats as a plain-text log — a muted title over the body
-          line for each beat, no avatars or colour. Plus the Stop control while the hunt runs. */}
+      {/* Expanded: the pack's beats as a plain-text log, plus Stop while the hunt runs. */}
       {expanded && (
         <div style={{ padding: '4px 8px 10px' }}>
           {activity.length > 0 && (

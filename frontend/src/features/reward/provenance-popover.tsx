@@ -30,9 +30,8 @@ function Field({ label, value, valueClass }: { label: string; value: string; val
 }
 
 /**
- * The click-to-open provenance card. Rendered inside the article (not portaled) so it lives within
- * the Dialog's content — clicking it never trips Radix's close-on-outside, and it scrolls with the
- * claim it belongs to. Positioned absolute against the article's relative box.
+ * Click-to-open provenance card. Rendered inside the article (not portaled) so clicking it never
+ * trips Radix's close-on-outside, and it scrolls with the claim it belongs to.
  */
 export function ProvenancePopover({ top, left, sources, onClose }: Props) {
   const ref = useRef<HTMLDivElement>(null)
@@ -43,8 +42,7 @@ export function ProvenancePopover({ top, left, sources, onClose }: Props) {
     }
     const onKey = (e: KeyboardEvent) => {
       if (e.key === 'Escape') {
-        // Capture phase + stopPropagation so Radix Dialog's (bubble-phase) Esc handler never runs —
-        // Esc dismisses just the popover, not the whole modal.
+        // Capture + stopPropagation so Radix Dialog's Esc handler never runs — dismiss popover, not modal.
         e.stopPropagation()
         e.preventDefault()
         onClose()

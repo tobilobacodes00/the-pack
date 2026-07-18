@@ -6,14 +6,11 @@ import { useHuntStore, useHuntStoreApi } from '@/store/hunt-store'
 const BACKOFF_MS = [1_000, 2_000, 5_000, 10_000, 30_000] as const
 
 /**
- * Resolve the gateway base into an absolute ws(s):// URL the WebSocket constructor accepts.
- *
- * VITE_GATEWAY_URL can be either an absolute `ws://host` / `wss://host` (separate gateway host) OR a
- * SAME-ORIGIN relative path like `/ws` (nginx / a tunnel proxies /ws → the gateway). `new WebSocket()`
- * rejects a bare relative path, so a same-origin path must be rebased onto the page's own origin —
- * and to ws/wss matching http/https, so an https page (e.g. a Cloudflare tunnel) yields `wss://` (a
- * `ws://` socket from an https page is blocked as mixed content). Without this, the live stream never
- * connects behind a same-origin proxy and the hunt appears frozen (no planning/progress ever shows).
+ * Resolve the gateway base into an absolute ws(s):// URL. VITE_GATEWAY_URL may be absolute
+ * (`ws://host`) or a same-origin relative path (`/ws`, proxied by nginx/a tunnel) — `new WebSocket()`
+ * rejects a bare relative path, so rebase onto the page origin, matching wss to https (a `ws://`
+ * socket from an https page is blocked as mixed content). Without this the stream never connects
+ * behind a same-origin proxy and the hunt appears frozen.
  */
 function resolveGatewayBase(raw: string): string {
   if (/^wss?:\/\//i.test(raw)) return raw // already absolute ws(s)://
@@ -34,18 +31,16 @@ export function useHuntStream(huntId: string | null, options?: UseHuntStreamOpti
   const store = useHuntStoreApi()
   const dispatch = useHuntStore((s) => s.dispatch)
   const lastSeqRef = useRef(-1)
-  // Read the LATEST onStatus via a ref, not the effect's dep array — an inline arrow function passed
-  // as `options.onStatus` (e.g. `useHuntStream(id, { onStatus: (s) => setStatus(s) })`) is a new
-  // reference every render; putting it in deps would tear down and reconnect the socket every render.
+  // Read the latest onStatus via a ref, not the effect's deps — an inline callback is a new
+  // reference every render, which would tear down and reconnect the socket every render.
   const onStatusRef = useRef(options?.onStatus)
   onStatusRef.current = options?.onStatus
 
   useEffect(() => {
     if (!huntId) return
     const onStatus = (s: Status) => onStatusRef.current?.(s)
-    // If the store already holds THIS hunt (e.g. returning from the Den), resume from its last seq
-    // instead of replaying from 0 — a full replay re-runs hunt_created→idle→…→done and flashes the
-    // idle pack. A fresh/other hunt (no match) still replays from the top.
+    // If the store already holds this hunt, resume from its last seq instead of replaying from 0 —
+    // a full replay re-runs hunt_created→idle→…→done and flashes the idle pack.
     const snap = store.getState().state
     lastSeqRef.current = snap.hunt_id === huntId ? snap.last_seq : -1
 

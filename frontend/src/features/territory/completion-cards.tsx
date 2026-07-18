@@ -9,8 +9,8 @@ import { toast } from '@/store/toast-store'
 import { ChoiceCard } from './choice-card'
 import { color } from '@/lib/theme'
 
-// The design's picker is a subset of the Forge's real exports (docx == "Docs"). PNG deliberately
-// excluded — a flattened image of a text brief isn't a format anyone wants to "receive their result" as.
+// A subset of the Forge's real exports (docx == "Docs"). PNG excluded — a flattened image of a
+// text brief isn't a format anyone wants.
 const PICKER: Array<{ kind: string; label: string }> = [
   { kind: 'pdf', label: 'PDF' },
   { kind: 'docx', label: 'Docs' },
@@ -57,10 +57,8 @@ export function CompletionCards({ huntId, onOpenReward }: { huntId: string; onOp
   const title = (snap?.task ?? 'Your brief').slice(0, 48)
 
   if (stage === 'pick') {
-    // Only advance past the picker once the download is actually underway — a missing/not-yet-loaded
-    // artifact used to silently no-op and still flip to the result stage, discarding the picker with
-    // no file and no way back. Now it stays put and says why, so the Packmaster can pick another
-    // format (the Forge renders each export independently — a hunt can genuinely be missing one).
+    // Only advance once the download is actually underway — a missing artifact used to silently
+    // no-op and still flip to the result stage, discarding the picker with no way back.
     const submit = () => {
       if (sel == null) {
         setStage('result')

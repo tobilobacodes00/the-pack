@@ -40,9 +40,8 @@ function wolfTone(w?: WolfState): AgentTone {
 }
 
 /** Deterministic tier layout: role list → positioned spine nodes + dashed edges. Reused by the
- *  read-only canvas AND the Edit Formations editor (it is the "auto-arrange" — no dagre/elk).
- *  Node ids equal the backend wolf_ids (scout-1, tracker, …) so `wolves[node.id]` resolves to live
- *  state; `wolves` colours the nodes/edges when a hunt is running (undefined → grey idle). */
+ *  read-only canvas and the Edit Formations editor (the "auto-arrange" — no dagre/elk).
+ *  Node ids equal backend wolf_ids so `wolves[node.id]` resolves to live state. */
 export function buildGraph(
   roles: string[],
   wolves?: Record<string, WolfState>,
@@ -63,9 +62,8 @@ export function buildGraph(
   })
   const idToRole = new Map(items.map((it) => [it.id, it.role]))
 
-  // Two agents sit OFF the execution spine: the Elder (memory/advisor) beside Alpha, and the Warden
-  // (the roaming medic) apart on its own, below the pack — it's not part of the research flow, it
-  // just watches and heals. Everything else forms the vertical spine.
+  // Elder (advisor) sits beside Alpha; Warden (roaming medic) sits apart below the pack — neither
+  // is part of the research flow. Everything else forms the vertical spine.
   const spine = items.filter((it) => it.role !== 'elder' && it.role !== 'warden')
   const elders = items.filter((it) => it.role === 'elder')
   const wardens = items.filter((it) => it.role === 'warden')
@@ -92,17 +90,16 @@ export function buildGraph(
   const alphaPos = (alpha && pos.get(alpha.id)) || { x: CENTER_X - NODE / 2, y: 0 }
   elders.forEach(({ id }, i) => pos.set(id, { x: alphaPos.x + (i + 1) * X_SPREAD, y: alphaPos.y }))
 
-  // The standing Warden sits ALONE, set apart from the formation: off to the right and below the
-  // deepest spine tier, so it reads as the lone medic on watch. (When healing it roams from here to
-  // its patient; see the node builder below.)
+  // Warden sits alone, off to the right and below the deepest spine tier; roams to its patient
+  // when healing (see node builder below).
   const deepestTier = Math.max(0, ...spine.map((it) => TIER[it.role] ?? 6))
   wardens.forEach(({ id }, i) =>
     pos.set(id, { x: CENTER_X + 1.6 * X_SPREAD - NODE / 2, y: (deepestTier + 1) * Y_STEP + i * Y_STEP }),
   )
 
   const nodes: Node<AgentNodeData>[] = items.map(({ role, id }) => {
-    // The standing Warden is a formation node, but when it's actively healing it ROAMS to its patient
-    // (from `healers`) and returns to its home slot afterward — the `.warden-roam` transition glides it.
+    // While actively healing, the Warden roams to its patient (from `healers`) and returns home
+    // afterward — the `.warden-roam` transition glides it.
     const patientId = TRANSIENT_HEALER_ROLES.has(role) ? healers?.[id] : undefined
     const patientPos = patientId ? pos.get(patientId) : undefined
     const home = pos.get(id) ?? { x: CENTER_X - NODE / 2, y: 0 }
@@ -121,8 +118,8 @@ export function buildGraph(
     }
   })
 
-  // Dashed spine: connect each populated tier to the next; plus Elder → Alpha (the advisor tap). An
-  // edge lights up in the source agent's colour once it's working (animated) or done (solid).
+  // Dashed spine: connect each populated tier to the next, plus Elder → Alpha. An edge lights up
+  // in the source agent's colour once it's working (animated) or done (solid).
   const edges: Edge[] = []
   const pushEdge = (src: string, tgt: string, handles?: { sourceHandle: string; targetHandle: string }) => {
     const tone = wolfTone(wolves?.[src])
@@ -150,15 +147,13 @@ export function buildGraph(
       for (const tgt of tierGroups[sortedTiers[t + 1]]) pushEdge(src, tgt)
     }
   }
-  // Elder sits on Alpha's row to its right — connect its left handle to Alpha's right for a clean
-  // horizontal straight line (not the diagonal a bottom→top edge would draw).
+  // Connect Elder's left handle to Alpha's right for a clean horizontal line (not the diagonal a
+  // bottom→top edge would draw).
   if (alpha) for (const e of elders) pushEdge(e.id, alpha.id, { sourceHandle: 'ls', targetHandle: 'rt' })
 
-  // OVERFLOW Wardens: the standing Warden (a formation node, handled above) roams to its patient, but
-  // when SEVERAL agents fault at once the engine clones extra Wardens (warden-2, warden-3) that aren't
-  // in the formation. Render one transient node per clone, positioned BESIDE its own patient (from
-  // `healers`) so the `.warden-roam` CSS transition glides it across the canvas. Cleared automatically
-  // when the heal completes and the clone leaves `wolves`.
+  // Overflow Wardens: when several agents fault at once the engine clones extra Wardens
+  // (warden-2, warden-3) not in the formation. Render one transient node per clone, beside its
+  // patient. Cleared automatically when the heal completes and the clone leaves `wolves`.
   if (wolves) {
     const formationIds = new Set(items.map((it) => it.id))
     for (const [wid, w] of Object.entries(wolves)) {
@@ -192,8 +187,7 @@ interface GraphCanvasProps {
 }
 
 export function GraphCanvas({ huntState }: GraphCanvasProps) {
-  // Roles come from the plan's canonical team (with leads), NOT plan.wolves (which is wolf-ids); this
-  // is what keeps every icon/tier/colour correct. Idle → the default pack.
+  // Roles come from the plan's canonical team, not plan.wolves (wolf-ids) — keeps icon/tier/colour correct.
   const roles = useMemo(() => planRoleList(huntState.plan), [huntState.plan])
   const wolves = huntState.wolves
   const healers = huntState.healers
@@ -211,8 +205,6 @@ export function GraphCanvas({ huntState }: GraphCanvasProps) {
     if (selectedId && !wolves[selectedId]) setSelectedId(null)
   }, [selectedId, wolves])
 
-  // Recompute when the roster changes, any wolf's live state changes (colours the spine), a heal
-  // starts/ends (adds/moves/clears a roaming Warden node), or the selection changes (halo).
   const { nodes, edges } = useMemo(
     () => buildGraph(roles, wolves, healers, { selectedId, onSelect }),
     [roles, wolves, healers, selectedId, onSelect],
@@ -223,9 +215,8 @@ export function GraphCanvas({ huntState }: GraphCanvasProps) {
 
   const refit = () => { void rf.current?.fitView({ padding: 0.2, duration: 200 }) }
 
-  // The panel is measured while the door-fold animation is still running, so the
-  // initial fitView locks in a zoomed-in view. Re-fit once the container settles
-  // to its real size (and whenever the pack changes).
+  // The panel is measured while the door-fold animation is still running, so the initial fitView
+  // locks in a zoomed-in view — re-fit once the container settles to its real size.
   useEffect(() => {
     const el = wrapRef.current
     if (!el) return
@@ -238,23 +229,21 @@ export function GraphCanvas({ huntState }: GraphCanvasProps) {
 
   return (
     <div ref={wrapRef} style={{ flex: 1, background: color.canvas, position: 'relative' }}>
-      {/* A roaming Warden glides to its patient: ReactFlow sets transform:translate(x,y) on the node
-          wrapper, so a transform transition animates the move across the canvas (GPU-composited, so it
-          survives ReactFlow's per-render transform writes). A gentle fade-in as it appears. */}
+      {/* ReactFlow sets transform:translate(x,y) on the node wrapper, so a transform transition
+          animates the roaming Warden across the canvas (GPU-composited, survives per-render writes). */}
       <style>{`
         .react-flow__node.warden-roam { transition: transform 900ms cubic-bezier(0.22, 1, 0.36, 1); }
         @keyframes warden-appear { from { opacity: 0 } to { opacity: 1 } }
         .react-flow__node.warden-roam { animation: warden-appear 300ms ease-out; }
 
-        /* Refined, clearly-alive motion (see AskUserQuestion "Refined & subtle"): */
-        /* an active wolf gently breathes so it reads as working, not just coloured. */
+        /* Active wolf breathes so it reads as working, not just coloured. */
         @keyframes node-breathe {
           0%, 100% { transform: scale(1); }
           50% { transform: scale(1.045); }
         }
         .node-breathe { animation: node-breathe 2.4s ease-in-out infinite; transform-origin: center; }
 
-        /* a wolf that just finished settles with a single soft flash, then rests calm. */
+        /* A wolf that just finished settles with a single soft flash. */
         @keyframes node-done-settle {
           0% { transform: scale(1); filter: brightness(1); }
           35% { transform: scale(1.12); filter: brightness(1.35); }
@@ -262,14 +251,14 @@ export function GraphCanvas({ huntState }: GraphCanvasProps) {
         }
         .node-done-settle { animation: node-done-settle 650ms cubic-bezier(0.22, 1, 0.36, 1); transform-origin: center; }
 
-        /* the done check badge pops in once. */
+        /* Done check badge pops in once. */
         @keyframes glyph-done-pop {
           from { transform: scale(0); opacity: 0; }
           to { transform: scale(1); opacity: 1; }
         }
         .glyph-done-pop { animation: glyph-done-pop 450ms cubic-bezier(0.34, 1.56, 0.64, 1) 150ms both; }
 
-        /* the selected wolf's halo breathes softly so the inspected node stays obvious. */
+        /* Selected wolf's halo breathes softly so it stays obvious. */
         @keyframes node-selected {
           0%, 100% { opacity: 0.55; }
           50% { opacity: 1; }
@@ -281,7 +270,6 @@ export function GraphCanvas({ huntState }: GraphCanvasProps) {
           .react-flow__node.warden-roam { animation: none !important; }
         }
       `}</style>
-      {/* Gentle breathing while Alpha forms the pack, so the canvas doesn't read as dead. */}
       <div className={forming ? 'animate-pulse' : undefined} style={{ width: '100%', height: '100%' }}>
         <ReactFlow
           nodes={nodes}
@@ -304,8 +292,7 @@ export function GraphCanvas({ huntState }: GraphCanvasProps) {
         />
       </div>
 
-      {/* The clicked wolf's live detail — activity, phase timeline, what it just produced, and stats.
-          Floats over the canvas (top-right of the graph area, clear of the roster/chat overlays). */}
+      {/* Floats over the canvas, clear of the roster/chat overlays. */}
       {selected && (
         <WolfInspector wolf={selected} onClose={() => setSelectedId(null)} />
       )}

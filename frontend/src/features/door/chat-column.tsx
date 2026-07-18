@@ -72,10 +72,8 @@ export interface ChatColumnProps {
   footer?: React.ReactNode
   /** Hide the composer entirely — e.g. once the plan card takes over the bottom. */
   hideComposer?: boolean
-  /** Index into `messages` where intake ends: turns before it are the intake convo, and turns from
-   *  here on are post-hunt follow-up Q&A (so they sit below the report, not back up in the intake
-   *  thread). null/undefined = no hunt yet (all intake). The pack's live beats are NOT in this feed —
-   *  they render in the collapsible status log under the spend line (see SpendTimer). */
+  /** Index into `messages` where intake ends and post-hunt follow-up Q&A begins. null/undefined =
+   *  no hunt yet. The pack's live beats render separately, in SpendTimer's status log. */
   launchIndex?: number | null
   /** Composer placeholder override (state-aware — e.g. "Ask Alpha anything about this plan…"). */
   placeholder?: string
@@ -208,9 +206,7 @@ export function ChatColumn(props: ChatColumnProps) {
     setVoicePeaks([])
   }, [audioFile, removeFile])
 
-  // One feed, in time order: intake conversation → post-hunt follow-up Q&A. `launchIndex` marks where
-  // intake ends; before a hunt it's all intake. The pack's live beats are NOT in this feed anymore —
-  // they live in the collapsible status log under the spend line (see SpendTimer).
+  // One feed, in time order: intake conversation → post-hunt follow-up Q&A.
   const cut = launchIndex ?? messages.length
   const intakeMsgs = messages.slice(0, cut)
   const followMsgs = messages.slice(cut)

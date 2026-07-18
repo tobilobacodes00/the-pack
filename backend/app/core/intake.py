@@ -17,9 +17,7 @@ from app.engine.prompt_context import temporal_grounding
 
 def dated(system_prompt: str) -> str:
     """Prepend the real current date to a system prompt, evaluated at CALL time (never frozen at
-    import). Alpha-in-chat and the ask/refine flows go through their own prompts, not build_messages,
-    so they need this too — otherwise Alpha can't answer "what happened this week" or judge whether a
-    fact is current."""
+    import) — otherwise Alpha can't answer "what happened this week" or judge if a fact is current."""
     return f"{temporal_grounding()}\n\n{system_prompt}"
 
 
@@ -27,10 +25,9 @@ def dated(system_prompt: str) -> str:
 # Alpha's intake gate — clarify until there is a real, actionable task
 # ---------------------------------------------------------------------------
 
-# The front-door LAUNCH GATE. Pairs with alpha_state.ALPHA_PERSONA + the live [HUNT STATE] header
-# (assembled by alpha_state.alpha_system) — so this block is now just the rules for deciding whether to
-# launch, NOT a second persona. When the state header says a hunt is already running or delivered, its
-# guards tell Alpha not to relaunch; this gate governs the fresh-intake case.
+# The front-door LAUNCH GATE. Pairs with alpha_state.ALPHA_PERSONA + the live [HUNT STATE] header —
+# this block is just the rules for deciding whether to launch, NOT a second persona. The state header
+# tells Alpha not to relaunch when a hunt is already running/delivered; this gate governs fresh intake.
 ALPHA_INTAKE = (
     "You are at the front door, deciding whether to launch a hunt. Chat like a genuinely helpful "
     "person — a real conversation, never a form.\n"
@@ -84,8 +81,7 @@ ALPHA_INTAKE = (
     "put the pack on Nigeria's BNPL market: who's leading, what the regulators are doing, and pull "
     'it into a clean brief for you.", "ready": true, "brief": "Research the BNPL market in Nigeria '
     '— key players and regulation — and write a brief."}\n'
-    # The exact failure case: "pull the latest news" must LAUNCH (the pack has live web search), and
-    # the launch reply carries NO trailing question — Alpha folds its scope in and commits.
+    # "pull the latest news" must LAUNCH, and the reply must carry NO trailing question.
     'User: "pull the latest verified news on SpaceX since early July" → {"reply": "On it — I\'m '
     "sending the pack after SpaceX's latest: recent Starship flights, new NASA/DoD contracts, "
     "Starlink milestones, and any FAA/FCC updates, all from the freshest sourced pages. I'll pull "
@@ -93,7 +89,7 @@ ALPHA_INTAKE = (
     'developments — Starship, contracts, Starlink, and regulation — and write a cited brief."}'
 )
 
-# Alpha's CHAT voice — deliberately NOT the internal orchestrator prompt (Doc 02 §08).
+# Alpha's CHAT voice — deliberately NOT the internal orchestrator prompt.
 ALPHA_CHAT = (
     "You are Alpha, leader of the Pack, talking to the Packmaster. Answer in plain English, "
     "present tense, warm and brief — 2 to 4 sentences. Never mention any internal machinery: "
@@ -164,30 +160,27 @@ def parse_intake(text: str) -> dict | None:
     """Pull intake JSON out of the model reply, tolerating a stray fence or prose around it.
     Returns None if there's no usable object — callers MUST NOT launch on None.
 
-    Reuses the ONE lenient-model-output parser (`_loads_lenient`) with the intake-specific requirement
-    that the object carry a `ready` key, instead of reimplementing the same fence/brace-extraction loop
-    — a fix to the leniency heuristic now lands in one place, not two that silently drift."""
+    Reuses the ONE lenient-model-output parser (`_loads_lenient`), requiring a `ready` key, instead
+    of reimplementing the same fence/brace-extraction loop."""
     from app.qwen.client import _loads_lenient
 
     return _loads_lenient(text, require=lambda obj: "ready" in obj)
 
 
 def strip_trailing_question(reply: str) -> str:
-    """On a LAUNCH turn the reply must not end with a question — the pack starts and the composer locks,
-    so a trailing 'what's most relevant — X, Y, or Z?' strands the Packmaster with no way to answer.
-    The prompt forbids it; this is the deterministic safety net that drops a dangling final question
-    sentence if the model slips. Conservative: only removes a clearly-interrogative LAST sentence, and
-    never returns empty."""
+    """On a LAUNCH turn the reply must not end with a question — the composer locks, so a trailing
+    question strands the Packmaster with no way to answer. Deterministic safety net for when the
+    model slips: only removes a clearly-interrogative LAST sentence, and never returns empty."""
     r = reply.strip()
     if not r.endswith("?"):
         return r
-    # Split into sentences on ., !, ? boundaries, keeping order; drop trailing question sentence(s).
+    # Split into sentences, keeping order; drop trailing question sentence(s).
     parts = re.split(r"(?<=[.!?])\s+", r)
     kept = [p for p in parts]
     while kept and kept[-1].strip().endswith("?"):
         kept.pop()
     out = " ".join(kept).strip()
-    # If stripping ate everything (reply was ALL question), fall back to a clean commitment line.
+    # Reply was ALL question — fall back to a clean commitment line.
     return out or "On it — I'll get the pack on that and bring back what they find."
 
 
@@ -208,7 +201,7 @@ async def stream_tokens(queue: asyncio.Queue, request: Request):
     """Yield SSE `token` frames from the queue until the None sentinel, with ~15s heartbeats
     and early exit on client disconnect so a vanished client can't pin a task forever.
 
-    Disconnect is checked on EVERY token (not just at the heartbeat) so a closed tab stops
+    Disconnect is checked on EVERY token, not just at the heartbeat, so a closed tab stops
     billing within one token round-trip rather than up to 15 seconds later.
     """
     while True:

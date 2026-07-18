@@ -1,4 +1,4 @@
-"""The Emitter — the one place an event is born (Doc 04 §3, §5).
+"""The Emitter — the one place an event is born.
 
 Every event in the system passes through here. The Emitter:
   1. assigns the dense, 0-based, strictly-increasing `seq` for its hunt (under a lock),
@@ -6,8 +6,8 @@ Every event in the system passes through here. The Emitter:
   3. writes it to Postgres — and ONLY Postgres — in one transaction.
 
 It does NOT touch Redis. Publishing to the stream is the outbox relay's job
-(app/engine/relay.py). That separation is what makes the write atomic and kills the
-dual-write problem: there is exactly one durable write in the hot path.
+(app/engine/relay.py) — that separation kills the dual-write problem: there is exactly
+one durable write in the hot path.
 
 The per-hunt asyncio.Lock serialises concurrent wolf emits so seq stays gap-free
 (`seqs == range(len)`, the contract invariant). The (hunt_id, seq) primary key in Postgres

@@ -27,9 +27,9 @@ _DEFAULT_SESSION_SECRET = "change-me-in-prod"
 
 
 def validate_secrets() -> list[str]:
-    """Boot-time secret sanity check. Returns human-readable problems (empty if fine). The lifespan
-    logs a loud WARNING and — under settings.strict_secrets — refuses to start. Stops an unconfigured
-    box (default session secret, no auth, open CORS) from silently going live."""
+    """Boot-time secret sanity check. Returns human-readable problems (empty if fine); the lifespan
+    warns loudly and, under strict_secrets, refuses to start — stops an unconfigured box from
+    silently going live."""
     problems: list[str] = []
     if settings.session_secret == _DEFAULT_SESSION_SECRET:
         problems.append("SESSION_SECRET is still the default placeholder — generate a real one")

@@ -1,9 +1,8 @@
 """Prompt + context assembly for a wolf's dispatch — pure, model-free string building.
 
 Extracted from the Supervisor so the hunt loop isn't carrying prompt plumbing. Every function here is
-pure: it takes the few hunt fields it needs (the task, handler notes, findings, sources, library
-picks, extra inputs) and returns the message list or context string to hand the model. The Supervisor
-keeps thin wrappers that pass its state in, so the Engine-primitive call sites are unchanged.
+pure; the Supervisor keeps thin wrappers that pass its state in, so the Engine-primitive call sites
+are unchanged.
 """
 
 from __future__ import annotations
@@ -23,10 +22,8 @@ def temporal_grounding(now: datetime | None = None) -> str:
     """A short 'what is today' block prepended to EVERY wolf's system prompt.
 
     Without it the model reasons from a frozen training cutoff — it can't tell what "latest",
-    "recent", "current", or "since January" mean, treats stale pages as fresh, and mis-sizes a
-    query's time window. Grounding it in the real clock makes the pack temporally aware: scouts
-    add the right year to a search, Tracker/Sentinel can flag a source as out of date, and the
-    brief speaks in the present. `now` is injectable for deterministic tests.
+    "recent", or "current" mean, treats stale pages as fresh, and mis-sizes a query's time window.
+    `now` is injectable for deterministic tests.
     """
     now = (now or datetime.now(UTC)).astimezone()
     return (
@@ -40,10 +37,9 @@ def temporal_grounding(now: datetime | None = None) -> str:
     )
 
 
-# v3: adaptive depth — the merge/draft targets and material-slice scaling all key off one enum
+# Adaptive depth — the merge/draft targets and material-slice scaling all key off one enum
 # (brief|standard|deep) so the brief is comprehensive when the task needs it and tight when it
-# doesn't. The ranges are runaway CEILINGS the model fills to the sources' real extent, not targets:
-# brief is genuinely tighter than the old fixed 6-12/5-9; deep is ~2.5-3x.
+# doesn't. The ranges are CEILINGS the model fills to the sources' real extent, not targets to pad to.
 _MERGE_CLAIMS: dict[str, tuple[int, int]] = {"brief": (4, 6), "standard": (8, 14), "deep": (16, 28)}
 _DRAFT_BLOCKS: dict[str, tuple[int, int]] = {"brief": (3, 5), "standard": (7, 12), "deep": (14, 24)}
 _DEPTH_MULT: dict[str, float] = {"brief": 0.7, "standard": 1.0, "deep": 1.6}
@@ -55,8 +51,8 @@ def depth_mult(depth: str) -> float:
 
 
 def merge_instruction(depth: str) -> str:
-    """The Tracker's merge instruction, scaled to depth. The claim count is a CEILING anchored to how
-    much the findings actually support, never a target to pad toward or shrink to hit."""
+    """The Tracker's merge instruction, scaled to depth. The claim count is a CEILING, never a
+    target to pad toward or shrink to hit."""
     _, hi = _MERGE_CLAIMS.get(depth, _MERGE_CLAIMS["standard"])
     return (
         "Cross-reference the scouts' findings into a rich, comprehensive set of claims. Extract every "
@@ -74,8 +70,7 @@ def merge_instruction(depth: str) -> str:
 
 
 def draft_instruction(depth: str) -> str:
-    """The Howler's draft instruction, scaled to depth. Removes the old 'typically 5-9 blocks' /
-    'Don't pad' cap that made every brief shallow."""
+    """The Howler's draft instruction, scaled to depth."""
     lo, hi = _DRAFT_BLOCKS.get(depth, _DRAFT_BLOCKS["standard"])
     tail = " Expand every theme the sources support fully." if depth == "deep" else ""
     return (
@@ -197,14 +192,12 @@ INTENT_INSTRUCTIONS: dict[str, str] = {
 
 def _system_content(wolf: Wolf) -> str | list[dict]:
     """The persona body (STABLE — identical for this role/version on every hunt) followed by
-    temporal grounding (VOLATILE — changes every call, down to the minute). Order matters: a
-    provider's prompt cache keys on the longest common PREFIX, so the volatile part must come last
-    or the prefix differs on every single call and nothing ever caches (the bug this replaces —
-    the old code built `f"{temporal_grounding()}\\n\\n{persona}"`, volatile-first).
+    temporal grounding (VOLATILE — changes every call). Order matters: a provider's prompt cache
+    keys on the longest common PREFIX, so the volatile part must come last or nothing ever caches.
 
     When `qwen_prompt_cache_enabled` and the persona clears DashScope's minimum cacheable block,
-    returns typed content blocks with `cache_control` on the persona only — the temporal suffix is
-    a separate, uncached block, so re-grounding the date never invalidates the cached prefix."""
+    returns typed content blocks with `cache_control` on the persona only, so re-grounding the date
+    never invalidates the cached prefix."""
     persona = load_prompt(wolf.role).body
     temporal = temporal_grounding()
     if settings.qwen_prompt_cache_enabled and len(persona) >= settings.qwen_prompt_cache_min_chars:
@@ -225,8 +218,8 @@ def messages(
 ) -> list[dict]:
     """The role's prompt file is the system message; the task + intent instruction + any upstream
     context is the user message. `instruction_override`, when given, replaces the static
-    INTENT_INSTRUCTIONS text for this dispatch (used to pass depth-scaled merge/draft wording while
-    keeping intent='merge'/'draft' for FakeQwen dispatch + pricing)."""
+    INTENT_INSTRUCTIONS text (used to pass depth-scaled merge/draft wording while keeping
+    intent='merge'/'draft' for FakeQwen dispatch + pricing)."""
     system = _system_content(wolf)
     user = f"Task: {raw_input or 'Research the topic and produce a briefing.'}\n\n"
     user += (
@@ -247,7 +240,7 @@ def hits_context(query: str, hits: list[dict]) -> str:
         return f"Your angle: {query}\n(No results returned.)"
     lines = []
     for h in hits:
-        # Label read vs unread so the model can't treat a one-line SEO snippet as a verified fact.
+        # Label read vs unread — a model can't treat a one-line SEO snippet as a verified fact.
         read = bool(h.get("text"))
         tag = "[READ]" if read else "[UNREAD — snippet only, treat as a lead, do NOT state as fact]"
         line = f"- {tag} {h.get('title', '')} — {h.get('url', '')}: {h.get('snippet', '')}"
@@ -289,7 +282,7 @@ def findings_context(
         # The SAME numbered list draft_context will cite from — Tracker attaches claim.source_ids
         # against these numbers so the citation survives unchanged into the draft.
         parts.append(f"Sources (cite each claim by number):\n{sources_registry}")
-    if memory_note:  # v4.1: the Elder's recall informs the merge too, not just the plan
+    if memory_note:  # the Elder's recall informs the merge too, not just the plan
         parts.append(memory_note)
     extra = extra_inputs_block(extra_inputs).strip()
     if extra:
@@ -331,7 +324,7 @@ def draft_context(
         # Same numbering merge saw (numbered_sources is deterministic) — Howler's block citations
         # land on the identical [N] Tracker already attached to each claim.
         parts.append(f"Sources (cite each block by number):\n{numbered}")
-    if kb_picks:  # v4.2: give Howler the library text so it can actually cite it
+    if kb_picks:  # give Howler the library text so it can actually cite it
         kb_chars = max(1, int(settings.kb_pick_chars * depth_mult(depth)))
         lib = "\n".join(f"- {p['title']}: {p['text'][:kb_chars]}" for p in kb_picks)
         parts.append(f"From your library:\n{lib}")
@@ -352,9 +345,8 @@ def distill_context(
     claims: list[str],
     no_sources: bool,
 ) -> str:
-    """What the Elder sees to distill one lesson: how the hunt was run and what it produced. Kept
-    compact — the Elder writes a single reusable sentence, not another brief. Claims are capped so a
-    deep hunt's long merge doesn't blow the flash-tier context."""
+    """What the Elder sees to distill one lesson. Claims are capped so a deep hunt's long merge
+    doesn't blow the flash-tier context."""
     outcome = (
         "found no sources — the topic was too sparse or the wording too narrow"
         if no_sources or source_count == 0
@@ -399,10 +391,9 @@ def conflict_from(obj: object) -> Conflict | None:
 
 
 def dedupe_sources(sources: list[dict]) -> list[dict]:
-    """Dedup by canonical URL (http/https, trailing slash, tracking params, m./amp collapse to one),
-    keeping the ORIGINAL dict for display, then order verified (read) sources first — one canonical
-    order all consumers share (the span map, block numbering, and draft citations must agree). A
-    source with no url is dropped (url is the citation identity)."""
+    """Dedup by canonical URL, keeping the ORIGINAL dict for display, then order verified (read)
+    sources first — one canonical order all consumers share (span map, block numbering, citations
+    must agree). A source with no url is dropped (url is the citation identity)."""
     # Never cite the offline CannedProvider's fabricated example.com sources in a LIVE brief. Offline
     # (no key) this is a no-op — the canned hunt has nothing else and must keep them.
     drop_canned = bool(settings.qwen_api_key)
@@ -422,9 +413,8 @@ def dedupe_sources(sources: list[dict]) -> list[dict]:
 
 def numbered_sources(sources: list[dict]) -> tuple[list[dict], str]:
     """Dedupe once (verified-first) and return the deduped list + its rendered `[N] title — url`
-    block. THE single source-numbering function — the merge registry Tracker cites into and the
-    draft citation list Howler cites from must be the same numbering or claims mis-attribute; both
-    call this (on the same underlying `sources`), and `dedupe_sources` is deterministic, so they agree."""
+    block. THE single source-numbering function — Tracker's merge registry and Howler's draft
+    citations both call this, so claims never mis-attribute to the wrong number."""
     deduped = dedupe_sources(sources)
     block = "\n".join(
         f"[{i + 1}] {'' if s.get('verified') else '(unverified) '}"
@@ -435,12 +425,10 @@ def numbered_sources(sources: list[dict]) -> tuple[list[dict], str]:
 
 
 def coerce_source_ids(raw: object, n_sources: int) -> list[int]:
-    """Coerce a model's source_ids list to valid, in-range ints. `json.loads(..., strict=False)`
-    (our lenient parser) accepts the non-standard NaN/Infinity/-Infinity literals, and `isinstance(nan,
-    float)` is True — so a naive `int(i) for i in ids if isinstance(i, int | float)` comprehension lets
-    a NaN through and then crashes on `int(float('nan'))`. Silently drop anything that isn't a finite,
-    in-range number (NaN/Infinity/out-of-range/non-numeric/bool) — a bad id degrades to 'uncited'
-    rather than crashing the hunt at its very last step."""
+    """Coerce a model's source_ids list to valid, in-range ints. Our lenient JSON parser accepts
+    NaN/Infinity literals, and `isinstance(nan, float)` is True — a naive int() comprehension lets a
+    NaN through and crashes on `int(float('nan'))`. Silently drop anything non-finite/out-of-range/
+    non-numeric instead — a bad id degrades to 'uncited' rather than crashing the hunt."""
     out: set[int] = set()
     for i in raw if isinstance(raw, list) else []:
         if not isinstance(i, int | float) or isinstance(i, bool):

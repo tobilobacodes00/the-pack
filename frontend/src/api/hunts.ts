@@ -41,8 +41,8 @@ export type IntakeMessage = { role: 'user' | 'assistant'; content: string }
 export interface IntakePayload {
   messages: IntakeMessage[]
   artifact_ids?: string[]
-  /** The hunt this conversation is attached to, if one exists — lets the state-aware front door see a
-   *  running/delivered hunt so it stops re-scoping and won't relaunch. */
+  /** Hunt this conversation is attached to, if any — lets the front door see it's running/delivered
+   *  so it won't re-scope or relaunch. */
   hunt_id?: string | null
 }
 
@@ -66,8 +66,7 @@ export function useHunts(projectId?: string, limit = 20) {
       if (projectId) params.project_id = projectId
       const res = await api.get('/hunts', { params })
       const parsed = HuntListResponseSchema.parse(res.data)
-      // Local-first, no auth: the DB is the engine's shared store, so /hunts returns EVERY visitor's
-      // hunts. Show only the ones THIS browser created (see lib/local-history).
+      // /hunts returns every visitor's hunts (no auth); show only ones this browser created.
       return { ...parsed, hunts: filterOwned(parsed.hunts) }
     },
   })
@@ -103,8 +102,7 @@ export function useCreateHunt() {
       strategy?: string
       project_id?: string
       boundary_usd?: number
-      // A reused Instinct carries its proven formation as seed_team — the backend lets it override
-      // Beta's sizing while the fresh `input` (not the instinct's baked-in task) drives the research.
+      // A reused Instinct's formation, overriding Beta's sizing; `input` still drives the research.
       team?: Array<{ role: string; count: number }>
     }) => {
       const res = await api.post<{ hunt_id: string }>('/hunts', body)
@@ -124,10 +122,10 @@ export function useApprovePlan(huntId: string) {
     mutationFn: async (body: {
       mode: 'wild' | 'on_signal' | 'on_command'
       boundary_usd: number
-      // v3: the user's depth choice from the plan card (brief|standard|deep). Omitted → keep Beta's.
+      // User's depth choice from the plan card. Omitted → keep Beta's.
       depth?: 'brief' | 'standard' | 'deep'
-      // Formation edits from the Edit panel — the backend `_apply_edits` seam. `team` respawns the
-      // pack; `notes` is a per-wolf handler note keyed by wolf_id (scout-4, tracker-2, …).
+      // Formation edits from the Edit panel. `team` respawns the pack; `notes` is a per-wolf
+      // handler note keyed by wolf_id.
       edits?: {
         team?: Array<{ role: string; count: number }>
         notes?: Record<string, string>
@@ -209,9 +207,8 @@ export function useHuntMessages(huntId: string) {
   })
 }
 
-/** Append one turn to a hunt's durable chat log (role 'user' | 'alpha').
- * Plain helper (not a hook) so the intake conversation can be flushed in a loop
- * against a hunt id that only exists after createHunt resolves. */
+/** Append one turn to a hunt's durable chat log. Plain helper (not a hook) so intake can flush
+ * in a loop against a hunt id that only exists after createHunt resolves. */
 export async function postMessage(
   huntId: string,
   body: { role: 'user' | 'alpha'; content: string },
@@ -304,9 +301,8 @@ export function useShare(huntId: string) {
   })
 }
 
-/** Re-price the hunt for an EDITED formation before approval (the Shadow Hunt rehearsal). The
- *  endpoint is a pure estimator — POST-in-a-query is safe and idempotent; keyed on the exact
- *  team/strategy/depth so toggling depth or reshaping the pack re-prices instantly. */
+/** Re-price the hunt for an edited formation before approval (Shadow Hunt rehearsal). Pure
+ *  estimator, so POST-in-a-query is safe; keyed on team/strategy/depth for instant re-pricing. */
 export function useRehearse(
   huntId: string | null,
   body: {
@@ -339,17 +335,14 @@ export function useRunBenchmark(huntId: string) {
   })
 }
 
-/** How long to wait for a launched benchmark before giving up: 2.5s × 48 ≈ 2 min. A benchmark that
- *  dies in the background (provider error, bad judge response) never lands a scorecard — without a
- *  cap the poll would spin forever and the Scorecard would show "running…" indefinitely. */
+/** Poll budget: 2.5s × 48 ≈ 2 min. Without a cap, a benchmark that dies in the background would
+ *  spin the poll forever with the Scorecard stuck on "running…". */
 export const SCORECARD_POLL_MS = 2500
 export const SCORECARD_POLL_MAX = 48
 
-/** The latest benchmark Scorecard (Lone Wolf vs Pack). 404 (→ isError) until a benchmark is run.
- *  `pollWhileMissing` re-checks every 2.5s until the scorecard exists OR the poll budget runs out
- *  (SCORECARD_POLL_MAX attempts) — the follow-up to useRunBenchmark for when the live stream isn't
- *  connected to deliver benchmark_completed. `pollExhausted` on the result tells the caller the
- *  benchmark never landed so the UI can recover instead of spinning forever. */
+/** The latest benchmark Scorecard. 404 (→ isError) until a benchmark is run. `pollWhileMissing`
+ *  re-checks until the scorecard lands or the poll budget runs out; `pollExhausted` lets the UI
+ *  recover instead of spinning forever. */
 export function useHuntScorecard(huntId: string, enabled: boolean, pollWhileMissing = false) {
   const q = useQuery({
     queryKey: ['hunts', huntId, 'scorecard'],
@@ -360,16 +353,13 @@ export function useHuntScorecard(huntId: string, enabled: boolean, pollWhileMiss
     enabled: enabled && !!huntId,
     retry: false,
     refetchInterval: (query) => {
-      // Count fetch cycles (successes + failures); the scorecard 404s until it lands, so this is
-      // effectively "attempts so far". Stop once we have the data or the budget is spent.
+      // Fetch cycles so far (404s count as failures); stop once data lands or budget is spent.
       const attempts = query.state.dataUpdateCount + query.state.errorUpdateCount
       return pollWhileMissing && !query.state.data && attempts < SCORECARD_POLL_MAX
         ? SCORECARD_POLL_MS
         : false
     },
   })
-  // The benchmark never landed within the budget: the poll made its full run of attempts and still
-  // has no scorecard. Lets the UI stop showing "running…" and offer a retry instead.
   const pollExhausted =
     pollWhileMissing && !q.data && q.failureCount + q.errorUpdateCount >= SCORECARD_POLL_MAX
   return Object.assign(q, { pollExhausted })
@@ -421,8 +411,8 @@ export function useTracks(huntId: string, enabled: boolean) {
   })
 }
 
-/** Total + per-hunt spend for the Settings › Spend section (GET /spend). Scoped to this browser's
- *  hunts (local-first, no auth) — the server sum is global, so we recompute from owned rows only. */
+/** Total + per-hunt spend for Settings › Spend. Server sum is global (no auth), so recompute
+ *  from this browser's owned rows only. */
 export function useSpendSummary() {
   return useQuery({
     queryKey: ['spend'],
@@ -436,9 +426,8 @@ export function useSpendSummary() {
   })
 }
 
-/** Clear THIS browser's hunt history. Local-only by design: the DB is the engine's shared store, so
- *  we forget the local ownership index rather than DELETE /hunts (which would wipe every visitor's
- *  hunts). Documents/memory/instincts are untouched. */
+/** Clear this browser's hunt history. Forgets the local ownership index rather than DELETE /hunts
+ *  (which would wipe every visitor's hunts). Documents/memory/instincts are untouched. */
 export function useClearHunts() {
   const qc = useQueryClient()
   return useMutation({
@@ -452,8 +441,7 @@ export function useClearHunts() {
   })
 }
 
-/** Reset THIS browser's local data. Forgets locally-owned hunts (so history + spend go empty) without
- *  touching the shared engine DB. Documents/memory/instincts remain global (engine-scoped). */
+/** Reset this browser's local data — history + spend go empty without touching the shared engine DB. */
 export function useResetData() {
   const qc = useQueryClient()
   return useMutation({

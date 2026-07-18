@@ -1,18 +1,16 @@
 """Artifact object store — Alibaba Cloud OSS (Object Storage Service), with a local-disk fallback.
 
-This is the pack's use of an Alibaba Cloud **infrastructure** API (the other being Qwen / Model
-Studio for inference). Forged files — the PDF/DOCX/PPTX/PNG/… the Howler makes — are large binary
-blobs. Rather than inline them as base64 inside a Postgres JSON column forever, we push the bytes to
-an OSS bucket and keep only a small pointer in the DB. Downloads stream the object back out of OSS.
+Forged files — the PDF/DOCX/PPTX/PNG/… the Howler makes — are large binary blobs. Rather than
+inline them as base64 inside a Postgres JSON column forever, we push the bytes to an OSS bucket and
+keep only a small pointer in the DB. Downloads stream the object back out of OSS.
 
 Design:
 - `ArtifactStore` is the seam: `put(key, data, mime) -> StoragePointer` and `get(pointer) -> bytes`.
 - `OSSArtifactStore` talks to Alibaba OSS via the official `oss2` SDK. `oss2` is synchronous, so
   every call runs in a worker thread (`asyncio.to_thread`) to stay off the event loop.
-- `LocalArtifactStore` writes to disk. It is the fallback whenever the `OSS_*` settings are unset,
-  so the engine runs end-to-end with **zero** cloud configuration (offline-first, like the rest of
-  the app). A `StoragePointer` records which backend wrote it, so reads route correctly even if the
-  config later changes.
+- `LocalArtifactStore` writes to disk — the fallback whenever the `OSS_*` settings are unset, so the
+  engine runs end-to-end with zero cloud configuration. A `StoragePointer` records which backend
+  wrote it, so reads route correctly even if the config later changes.
 
 `get_artifact_store()` is a process singleton that picks OSS when fully configured, else local.
 Callers treat a store failure as non-fatal: the Forge write path falls back to inlining base64 so a
@@ -34,8 +32,8 @@ from app.config import settings
 class StoragePointer:
     """Where an artifact's bytes live. Persisted (as a dict) in the artifact row's `content`.
 
-    `backend` is "oss" or "local"; `key` is the object key / relative path. `mime` and `size` are
-    carried so a download can set headers without re-reading the object first.
+    `backend` is "oss" or "local"; `key` is the object key / relative path. `mime` and `size` let a
+    download set headers without re-reading the object first.
     """
 
     backend: str
@@ -92,8 +90,8 @@ class LocalArtifactStore(ArtifactStore):
 class OSSArtifactStore(ArtifactStore):
     """Alibaba Cloud OSS backend. Objects live at `<prefix><key>` in the configured bucket.
 
-    Uses the `oss2` SDK (`put_object` / `get_object`). The bucket handle is built once and reused;
-    the sync SDK calls are dispatched to worker threads so they never block the event loop.
+    Uses the `oss2` SDK (`put_object` / `get_object`); sync calls run in worker threads so they
+    never block the event loop.
     """
 
     backend = "oss"
@@ -133,7 +131,7 @@ class OSSArtifactStore(ArtifactStore):
 
 
 def _oss_configured() -> bool:
-    """True only when every credential OSS needs is present — otherwise we stay on local disk."""
+    """True only when every credential OSS needs is present; otherwise stay on local disk."""
     return all(
         (
             settings.oss_bucket,
@@ -188,7 +186,7 @@ async def store_forged_content(key: str, data: bytes, mime: str) -> dict[str, An
     """Push forged bytes to the artifact store and return the `content` dict to persist.
 
     Non-fatal: if the store raises (e.g. a misconfigured bucket), fall back to inlining base64 so a
-    Forge write never sinks a hunt. The download route reads both shapes."""
+    Forge write never sinks a hunt."""
     import base64
 
     try:

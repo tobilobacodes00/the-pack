@@ -83,17 +83,13 @@ const iconBtn: React.CSSProperties = {
 
 export function LeftPanel({ huntState }: LeftPanelProps) {
   const isMobile = useIsMobile()
-  // Leave the territory with a hard navigation, NOT react-router's navigate('/'). This panel is shared
-  // by the standalone /hunts/:id page AND the door-mounted territory. On the door, the territory phase
-  // is local component state and the URL was set via raw history.replaceState — a plain navigate('/')
-  // changes the URL but doesn't remount DoorPage, so the view stays stuck in territory (it just "strips
-  // the slug"). A full document load guarantees a fresh Door + a clean hunt store in every context.
+  // Hard navigation, not react-router's navigate('/'): on the door, territory phase is local state
+  // set via raw history.replaceState, so a plain navigate wouldn't remount DoorPage and the view
+  // would stay stuck in territory. A full document load guarantees a fresh Door in every context.
   const goToDoor = () => window.location.assign('/')
-  // On a phone the roster starts as the compact corner square so it never covers the canvas/chat; on
-  // desktop it opens as the full rail. The user can still toggle either way.
+  // Mobile starts as the compact corner square so it never covers the canvas/chat.
   const [collapsed, setCollapsed] = useState(isMobile)
 
-  // Roles from the plan's canonical team (with leads), grouped by role — NOT plan.wolves (wolf-ids).
   const roles = rosterRoles(planRoleList(huntState.plan))
   const badge = statusBadge(huntState.status)
   const emptyCopy =

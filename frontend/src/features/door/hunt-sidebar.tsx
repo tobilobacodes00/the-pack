@@ -163,9 +163,8 @@ export function HuntSidebar({ onCollapse }: Props) {
                   <RowMenu
                     onClose={() => setMenuId(null)}
                     items={[
-                      // Note: saving an Instinct lives in the Reward modal (after a hunt), where the
-                      // real formation is in hand. A row here only has the title, not the pack shape —
-                      // saving from it would produce an instinct that launches a generic default pack.
+                      // Saving an Instinct lives in the Reward modal — a row here has no pack shape,
+                      // only the title.
                       {
                         label: 'Delete',
                         danger: true,

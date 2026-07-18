@@ -24,8 +24,7 @@ export const HeroTypewriter = memo(function HeroTypewriter() {
 
   return (
     <h1
-      // `whitespace-nowrap` keeps the whole headline on ONE line as the clause grows — it must never
-      // wrap mid-typing. The clamp shrinks the type on narrow screens so the longest phrase still fits.
+      // whitespace-nowrap: must never wrap mid-typing. Clamp shrinks type so the longest phrase fits.
       className="font-display font-extrabold text-ink-900 text-center leading-tight tracking-tight whitespace-nowrap"
       style={{ fontSize: 'clamp(1.125rem, 4.5vw, 2.375rem)' }}
     >

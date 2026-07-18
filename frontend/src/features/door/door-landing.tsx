@@ -27,7 +27,7 @@ const HACKATHON = 'https://qwencloud-hackathon.devpost.com'
 // Edit here. Empty strings render an "add link" placeholder in the footer.
 const SUBMISSION = {
   repo: REPO,
-  figma: '',
+  figma: 'https://www.figma.com/design/agn6RMQxQX6xn1OfYQNkTr/Qwen-Hackathon?node-id=0-1&p=f&t=dqn6oIL32hRo6FpG-0',
   architecture: `${REPO}/blob/main/docs/ARCHITECTURE.md`,
   demoVideo: '',
 }
@@ -121,10 +121,8 @@ const BUILDERS: Builder[] = [
 const CARD_SPRING = { type: 'spring' as const, stiffness: 240, damping: 24, mass: 0.9 }
 const GLIDE = { duration: 0.45, ease: [0.22, 1, 0.36, 1] as const }
 const CARD_H = 440
-const PHOTO_REST = 224 // photo is a square window at rest; grows to fill the card on hover. Kept short
-                       // enough that the white panel below (CARD_H - PHOTO_REST) comfortably holds a
-                       // 4-line bio + the CTA row with breathing room from the top edge — no card's name
-                       // ever rides up to the edge, regardless of bio length.
+const PHOTO_REST = 224 // square window at rest, grows to fill the card on hover; leaves room below
+                       // for a 4-line bio + CTA row regardless of bio length.
 
 /** A builder profile card. At rest: photo square up top, dark text on the white panel below. On hover
  *  the card lifts, the photo grows to fill it, the white panel slides away, and the text turns white. */
@@ -159,11 +157,8 @@ function BuilderCard({ builder, delay }: { builder: Builder; delay: number }) {
         style={{ height: CARD_H, transformOrigin: 'center bottom', willChange: 'transform' }}
         className={`group relative mx-auto block w-full max-w-[380px] overflow-hidden rounded-[28px] bg-white outline-none ${builder.site ? '' : 'cursor-default'}`}
       >
-        {/* ── Photo. RESTING: a near-square window up top (face centered), text on white below —
-             matching the mockup's state 1. HOVER: the window grows to fill the whole card so the
-             photo bleeds full behind the glass (state 2). Only this card animates its own height —
-             the page never reflows. object-center + object-cover keeps the face framed at both sizes. ── */}
-        {/* Photo: a square window up top at rest; grows to fill the whole card on hover. */}
+        {/* Photo: a square window up top at rest; grows to fill the whole card on hover. Only this
+            card animates its own height — the page never reflows. */}
         <motion.div
           className="absolute inset-x-0 top-0 overflow-hidden rounded-[28px]"
           style={{ background: '#dfe4e6', willChange: 'height' }}
@@ -187,10 +182,7 @@ function BuilderCard({ builder, delay }: { builder: Builder; delay: number }) {
           )}
         </motion.div>
 
-        {/* White panel: present at rest holding dark text below the photo; on hover it SLIDES DOWN out
-            of view (and fades) as the photo takes over. Fixed geometry so every card is identical —
-            bios are trimmed to a uniform length that fits this panel. Its TOP edge is gently rounded so
-            it meets the photo above with a soft curve, not a hard seam. */}
+        {/* White panel: holds dark text at rest; slides down out of view on hover as the photo takes over. */}
         <motion.div
           aria-hidden
           className="absolute inset-x-0 bottom-0 rounded-t-2xl rounded-b-[28px] bg-white"
@@ -210,8 +202,7 @@ function BuilderCard({ builder, delay }: { builder: Builder; delay: number }) {
           style={{ background: 'linear-gradient(to top, rgba(18,20,22,0.8), rgba(18,20,22,0.4) 46%, rgba(18,20,22,0))' }}
         />
 
-        {/* ── Text. Sits at the bottom, same place in both states — dark on the white panel at rest,
-             white over the photo on hover (the panel has slid away). ── */}
+        {/* Text sits at the bottom in both states — dark at rest, white over the photo on hover. */}
         <div className="absolute inset-x-0 bottom-0 px-6 pb-6 pt-4">
           <motion.h3
             className="font-display text-[16px] font-extrabold leading-[1.25] tracking-tight pb-0.5"
@@ -284,14 +275,9 @@ function Kicker({ children }: { children: ReactNode }) {
   return <p className="text-[11px] font-semibold uppercase tracking-[0.28em] text-ink-500">{children}</p>
 }
 
-/**
- * Memoized + narrowed to the one stable setter it needs: the composer's `input` state lives at
- * page level (useDoorLogic), so every keystroke re-renders DoorPage. Without this, that would
- * reconcile the whole landing tree (PackReveal's 7 role captions, 5 animated use-case lines, the
- * CTA, the full footer) on every keypress, on top of the two already-running WebGL rAF loops
- * (the pack canvas + the fluid cursor) — pure wasted reconciliation, since the landing has never
- * needed anything from `door` except this setter.
- */
+/** Memoized + narrowed to one stable setter — the composer's `input` re-renders DoorPage on every
+ *  keystroke, and without this that would reconcile the whole landing tree on top of the two
+ *  already-running WebGL rAF loops (pack canvas + fluid cursor). */
 export const DoorLanding = memo(function DoorLanding({ setInput }: { setInput: (v: string) => void }) {
   const seed = (prompt: string) => {
     setInput(prompt)
