@@ -112,7 +112,8 @@ export function buildGraph(
         role, wolfId: id, tone: wolfTone(wolves?.[id]), live: wolves?.[id],
         selected: selection?.selectedId === id, onSelect: selection?.onSelect,
       },
-      selectable: false,
+      // Only a live wolf is inspectable — an empty formation slot stays inert.
+      selectable: !!wolves?.[id],
       draggable: false,
       ...(TRANSIENT_HEALER_ROLES.has(role) ? { className: 'warden-roam' } : {}),
     }
@@ -172,7 +173,7 @@ export function buildGraph(
           role: w.role, wolfId: wid, tone: wolfTone(w), live: w,
           selected: selection?.selectedId === wid, onSelect: selection?.onSelect,
         },
-        selectable: false,
+        selectable: true,
         draggable: false,
         className: 'warden-roam',
       })
@@ -258,6 +259,11 @@ export function GraphCanvas({ huntState }: GraphCanvasProps) {
         }
         .glyph-done-pop { animation: glyph-done-pop 450ms cubic-bezier(0.34, 1.56, 0.64, 1) 150ms both; }
 
+        /* Suppress React Flow's default selection outline — our own halo marks the inspected wolf. */
+        .react-flow__node.selected, .react-flow__node:focus, .react-flow__node:focus-visible {
+          outline: none !important; box-shadow: none !important;
+        }
+
         /* Selected wolf's halo breathes softly so it stays obvious. */
         @keyframes node-selected {
           0%, 100% { opacity: 0.55; }
@@ -284,10 +290,17 @@ export function GraphCanvas({ huntState }: GraphCanvasProps) {
           panOnScroll
           zoomOnScroll={false}
           zoomOnDoubleClick={false}
-          elementsSelectable={false}
+          // Nodes stay selectable so a click registers (elementsSelectable=false sets
+          // pointer-events:none and swallows it); the default selection outline is hidden in CSS,
+          // our own halo marks the inspected wolf.
+          elementsSelectable
           nodesDraggable={false}
           proOptions={{ hideAttribution: true }}
           colorMode="light"
+          onNodeClick={(_e, node) => {
+            const d = node.data as AgentNodeData
+            if (d.wolfId && d.live) onSelect(d.wolfId)
+          }}
           onPaneClick={() => setSelectedId(null)}
         />
       </div>
