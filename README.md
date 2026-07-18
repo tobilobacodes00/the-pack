@@ -1,122 +1,189 @@
-# A Pack
+<div align="center">
 
-**A multi-agent research orchestrator you can watch — and audit.**
+# 🐺 A Pack
 
-You give the pack a task; a team of AI wolves — Alpha (orchestrator), Beta (planner), Scouts
-(researchers), Tracker (analyst), Sentinel (critic), Howler (writer), Elder (memory) — plan it,
-run it, and surface every decision to you live on a visual canvas (the Territory). Every action
-is a typed, append-only event, and the UI is a pure function of that event stream — so nothing
-happens off-screen.
+**A multi-agent research team you can watch — and audit.**
 
-What sets it apart from a single agent is **accountability**: every claim in the brief carries a
-**receipt** (its source, who found it, whether the page was read); you see the **price before it
-spends a cent**; you can run it **head-to-head against a lone agent** and score both; **replay**
-every decision; and its **memory is yours to veto**.
+Give it a question. A pack of AI wolves plans the work, researches the web, argues over weak
+claims, and writes you a cited brief — every move streaming live on a canvas, every claim
+carrying a receipt, and the price shown before a cent is spent.
 
-> Built for the Qwen Cloud Global AI Hackathon. All inference runs on **Qwen models via Alibaba
-> Cloud Model Studio / DashScope** (`backend/app/qwen/client.py`), and every generated artifact is
-> stored in **Alibaba Cloud OSS** (`backend/app/storage/oss.py`).
+*Built for the Qwen Cloud Global AI Hackathon — all inference on Qwen models via Alibaba Cloud.*
+
+</div>
+
+---
+
+## Why it's different
+
+Most "AI research" is a black box: one prompt in, one wall of text out, and no way to know whether
+it read a real source or made it up. A Pack is built the opposite way — **every action is visible,
+attributable, and reversible.**
+
+| | A single agent | **A Pack** |
+|---|---|---|
+| **What you see** | A spinner, then text | The whole team working, live, on a canvas |
+| **Trust** | "Trust me" | Every claim links to **who found it and where** (a *receipt*) |
+| **Cost** | Found out after | **Priced before it runs** — a hard spend cap you set |
+| **Quality** | Take it or leave it | A **Sentinel** challenges any claim not traced to a source, and drops it |
+| **Proof** | None | **Benchmark** the pack head-to-head against a lone agent, scored |
+| **Memory** | Hidden or none | The **Elder** remembers past hunts — and you can read, edit, or veto every lesson |
+| **Auditability** | None | **Replay** every decision from an append-only event log |
+
+Nothing happens off-screen. The UI is a **pure function of an append-only event stream** — so if it
+wasn't an event, it didn't happen.
+
+---
+
+## Meet the pack
+
+Eight roles, each a distinct wolf with its own job. A hunt uses the ones the task needs; Scouts scale
+with the work (usually several at once).
+
+| Wolf | Role | What it does |
+|---|---|---|
+| 🌟 **Alpha** | Orchestrator | Reads your task, keeps the pack on track, talks to you |
+| 📊 **Beta** | Planner | Breaks the goal into a plan and forms the pack before the hunt begins |
+| 🔍 **Scout** | Researcher | Ranges ahead and runs real web searches for ground truth (usually several at once) |
+| 🐾 **Tracker** | Analyst | Reads what the Scouts bring back and gives it shape |
+| 🛡️ **Sentinel** | Critic | Challenges any claim not traceable to a Scout finding — and drops it if it can't be backed |
+| 📣 **Howler** | Writer | Crafts the final cited brief from verified findings |
+| 🧠 **Elder** | Memory | Recalls lessons from past hunts, records one for next time |
+| 🩹 **Warden** | Field medic | Roams to faulted wolves and reroutes them so the hunt never stalls |
+
+---
+
+## The hunt, end to end
+
+1. **Talk to Alpha.** Type, speak, or drop a file. Alpha scopes a real job from the conversation.
+2. **Beta forms the pack.** A plan and a formation appear — you can **edit the team** or pick a
+   depth (*Brief → Standard → Deep*). You see the **estimated cost and time before approving**.
+3. **Approve → the pack runs.** Scouts search, the Tracker merges, the Sentinel challenges weak
+   claims, the Howler drafts — all narrated live on the canvas and in the chat.
+4. **Get a brief you can trust.** Every claim carries a **receipt** (source, who found it, whether
+   the page was read). Download as PDF/DOCX, save the winning formation as an **Instinct** to reuse,
+   or ask Alpha a follow-up.
+
+Extras that make it a system, not a demo: **Boundary** (a hard, pre-checked spend cap that warns →
+downgrades model tier → halts with a checkpoint), **Benchmark** (pack vs. lone agent, scored),
+**Flight Recorder** (replay the full event log), **Instincts** (reuse a proven formation on a fresh
+task), and **shareable** read-only briefs.
+
+---
 
 ## Architecture
 
 ```
- Browser (React)            Python engine (FastAPI)              Rust gateway (Axum)
- ┌───────────────┐  REST   ┌──────────────────────────┐        ┌──────────────────┐
- │ Door / Territory│──────▶│ commands → Supervisor      │        │ read-only WS      │
- │ pure reducer    │  202   │ Emitter → Postgres (truth) │        │ fan-out (tail)    │
- │ over events     │        │ outbox relay → Redis ──────┼──XADD─▶│ XRANGE + XREAD    │
- │        ▲        │        └──────────────────────────┘        └────────┬─────────┘
- │        └──────────────────────── WS event stream ───────────────────────┘
- └───────────────┘
+ Browser (React)              Python engine (FastAPI)              Rust gateway (Axum)
+ ┌─────────────────┐   REST  ┌──────────────────────────┐        ┌──────────────────┐
+ │ Door / Territory│───────▶ │ commands → Supervisor      │        │ read-only WS      │
+ │ pure reducer    │   202   │ Emitter → Postgres (truth) │        │ fan-out (tail)    │
+ │ over events     │         │ outbox relay → Redis ──────┼──XADD─▶│ XRANGE + XREAD    │
+ │        ▲        │         └──────────────────────────┘        └────────┬─────────┘
+ │        └───────────────────────── WS event stream ───────────────────────┘
+ └─────────────────┘
 ```
 
-- **Engine (Python)** owns all logic and all writes. It assigns a dense, per-hunt `seq`,
-  validates every event against the **frozen** schema (`backend/schema/events.schema.json`),
-  and writes to Postgres in one transaction.
-- **Transactional outbox.** Postgres is the single source of truth. A relay tails committed
-  events and republishes them to Redis Streams — no dual-write inconsistency window. Delivery
-  is at-least-once; the frontend reducer drops `seq <= lastSeq`, so duplicates are no-ops.
-- **Gateway (Rust)** is a read-only WebSocket fan-out that tails Redis and streams events to
+- **Engine (Python / FastAPI)** owns all logic and all writes. Alpha's Supervisor loop drives each
+  hunt; it assigns a dense per-hunt `seq`, validates every event against the **frozen** schema
+  (`backend/schema/events.schema.json`), and commits to Postgres in one transaction.
+- **Transactional outbox.** Postgres is the single source of truth. A relay tails committed events
+  and republishes them to Redis Streams — no dual-write window. Delivery is at-least-once; the
+  frontend reducer drops `seq <= lastSeq`, so duplicates are no-ops.
+- **Gateway (Rust / Axum)** is a read-only WebSocket fan-out that tails Redis and streams events to
   browsers. It never writes.
-- **Frontend (React)** renders only from the event stream via a pure reducer (CQRS read model).
+- **Frontend (React)** renders only from the event stream via a pure reducer (a CQRS read model).
 
-The wolf brain and the web tools are **swappable**: with no API key the engine runs on a
-deterministic offline provider (`FakeQwen`); the moment a real `QWEN_API_KEY` lands it uses
-Qwen — with zero change to the orchestrator or the event stream.
+The wolf brain and the web tools are **swappable**: with no API key the engine runs a deterministic
+offline provider (`FakeQwen`); the moment a real `QWEN_API_KEY` lands it uses **Qwen** — with zero
+change to the orchestrator or the event stream.
+
+### On Alibaba Cloud
+
+- **Inference** — Qwen models via Alibaba Cloud Model Studio / DashScope (`backend/app/qwen/client.py`),
+  across `max` / `plus` / `flash` tiers the Boundary can downgrade between under pressure.
+- **Artifact storage** — forged files (PDF/DOCX/…) stored in Alibaba Cloud OSS
+  (`backend/app/storage/oss.py`); falls back to local disk when unconfigured.
+- **Deploy** — the backend runs on Alibaba Cloud ECS (see [`deploy/`](deploy/)).
+
+See [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) for the full write-up and diagrams.
+
+---
 
 ## Run it locally
 
-Prerequisites: Docker (Redis + Postgres), Python 3.12+, Rust/cargo (for the gateway), Node +
-pnpm (for the frontend).
+**Prerequisites:** Docker (Redis + Postgres), Python 3.12+, Rust/cargo (gateway), Node + pnpm
+(frontend). `uv` is used if present, else pip.
 
 ```bash
-# 1. Infrastructure
-docker compose up -d redis postgres        # pack/pack/pack
-
-# 2. Engine (Python) — http://localhost:8000
-cd backend
-pip install -e ".[dev]"
-uvicorn app.main:app --reload --port 8000
-
-# 3. Gateway (Rust) — ws://localhost:8080
-cd gateway && cargo run
-
-# 4. Frontend — http://localhost:5173
-cd frontend
-pnpm install
-cp .env.example .env.local                 # points at the engine + gateway
-pnpm dev
+make install     # backend + frontend + gateway deps
+make infra       # start Redis + Postgres (docker compose)
 ```
 
-Then open the app → **Territory**:
-- **Replay** mode plays any committed fixture into the canvas (no backend needed).
-- **Live** mode (or the Door) starts a real hunt: `POST /hunts` → approve the plan → watch the
-  pack work → answer the Hold → the final artifact returns.
+Then run the three services — separate terminals (or `make -j3`):
 
-`make test` runs the backend suite, the frontend tests, and a gateway check. The DB-backed
-backend tests skip automatically if Postgres isn't running.
+```bash
+make backend     # FastAPI engine   → http://localhost:8000
+make gateway     # Rust WS gateway  → ws://localhost:8080
+make frontend    # Vite dev server  → http://localhost:5173
+```
 
-## API docs
+On **Windows** (no native `make`): `pwsh scripts/dev.ps1`, or run each `make` target's command by
+hand. Note Postgres/Redis may be portable/local rather than Docker on some setups.
 
-The contract is simple: **commands return `202 Accepted`; the result arrives on the stream.**
-A command nudges the running Supervisor, which emits the resulting events (in seq order). To
-see what happened, watch the gateway WebSocket.
+Open the app and start a hunt from the **Door**: chat with Alpha → approve the plan → watch the
+pack work → get the brief. No API key needed — it runs on the deterministic offline brain until you
+add one.
 
-**Swagger / OpenAPI** — with the engine running, open:
-- Swagger UI: <http://localhost:8000/docs>
-- OpenAPI JSON: <http://localhost:8000/openapi.json>
+```bash
+make test        # backend contract tests + frontend reducer tests + cargo check
+```
 
-**Postman** — import both files from `docs/postman/`:
-1. `Pack.postman_collection.json` — every endpoint, with example bodies and saved example
-   responses, plus a WebSocket entry for the stream.
-2. `Pack.postman_environment.json` — `engineUrl`, `gatewayWs`, `hunt_id`, `hold_id`.
+DB-backed backend tests skip automatically if Postgres isn't running.
 
-Select the **Pack — Local** environment. Run **Create hunt** first — its test script captures
-`hunt_id` into the environment, so every other request is ready to fire. Then open a Postman
-WebSocket request to `{{gatewayWs}}/hunts/{{hunt_id}}/stream?from_seq=0` and approve the plan.
+### Going live with Qwen
 
-### Endpoints
+Copy `backend/.env.example` → `backend/.env` and set `QWEN_API_KEY`. The client auto-detects it and
+switches off the offline provider — no code change. Then, from `backend/`, run
+`python scripts/hello_qwen.py` to confirm the base URL, auth, and the real model names for the
+max/plus/flash tiers (update `QWEN_MODEL_*` if they differ).
+
+---
+
+## API
+
+The contract is simple: **commands return `202 Accepted`; the result arrives on the stream.** A
+command nudges the running Supervisor, which emits the resulting events in `seq` order — to see what
+happened, watch the gateway WebSocket.
+
+With the engine running: **Swagger UI** at <http://localhost:8000/docs> · **OpenAPI** at
+<http://localhost:8000/openapi.json>. A **Postman** collection + environment live in
+[`docs/postman/`](docs/postman/) — run *Create hunt* first (its test script captures `hunt_id`),
+then open a WS request to `{{gatewayWs}}/hunts/{{hunt_id}}/stream?from_seq=0` and approve the plan.
 
 | Method | Path | What |
 | --- | --- | --- |
-| POST | `/hunts` | Open a hunt (202; starts planning) |
-| GET | `/hunts/:id` | Snapshot — `state` + `last_seq` |
+| POST | `/hunts/intake` | Chat with Alpha; scopes a real job from the conversation |
+| POST | `/hunts` | Open a hunt (202; Beta starts planning) |
+| GET | `/hunts` · `/hunts/:id` | List hunts · snapshot (`state` + `last_seq`) |
 | POST | `/hunts/:id/rehearse` | Price + time a plan before running (the Estimate) |
-| POST | `/hunts/:id/plan/approve` | Approve plan, set the Boundary |
-| POST | `/hunts/:id/inputs` | Add input mid-hunt |
-| POST | `/hunts/:id/stop` | Stop the hunt |
-| POST | `/hunts/:id/resume` | Resume from checkpoint |
-| POST | `/hunts/:id/benchmark` · GET `/scorecard` | Lone Wolf vs Pack, scored |
-| GET | `/hunts/:id/receipts` | Per-claim provenance for the brief (the Receipts) |
+| POST | `/hunts/:id/plan/approve` | Approve the plan, set the Boundary, pick depth |
+| POST | `/hunts/:id/stop` · `/resume` | Stop, or resume from a Boundary checkpoint |
+| POST | `/hunts/:id/benchmark` · GET `/scorecard` | Lone Wolf vs. Pack, scored |
+| GET | `/hunts/:id/artifact` · `/artifacts` | The final brief · the forged export files |
+| GET | `/hunts/:id/receipts` | Per-claim provenance for the brief |
 | GET | `/hunts/:id/tracks/export` | Full event log — replayed by the Flight Recorder |
 | POST | `/hunts/:id/share` · GET `/share/:token` | Public, shareable brief + receipts |
-| GET / PATCH / DELETE | `/memory` | The Elder's lessons — visible, editable, vetoable |
+| GET/POST/DELETE | `/instincts` | Save and reuse proven formations |
+| GET/PATCH/DELETE | `/memory` | The Elder's lessons — visible, editable, vetoable |
 | WS | `/hunts/:id/stream?from_seq=n` | **(gateway)** live event stream |
 
-## Going live with Qwen
+---
 
-Put `QWEN_API_KEY` in `backend/.env` (copy `backend/.env.example`). The client auto-detects it
-and switches off the offline provider — no code change. Then run
-`python scripts/hello_qwen.py` to confirm the base URL, auth, the real model names for the
-max/plus/flash tiers (update `QWEN_MODEL_*` if they differ), and the thinking-requires-streaming
-behaviour.
+## The team
+
+Built by [**Tobiloba Sulaimon**](https://tobilobasulaimon.com) (fullstack + engine),
+[**AbdulQudus**](https://dribbble.com/abdul_uxui) (product & UI/UX design), and **Joanna**
+(frontend) for the Qwen Cloud Global AI Hackathon.
+
+Built with **Qwen models on Qwen Cloud**, backend on **Alibaba Cloud**.
