@@ -5,6 +5,25 @@ import { useHuntStore, useHuntStoreApi } from '@/store/hunt-store'
 
 const BACKOFF_MS = [1_000, 2_000, 5_000, 10_000, 30_000] as const
 
+/**
+ * Resolve the gateway base into an absolute ws(s):// URL the WebSocket constructor accepts.
+ *
+ * VITE_GATEWAY_URL can be either an absolute `ws://host` / `wss://host` (separate gateway host) OR a
+ * SAME-ORIGIN relative path like `/ws` (nginx / a tunnel proxies /ws → the gateway). `new WebSocket()`
+ * rejects a bare relative path, so a same-origin path must be rebased onto the page's own origin —
+ * and to ws/wss matching http/https, so an https page (e.g. a Cloudflare tunnel) yields `wss://` (a
+ * `ws://` socket from an https page is blocked as mixed content). Without this, the live stream never
+ * connects behind a same-origin proxy and the hunt appears frozen (no planning/progress ever shows).
+ */
+function resolveGatewayBase(raw: string): string {
+  if (/^wss?:\/\//i.test(raw)) return raw // already absolute ws(s)://
+  if (/^https?:\/\//i.test(raw)) return raw.replace(/^http/i, 'ws') // absolute http(s) → ws(s)
+  // Same-origin relative path (e.g. "/ws"): rebase onto the page origin, http→ws / https→wss.
+  const scheme = window.location.protocol === 'https:' ? 'wss' : 'ws'
+  const path = raw.startsWith('/') ? raw : `/${raw}`
+  return `${scheme}://${window.location.host}${path}`
+}
+
 type Status = 'connecting' | 'connected' | 'reconnecting' | 'closed'
 
 interface UseHuntStreamOptions {
@@ -40,7 +59,8 @@ export function useHuntStream(huntId: string | null, options?: UseHuntStreamOpti
       onStatus?.('connecting')
 
       const fromSeq = lastSeqRef.current + 1
-      const url = `${env.VITE_GATEWAY_URL}/hunts/${huntId}/stream?from_seq=${fromSeq}`
+      const base = resolveGatewayBase(env.VITE_GATEWAY_URL)
+      const url = `${base}/hunts/${huntId}/stream?from_seq=${fromSeq}`
       ws = new WebSocket(url)
 
       ws.onopen = () => {

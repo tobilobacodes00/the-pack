@@ -11,7 +11,29 @@ const __dirname = fileURLToPath(new URL('.', import.meta.url))
 const config: UserConfig & { test?: Record<string, unknown> } = {
   plugins: [react(), tailwindcss()],
   resolve: { alias: { '@': resolve(__dirname, './src') } },
-  server: { port: 5173 },
+  server: {
+    port: 5173,
+    host: true,
+    // Accept the random *.trycloudflare.com host the tunnel assigns (and any other) so remote
+    // testers reaching the app through the Cloudflare tunnel aren't blocked by Vite's host check.
+    allowedHosts: true,
+    // Same-origin API + live-stream: the tunnel exposes ONE origin, so the app talks to /api and /ws
+    // (set VITE_ENGINE_URL=/api, VITE_GATEWAY_URL=/ws) and Vite proxies them to the local engine +
+    // gateway. Without this, a tester's browser would resolve localhost:8000/8080 to THEIR machine.
+    proxy: {
+      '/api': {
+        target: 'http://localhost:8000',
+        changeOrigin: true,
+        rewrite: (p) => p.replace(/^\/api/, ''),
+      },
+      '/ws': {
+        target: 'http://localhost:8080',
+        changeOrigin: true,
+        ws: true,
+        rewrite: (p) => p.replace(/^\/ws/, ''),
+      },
+    },
+  },
   build: {
     // Stable vendor chunks: an app-code change no longer busts the whole vendor cache, and
     // @xyflow/react ships only with the lazy territory chunk (never on the landing path).

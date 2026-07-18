@@ -104,7 +104,7 @@ export function TerritoryFooter({ huntId, huntState, onApprove, approving, onEdi
       {s === 'planning' && (
         <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '8px 16px 12px', color: color.dim, fontSize: 13 }}>
           <Loader2 size={14} className="animate-spin" />
-          Alpha is forming the pack…
+          Beta is forming the pack…
         </div>
       )}
 

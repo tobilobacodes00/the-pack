@@ -320,7 +320,7 @@ export function GraphCanvas({ huntState }: GraphCanvasProps) {
           }}
         >
           <Loader2 size={14} className="animate-spin" color="#A3A3A3" />
-          <span style={{ fontSize: 13, color: '#E5E5E5', fontWeight: 500 }}>Alpha is forming the pack…</span>
+          <span style={{ fontSize: 13, color: '#E5E5E5', fontWeight: 500 }}>Beta is forming the pack…</span>
         </div>
       )}
     </div>
