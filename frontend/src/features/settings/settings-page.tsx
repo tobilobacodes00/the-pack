@@ -35,12 +35,12 @@ export default function SettingsPage() {
   const { data: viewDoc, isLoading: viewLoading } = useDocument(viewDocId)
 
   const onClear = () => {
-    if (!window.confirm('Clear all hunt history? Documents, memory and instincts are kept.')) return
+    if (!window.confirm("Clear this browser's hunt history? Your documents and instincts are kept.")) return
     clearHunts.mutate(undefined, { onSuccess: () => toast({ title: 'Hunt history cleared', variant: 'success' }) })
   }
   const onReset = () => {
-    if (!window.confirm('Reset ALL local data? This wipes hunts, memory, documents, instincts and projects. This cannot be undone.')) return
-    resetData.mutate(undefined, { onSuccess: () => toast({ title: 'All data reset', variant: 'success' }) })
+    if (!window.confirm("Reset this browser's history and spend? This clears the hunts shown here on this device. It cannot be undone.")) return
+    resetData.mutate(undefined, { onSuccess: () => toast({ title: 'History reset', variant: 'success' }) })
   }
 
   return (

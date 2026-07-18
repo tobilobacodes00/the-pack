@@ -6,6 +6,7 @@ import type { MessageItem, useApprovePlan } from '@/api/hunts'
 import type { AskAction } from '@/hooks/use-ask-stream'
 import { toast } from '@/store/toast-store'
 import { useDoorLogic } from '../intake/use-intake'
+import { rememberHunt } from '@/lib/local-history'
 import { ChatColumn } from '../door/chat-column'
 import { HiddenFileInput } from '../door/hidden-file-input'
 import { TerritoryFooter, composerVisible, composerPlaceholder } from './territory-footer'
@@ -49,6 +50,8 @@ export function RightPanel({ huntId, huntState, messages, onApprove, onEditForma
         // A follow-up is a NEW hunt that lands in plan_ready awaiting approval — navigate there (like
         // retry below) so the Packmaster approves the plan and watches it run, instead of leaving it to
         // starve at the approval gate and get reaped as failed on the next engine restart.
+        // Claim it for this browser (created outside useCreateHunt) so it stays in local history.
+        rememberHunt(newHuntId)
         void qc.invalidateQueries({ queryKey: ['hunts'] })
         toast({
           title: action === 'subhunt' ? 'Digging deeper' : 'New hunt launched',
@@ -61,6 +64,7 @@ export function RightPanel({ huntId, huntState, messages, onApprove, onEditForma
         navigate(`/hunts/${newHuntId}`)
       } else if (action === 'retry' && newHuntId) {
         // Alpha re-ran the job — navigate to the fresh hunt so the Packmaster watches it run.
+        rememberHunt(newHuntId)
         void qc.invalidateQueries({ queryKey: ['hunts'] })
         toast({ title: 'Running it again', description: 'Taking you to the new run.', variant: 'default' })
         navigate(`/hunts/${newHuntId}`)
@@ -99,7 +103,6 @@ export function RightPanel({ huntId, huntState, messages, onApprove, onEditForma
         {...door}
         footer={footer}
         hideComposer={!composerVisible(huntState.status)}
-        activity={huntState.activity}
         placeholder={composerPlaceholder(huntState.status)}
       />
       {/* The composer's `+` file input — hoisted out of ChatColumn so the ref stays attached. */}

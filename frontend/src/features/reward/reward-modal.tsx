@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useRef, useState } from 'react'
 import { Share2 } from 'lucide-react'
 import {
   useHuntBrief,
@@ -21,6 +21,7 @@ import { toast } from '@/store/toast-store'
 import { RewardShell } from './reward-shell'
 import { RewardHeader } from './reward-header'
 import { ReadingView } from './reading-view'
+import { ReadingControls } from './reading-controls'
 import { RewardEmpty } from './reward-empty'
 import { MoreMenu } from './more-menu'
 import { DownloadMenu } from './download-menu'
@@ -43,10 +44,23 @@ interface Props {
   onClose: () => void
 }
 
+const ZOOM = { min: 0.85, max: 1.5, step: 0.15 }
+
 export function RewardModal({ huntId, open, onClose }: Props) {
   const [panel, setPanel] = useState<'reading' | 'scorecard' | 'receipts'>('reading')
   const [drawerOpen, setDrawerOpen] = useState(false)
   const [refineOpen, setRefineOpen] = useState(false)
+  // Reading-view zoom + scroll — driven by the right-side ReadingControls rail. Zoom scales the
+  // brief font; the arrows nudge the column up/down a small step per click (not jump to the extremes).
+  const [zoom, setZoom] = useState(1)
+  const scrollRef = useRef<HTMLDivElement>(null)
+  const clampZoom = (z: number) => Math.min(ZOOM.max, Math.max(ZOOM.min, Math.round(z * 100) / 100))
+  // One click nudges the reading column by ~⅔ of a screenful — small, repeatable steps.
+  const stepScroll = (dir: 1 | -1) => {
+    const el = scrollRef.current
+    if (!el) return
+    el.scrollBy({ top: dir * Math.round(el.clientHeight * 0.66), behavior: 'smooth' })
+  }
   // The first-completion Instinct nudge: shown once ever (localStorage-gated), the moment the very
   // first brief is in hand. "Save as Instinct" is otherwise buried in the ⋮ menu and rarely found.
   const [showFirstInstinct, setShowFirstInstinct] = useState(() => !hasSeenFirstInstinctPrompt())
@@ -91,6 +105,7 @@ export function RewardModal({ huntId, open, onClose }: Props) {
     setPanel('reading')
     setDrawerOpen(false)
     setRefineOpen(false)
+    setZoom(1)
     // Clear the benchmark mutation so reopening the Scorecard for this hunt doesn't resurrect a
     // stale success/failure state (isSuccess/isError otherwise stick for the mounted lifetime).
     runBenchmark.reset()
@@ -171,10 +186,28 @@ export function RewardModal({ huntId, open, onClose }: Props) {
     </>
   )
 
+  // The bottom-left reading rail: only meaningful on the reading panel with a real brief in view.
+  const showReadingControls =
+    panel === 'reading' && !brief.isLoading && !brief.isError && !!brief.data?.content
+
   return (
     <RewardShell
       open={open}
       onClose={close}
+      scrollRef={scrollRef}
+      controls={
+        showReadingControls ? (
+          <ReadingControls
+            zoom={zoom}
+            minZoom={ZOOM.min}
+            maxZoom={ZOOM.max}
+            onZoomIn={() => setZoom((z) => clampZoom(z + ZOOM.step))}
+            onZoomOut={() => setZoom((z) => clampZoom(z - ZOOM.step))}
+            onStepUp={() => stepScroll(-1)}
+            onStepDown={() => stepScroll(1)}
+          />
+        ) : undefined
+      }
       header={<RewardHeader prompt={prompt} actions={actions} onClose={close} />}
       drawer={
         <TracksDrawer
@@ -233,7 +266,10 @@ export function RewardModal({ huntId, open, onClose }: Props) {
               onDismiss={dismissFirstInstinct}
             />
           )}
-          <ReadingView brief={brief.data} dateISO={dateISO} projectName={projectName} />
+          {/* `zoom` scales the whole reading column (text + layout) from the bottom-left rail. */}
+          <div style={{ zoom }}>
+            <ReadingView brief={brief.data} dateISO={dateISO} projectName={projectName} />
+          </div>
         </>
       )}
     </RewardShell>

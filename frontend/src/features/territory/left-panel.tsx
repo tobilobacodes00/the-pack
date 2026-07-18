@@ -1,6 +1,5 @@
 import { useState } from 'react'
 import { ChevronLeft, PanelLeftClose, PanelLeftOpen, Loader2, SquarePen } from 'lucide-react'
-import { useNavigate } from 'react-router-dom'
 import { useIsMobile } from '@/hooks/use-is-mobile'
 import { color } from '@/lib/theme'
 import type { HuntState, HuntStatus, WolfState } from '@/events/schema'
@@ -83,8 +82,13 @@ const iconBtn: React.CSSProperties = {
 }
 
 export function LeftPanel({ huntState }: LeftPanelProps) {
-  const navigate = useNavigate()
   const isMobile = useIsMobile()
+  // Leave the territory with a hard navigation, NOT react-router's navigate('/'). This panel is shared
+  // by the standalone /hunts/:id page AND the door-mounted territory. On the door, the territory phase
+  // is local component state and the URL was set via raw history.replaceState — a plain navigate('/')
+  // changes the URL but doesn't remount DoorPage, so the view stays stuck in territory (it just "strips
+  // the slug"). A full document load guarantees a fresh Door + a clean hunt store in every context.
+  const goToDoor = () => window.location.assign('/')
   // On a phone the roster starts as the compact corner square so it never covers the canvas/chat; on
   // desktop it opens as the full rail. The user can still toggle either way.
   const [collapsed, setCollapsed] = useState(isMobile)
@@ -120,7 +124,7 @@ export function LeftPanel({ huntState }: LeftPanelProps) {
           borderBottom: '1px solid #dcdcd8',
         }}
       >
-        <button onClick={() => navigate('/')} style={iconBtn} title="Back">
+        <button onClick={goToDoor} style={iconBtn} title="Back">
           <ChevronLeft size={18} />
         </button>
         <span style={{ flex: 1, fontSize: 15, fontWeight: 600, color: '#1a1a1a' }}>A Pack</span>
@@ -132,7 +136,7 @@ export function LeftPanel({ huntState }: LeftPanelProps) {
       {/* New Hunt Button */}
       <div style={{ padding: '16px 16px 4px' }}>
         <button
-          onClick={() => navigate('/')}
+          onClick={goToDoor}
           style={{
             width: '100%',
             display: 'flex',

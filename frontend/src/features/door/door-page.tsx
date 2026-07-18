@@ -20,6 +20,7 @@ import { DoorLanding } from './door-landing'
 import { useHuntStore } from '@/store/hunt-store'
 import { useHuntStream } from '@/hooks/use-hunt-stream'
 import { useApprovePlan } from '@/api/hunts'
+import { rememberHunt } from '@/lib/local-history'
 import { color, warm } from '@/lib/theme'
 
 // Territory-only surfaces (and the fluid smoke) load on demand: keeps @xyflow/react and the
@@ -50,6 +51,8 @@ export default function DoorPage() {
         // Take the Packmaster there — same as retry below — so they see it, approve the plan, and watch
         // it run. Without this the new hunt starves at the approval gate and gets reaped as failed on the
         // next engine restart, with the user never told it existed.
+        // Claim it for this browser (created outside useCreateHunt) so it stays in local history.
+        rememberHunt(newHuntId)
         void qc.invalidateQueries({ queryKey: ['hunts'] })
         toast({
           title: action === 'subhunt' ? 'Digging deeper' : 'New hunt launched',
@@ -62,6 +65,7 @@ export default function DoorPage() {
         window.location.assign(`/hunts/${newHuntId}`)
       } else if (action === 'retry' && newHuntId) {
         // Alpha re-ran the job as a fresh hunt — send the Packmaster to it so they watch it run.
+        rememberHunt(newHuntId)
         void qc.invalidateQueries({ queryKey: ['hunts'] })
         toast({ title: 'Running it again', description: 'Taking you to the new run.', variant: 'default' })
         window.location.assign(`/hunts/${newHuntId}`)
@@ -211,8 +215,9 @@ export default function DoorPage() {
           composer + presets + cue) above DoorLanding's z-10 layer so the fixed wolf sits BEHIND it
           — the transparent hero lets the faint wolf show in the gaps but never over the composer. */}
       <div className={isTerritory ? 'flex-1 flex flex-col min-h-0 overflow-hidden' : 'relative z-20 h-dvh flex flex-col'}>
-      {/* Top nav — intake only, and only while the sidebar is collapsed (the sidebar carries its own
-          header). The roster carries the branding once we're in territory. */}
+      {/* Top nav — intake only. Branding only; the fixed hamburger (below, at the DoorPage root)
+          owns opening Past Hunts so it stays reachable after the hero scrolls away. `pl-16` clears
+          that fixed hamburger at top-left. The roster carries the branding once we're in territory. */}
       <AnimatePresence>
         {!isTerritory && !sidebarOpen && (
           <motion.nav
@@ -221,50 +226,15 @@ export default function DoorPage() {
             transition={MORPH}
             className="h-[52px] flex items-stretch shrink-0 overflow-hidden"
           >
-            <div className="flex items-center gap-3 px-5">
+            <div className="flex items-center gap-3 pl-16 pr-5">
               <img src="/pack-logo.svg" className="w-[22px] h-[26px]" alt="Pack" />
               <span className="font-display text-base font-extrabold tracking-wide text-ink-900">A Pack</span>
-              <button
-                onClick={() => setSidebarOpen(true)}
-                className="p-1 opacity-70 hover:opacity-100 transition-opacity"
-                aria-label="Open past hunts"
-              >
-                <img src="/icon-menu.svg" className="w-5 h-5" alt="" style={{ filter: 'brightness(0) saturate(100%) opacity(0.75)' }} />
-              </button>
             </div>
           </motion.nav>
         )}
       </AnimatePresence>
 
       <div className="flex-1 relative overflow-hidden min-h-0">
-        {/* Past-Hunts sidebar — intake only, slides in from the left when the hamburger is tapped.
-            On mobile a tap-to-close scrim sits behind it (the sidebar is a full overlay there). */}
-        <AnimatePresence>
-          {!isTerritory && sidebarOpen && (
-            <>
-              <motion.div
-                key="sidebar-scrim"
-                initial={{ opacity: 0 }}
-                animate={{ opacity: 1 }}
-                exit={{ opacity: 0 }}
-                transition={MORPH}
-                onClick={() => setSidebarOpen(false)}
-                className="absolute inset-0 z-20 bg-black/40 sm:hidden"
-              />
-              <motion.div
-                key="sidebar"
-                initial={{ x: -300, opacity: 0 }}
-                animate={{ x: 0, opacity: 1 }}
-                exit={{ x: -300, opacity: 0 }}
-                transition={MORPH}
-                className="absolute left-0 top-0 bottom-0 z-30"
-              >
-                <HuntSidebar onCollapse={() => setSidebarOpen(false)} />
-              </motion.div>
-            </>
-          )}
-        </AnimatePresence>
-
         {/* Full-bleed canvas — the sidebars float on top of it. */}
         <AnimatePresence>
           {isTerritory && (
@@ -318,7 +288,6 @@ export default function DoorPage() {
                 {...door}
                 footer={planFooter}
                 hideComposer={hideComposer}
-                activity={huntState.activity}
                 placeholder={composerPlaceholder(huntState.status)}
               />
             </motion.div>
@@ -329,14 +298,18 @@ export default function DoorPage() {
               animate={{ opacity: 1 }}
               exit={{ opacity: 0, scale: 0.98 }}
               transition={MORPH}
-              // On mobile the sidebar is a full overlay (with a scrim), so the chat never shifts right;
-              // on desktop it slides the content over by the sidebar width.
-              className={`absolute top-0 bottom-0 right-0 left-0 ${sidebarOpen ? 'sm:left-[300px]' : 'sm:left-0'} flex flex-col items-center justify-center overflow-y-auto px-4 py-8 min-h-0`}
+              // The sidebar is a fixed overlay on top (with a scrim) at every width, so the chat
+              // never shifts — it stays centered whether the sidebar is open or closed.
+              // NOTE: centering is via the child's `my-auto` (not `justify-center`) so that when the
+              // content is taller than the viewport (chat + formation card + presets), the top stays
+              // reachable and the whole column scrolls — `justify-center` would clip the top off-screen.
+              className="absolute inset-0 flex flex-col items-center overflow-y-auto px-4 py-8 min-h-0"
             >
-              <div className="w-full max-w-[700px] flex flex-col gap-6">
+              <div className="w-full max-w-[700px] my-auto flex flex-col gap-6">
                 {/* Reserve the line so the composer never jumps as the rotating clause changes length.
-                    The question fits one line on desktop; a touch more room on mobile for a wrap. */}
-                <div className="min-h-[80px] flex items-center justify-center md:min-h-[52px]">
+                    The headline is now single-line at every width (whitespace-nowrap), so one line's
+                    worth of height is enough — no extra mobile room for a wrap. */}
+                <div className="min-h-[52px] flex items-center justify-center">
                   <HeroTypewriter />
                 </div>
 
@@ -384,6 +357,51 @@ export default function DoorPage() {
         )}
       </div>
       {/* /hero */}
+
+      {/* Past-Hunts sidebar — intake only. Fixed to the VIEWPORT (not the hero), so it stays put and
+          on top as the landing scrolls beneath it. A scrim behind it (all widths) closes it on tap.
+          Mounted at the DoorPage root — free of the hero's overflow-hidden / framer-transform
+          ancestors that would otherwise trap a `fixed` child. */}
+      {!isTerritory && (
+        <AnimatePresence>
+          {sidebarOpen && (
+            <>
+              <motion.div
+                key="sidebar-scrim"
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                exit={{ opacity: 0 }}
+                transition={MORPH}
+                onClick={() => setSidebarOpen(false)}
+                className="fixed inset-0 z-[70] bg-black/40"
+              />
+              <motion.div
+                key="sidebar"
+                initial={{ x: -300, opacity: 0 }}
+                animate={{ x: 0, opacity: 1 }}
+                exit={{ x: -300, opacity: 0 }}
+                transition={MORPH}
+                className="fixed left-0 top-0 bottom-0 z-[71]"
+              >
+                <HuntSidebar onCollapse={() => setSidebarOpen(false)} />
+              </motion.div>
+            </>
+          )}
+        </AnimatePresence>
+      )}
+
+      {/* Persistent hamburger — fixed top-left so Past Hunts is reachable even after scrolling
+          past the hero (the in-hero top nav scrolls away with it). Hidden while the sidebar is open. */}
+      {!isTerritory && !sidebarOpen && (
+        <button
+          onClick={() => setSidebarOpen(true)}
+          className="fixed left-4 top-4 z-[69] flex h-10 w-10 items-center justify-center rounded-full border transition-shadow hover:shadow-chunk-sm"
+          style={{ background: color.surface, borderColor: color.border }}
+          aria-label="Open past hunts"
+        >
+          <img src="/icon-menu.svg" className="w-5 h-5" alt="" style={{ filter: 'brightness(0) saturate(100%) opacity(0.75)' }} />
+        </button>
+      )}
 
       {!isTerritory && <DoorLanding setInput={door.setInput} />}
 

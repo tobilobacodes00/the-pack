@@ -40,8 +40,9 @@ export const PACK_ACCENT: Record<string, { ink: string; ring: string; wash: stri
 }
 
 // Clip-space → model scale. Kept compact so the whole triangle sits with clear margin on every
-// side (never edge-to-edge). Alpha at its slot (scale 1) → ~26vh tall; back row ~15vh.
-export const BASE_SCALE = 0.34
+// side (never edge-to-edge), with extra breathing room in the Meet-the-Pack scene. Alpha at its
+// slot (scale 1) → ~21vh tall; back row ~13vh. Captions/badges derive from this, so they follow.
+export const BASE_SCALE = 0.28
 
 // Alpha's size as a lone wolf (hero + rest) — matches the hero emblem so the journey reads as
 // ONE wolf: big on the hero, shrinks to the triangle apex as the pack fans out, then grows back

@@ -3,7 +3,7 @@
 @theme {
   /* ── Semantic stack — the WHOLE app runs on this. MONOCHROME: cream paper + the logo's charcoal
        grey (#1A1A1A) as ink. No brand hue — everything dark is a neutral grey. ── */
-  --color-canvas: #fdfcf8; /* cream paper */
+  --color-canvas: #f5f5f5; /* neutral grey paper */
   --color-surface: #ffffff; /* cards / panels */
   --color-surface-raised: #f2f2f0; /* raised / hover fill */
   --color-border: #dcdcd8; /* neutral hairline */
@@ -24,7 +24,7 @@
 
   /* ── Monochrome palette. Cream paper; charcoal "ink" (the logo grey #1A1A1A) for text + outlines +
        chunky shadows + CTA fills. `brand` is a neutral charcoal ramp — no colour. ── */
-  --color-cream-50: #fdfcf8;
+  --color-cream-50: #f5f5f5;
   --color-cream-100: #f6f5f1;
   --color-cream-200: #ebeae6;
 

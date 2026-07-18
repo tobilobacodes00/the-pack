@@ -1,6 +1,6 @@
 import * as RadixDialog from '@radix-ui/react-dialog'
 import { AnimatePresence, motion } from 'framer-motion'
-import type { ReactNode } from 'react'
+import type { ReactNode, Ref } from 'react'
 
 const EASE = [0.4, 0, 0.2, 1] as const
 
@@ -12,10 +12,14 @@ interface Props {
   drawer?: ReactNode
   /** Overlay pinned absolute against the body row (e.g. Refine card). */
   overlay?: ReactNode
+  /** Controls pinned absolute against the body row (e.g. the bottom-left reading rail). */
+  controls?: ReactNode
+  /** Ref to the scrollable content column, so callers can drive scroll (top/bottom). */
+  scrollRef?: Ref<HTMLDivElement>
 }
 
 // Radix Dialog + framer-motion, warm palette. Portals to body to escape Territory's z-40 stack; ui/dialog.tsx wrappers deliberately not reused (wrong palette + dead anim classes).
-export function RewardShell({ open, onClose, header, children, drawer, overlay }: Props) {
+export function RewardShell({ open, onClose, header, children, drawer, overlay, controls, scrollRef }: Props) {
   return (
     <RadixDialog.Root
       open={open}
@@ -47,9 +51,10 @@ export function RewardShell({ open, onClose, header, children, drawer, overlay }
                 <RadixDialog.Title className="sr-only">The Reward</RadixDialog.Title>
                 {header}
                 <div className="relative flex min-h-0 flex-1">
-                  <div className="min-h-0 flex-1 overflow-y-auto">{children}</div>
+                  <div ref={scrollRef} className="min-h-0 flex-1 overflow-y-auto">{children}</div>
                   {drawer}
                   {overlay}
+                  {controls}
                 </div>
               </motion.div>
             </RadixDialog.Content>

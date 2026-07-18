@@ -4,8 +4,6 @@ import { MessageBubble, type ChatMessage } from '../intake/message-bubble'
 import { FileCard } from '../intake/file-chip'
 import { useMicRecorder } from '../intake/use-mic-recorder'
 import type { AttachedFile } from '../intake/use-intake'
-import { WolfActivityLine } from '../territory/wolf-activity-line'
-import type { ActivityItem } from '@/events/schema'
 
 const AUDIO_EXTS = new Set(['mp3', 'wav', 'ogg', 'aac', 'flac', 'm4a', 'webm'])
 function isAudio(name: string) {
@@ -74,11 +72,10 @@ export interface ChatColumnProps {
   footer?: React.ReactNode
   /** Hide the composer entirely — e.g. once the plan card takes over the bottom. */
   hideComposer?: boolean
-  /** The pack's live beats, rendered as the pack's own narration inside the feed (territory only). */
-  activity?: ActivityItem[]
-  /** Index into `messages` where intake ends: turns before it are the intake convo, the pack's
-   *  activity renders next, and turns from here on are post-hunt follow-up Q&A (so they sit below
-   *  the report, not back up in the intake thread). null/undefined = no hunt yet (all intake). */
+  /** Index into `messages` where intake ends: turns before it are the intake convo, and turns from
+   *  here on are post-hunt follow-up Q&A (so they sit below the report, not back up in the intake
+   *  thread). null/undefined = no hunt yet (all intake). The pack's live beats are NOT in this feed —
+   *  they render in the collapsible status log under the spend line (see SpendTimer). */
   launchIndex?: number | null
   /** Composer placeholder override (state-aware — e.g. "Ask Alpha anything about this plan…"). */
   placeholder?: string
@@ -93,7 +90,7 @@ export function ChatColumn(props: ChatColumnProps) {
   const {
     variant, messages, input, setInput, attachedFiles, removeFile, addFiles,
     isPending, parsingFiles, send, pickFiles,
-    handleKeyDown, footer, hideComposer, activity, launchIndex, placeholder,
+    handleKeyDown, footer, hideComposer, launchIndex, placeholder,
   } = props
 
   const isTerritory = variant === 'territory'
@@ -211,29 +208,30 @@ export function ChatColumn(props: ChatColumnProps) {
     setVoicePeaks([])
   }, [audioFile, removeFile])
 
-  const acts = activity ?? []
-  // One feed, in time order: intake conversation → the pack narrating what they're doing → any
-  // post-hunt follow-up Q&A. `launchIndex` marks where intake ends; before a hunt it's all intake.
+  // One feed, in time order: intake conversation → post-hunt follow-up Q&A. `launchIndex` marks where
+  // intake ends; before a hunt it's all intake. The pack's live beats are NOT in this feed anymore —
+  // they live in the collapsible status log under the spend line (see SpendTimer).
   const cut = launchIndex ?? messages.length
   const intakeMsgs = messages.slice(0, cut)
   const followMsgs = messages.slice(cut)
 
-  // Follow the latest turn AND the latest pack action — keep the newest thing in view as it streams.
+  // Follow the latest turn — keep the newest message in view as it streams.
   const lastMsgText = messages[messages.length - 1]?.text
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth', block: 'end' })
-  }, [messages.length, acts.length, lastMsgText, messagesEndRef])
+  }, [messages.length, lastMsgText, messagesEndRef])
 
-  const messageList = (messages.length > 0 || acts.length > 0) && (
+  const messageList = messages.length > 0 && (
     <div
       className={
         isTerritory
-          ? 'flex-1 flex flex-col gap-4 overflow-y-auto min-h-0 px-4 py-4'
+          ? // Territory: no own scroll — the outer wrapper scrolls messages + footer together, so
+            // the formation/plan card below the messages is always reachable (never clipped).
+            'flex flex-col gap-4 px-4 py-4'
           : 'flex flex-col gap-5 overflow-y-auto max-h-[40vh] min-h-0'
       }
     >
       {intakeMsgs.map((m, i) => <MessageBubble key={m.id ?? i} message={m} />)}
-      {acts.map((a) => <WolfActivityLine key={`act-${a.seq}`} item={a} />)}
       {followMsgs.map((m, i) => <MessageBubble key={m.id ?? `f-${i}`} message={m} />)}
       <div ref={messagesEndRef} />
     </div>
@@ -409,8 +407,12 @@ export function ChatColumn(props: ChatColumnProps) {
         <div className="flex items-center justify-between px-4 h-[52px] shrink-0 border-b border-border">
           <span className="text-[13px] font-semibold text-ink-900">Chat session</span>
         </div>
-        {messageList || <div className="flex-1" />}
-        {footer}
+        {/* Messages + footer (plan/formation card, spend line, completion) share ONE scroll region,
+            so a tall formation card is always reachable — the header + composer stay pinned. */}
+        <div className="flex-1 min-h-0 overflow-y-auto">
+          {messageList}
+          {footer}
+        </div>
         {!hideComposer && composer}
       </div>
     )

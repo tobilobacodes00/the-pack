@@ -99,7 +99,7 @@ export function TerritoryFooter({ huntId, huntState, onApprove, approving, onEdi
 
   return (
     <>
-      {showSpend && <SpendTimer huntId={huntId!} huntState={huntState} />}
+      {showSpend && <SpendTimer huntId={huntId!} huntState={huntState} activity={huntState.activity} />}
 
       {s === 'planning' && (
         <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '8px 16px 12px', color: color.dim, fontSize: 13 }}>

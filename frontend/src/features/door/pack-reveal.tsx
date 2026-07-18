@@ -138,7 +138,7 @@ function StageInner({
 
 /** Static, fully-legible layout for reduced-motion: the triangle + the use-cases, in flow. */
 function StaticFallback() {
-  const Head = ({ role, size = 96 }: { role: string; size?: number }) => {
+  const Head = ({ role, size = 80 }: { role: string; size?: number }) => {
     const accent = PACK_ACCENT[role]
     return (
       <div className="flex w-[150px] flex-col items-center sm:w-[190px]">
@@ -164,7 +164,7 @@ function StaticFallback() {
         {rows.map((row, i) => (
           <div key={i} className="flex flex-wrap justify-center gap-x-6 gap-y-8 sm:gap-x-8 sm:gap-y-10">
             {row.map((r) => (
-              <Head key={r} role={r} size={i === 0 ? 108 : 84} />
+              <Head key={r} role={r} size={i === 0 ? 90 : 70} />
             ))}
           </div>
         ))}

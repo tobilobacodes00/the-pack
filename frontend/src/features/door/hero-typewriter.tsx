@@ -19,16 +19,19 @@ const MOAT_LINES = [
  */
 export const HeroTypewriter = memo(function HeroTypewriter() {
   const reduce = useReducedMotion() ?? false
-  const { text } = useTypewriter(MOAT_LINES, { typeMs: 52, deleteMs: 26, holdMs: 1700, gapMs: 300 })
+  // Deliberately slow + steady so the phrase reads as it types. Longer hold before it rewrites.
+  const { text } = useTypewriter(MOAT_LINES, { typeMs: 90, deleteMs: 45, holdMs: 2200, gapMs: 380 })
 
   return (
     <h1
-      className="font-display font-extrabold text-ink-900 text-center leading-tight tracking-tight"
-      style={{ fontSize: 'clamp(1.5rem, 4.5vw, 2.375rem)' }}
+      // `whitespace-nowrap` keeps the whole headline on ONE line as the clause grows — it must never
+      // wrap mid-typing. The clamp shrinks the type on narrow screens so the longest phrase still fits.
+      className="font-display font-extrabold text-ink-900 text-center leading-tight tracking-tight whitespace-nowrap"
+      style={{ fontSize: 'clamp(1.125rem, 4.5vw, 2.375rem)' }}
     >
       What should the pack{' '}
       {/* Rotating clause. aria-live lets a screen reader hear each phrase settle. */}
-      <span className="relative inline-block text-brand-600" aria-live="polite">
+      <span className="relative inline-block text-brand-600 whitespace-nowrap" aria-live="polite">
         {text}
         {/* Blinking caret. Decoration only, skipped under reduced motion. */}
         {!reduce && (

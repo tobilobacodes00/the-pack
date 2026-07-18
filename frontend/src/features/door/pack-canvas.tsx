@@ -97,7 +97,7 @@ export function PackCanvas({
     const uEdge = u('uEdge')
     const uEye = u('uEye')
     const DARK = { fill: hexToVec3('#1A1A1A'), edge: hexToVec3('#FAFAFA'), eye: hexToVec3('#FFFFFF') }
-    const WARM = { fill: hexToVec3('#FDFCF8'), edge: hexToVec3('#1A1A1A'), eye: hexToVec3('#4A4A4A') }
+    const WARM = { fill: hexToVec3('#F5F5F5'), edge: hexToVec3('#1A1A1A'), eye: hexToVec3('#4A4A4A') }
     const mix3 = (a: number[], b: number[], t: number): [number, number, number] => [
       a[0] + (b[0] - a[0]) * t,
       a[1] + (b[1] - a[1]) * t,

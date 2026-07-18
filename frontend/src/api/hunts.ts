@@ -1,5 +1,6 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { api } from './client'
+import { rememberHunt, forgetHunt, clearOwnedHunts, filterOwned } from '@/lib/local-history'
 import {
   HuntListResponseSchema,
   HuntSnapshotSchema,
@@ -64,7 +65,10 @@ export function useHunts(projectId?: string, limit = 20) {
       const params: Record<string, string | number> = { limit }
       if (projectId) params.project_id = projectId
       const res = await api.get('/hunts', { params })
-      return HuntListResponseSchema.parse(res.data)
+      const parsed = HuntListResponseSchema.parse(res.data)
+      // Local-first, no auth: the DB is the engine's shared store, so /hunts returns EVERY visitor's
+      // hunts. Show only the ones THIS browser created (see lib/local-history).
+      return { ...parsed, hunts: filterOwned(parsed.hunts) }
     },
   })
 }
@@ -104,10 +108,13 @@ export function useCreateHunt() {
       team?: Array<{ role: string; count: number }>
     }) => {
       const res = await api.post<{ hunt_id: string }>('/hunts', body)
+      // Claim this hunt for THIS browser so it appears in local history/spend (no accounts).
+      rememberHunt(res.data.hunt_id)
       return res.data
     },
     onSuccess: () => {
       void qc.invalidateQueries({ queryKey: ['hunts'] })
+      void qc.invalidateQueries({ queryKey: ['spend'] })
     },
   })
 }
@@ -167,9 +174,11 @@ export function useDeleteHunt(huntId: string) {
   return useMutation({
     mutationFn: async () => {
       await api.delete(`/hunts/${huntId}`)
+      forgetHunt(huntId)
     },
     onSuccess: () => {
       void qc.invalidateQueries({ queryKey: ['hunts'] })
+      void qc.invalidateQueries({ queryKey: ['spend'] })
     },
   })
 }
@@ -180,9 +189,11 @@ export function useDeleteHuntById() {
   return useMutation({
     mutationFn: async (huntId: string) => {
       await api.delete(`/hunts/${huntId}`)
+      forgetHunt(huntId)
     },
     onSuccess: () => {
       void qc.invalidateQueries({ queryKey: ['hunts'] })
+      void qc.invalidateQueries({ queryKey: ['spend'] })
     },
   })
 }
@@ -410,23 +421,29 @@ export function useTracks(huntId: string, enabled: boolean) {
   })
 }
 
-/** Total + per-hunt spend for the Settings › Spend section (GET /spend). */
+/** Total + per-hunt spend for the Settings › Spend section (GET /spend). Scoped to this browser's
+ *  hunts (local-first, no auth) — the server sum is global, so we recompute from owned rows only. */
 export function useSpendSummary() {
   return useQuery({
     queryKey: ['spend'],
     queryFn: async () => {
       const res = await api.get('/spend')
-      return SpendSummarySchema.parse(res.data)
+      const parsed = SpendSummarySchema.parse(res.data)
+      const hunts = filterOwned(parsed.hunts)
+      const total_usd = hunts.reduce((sum, h) => sum + (h.cost_usd ?? 0), 0)
+      return { ...parsed, hunts, total_usd }
     },
   })
 }
 
-/** Clear all hunt history (DELETE /hunts) — keeps documents/memory/instincts. */
+/** Clear THIS browser's hunt history. Local-only by design: the DB is the engine's shared store, so
+ *  we forget the local ownership index rather than DELETE /hunts (which would wipe every visitor's
+ *  hunts). Documents/memory/instincts are untouched. */
 export function useClearHunts() {
   const qc = useQueryClient()
   return useMutation({
     mutationFn: async () => {
-      await api.delete('/hunts')
+      clearOwnedHunts()
     },
     onSuccess: () => {
       void qc.invalidateQueries({ queryKey: ['hunts'] })
@@ -435,12 +452,13 @@ export function useClearHunts() {
   })
 }
 
-/** Reset all local data (POST /reset) — wipes hunts, memory, documents, instincts, projects. */
+/** Reset THIS browser's local data. Forgets locally-owned hunts (so history + spend go empty) without
+ *  touching the shared engine DB. Documents/memory/instincts remain global (engine-scoped). */
 export function useResetData() {
   const qc = useQueryClient()
   return useMutation({
     mutationFn: async () => {
-      await api.post('/reset')
+      clearOwnedHunts()
     },
     onSuccess: () => {
       void qc.invalidateQueries()
