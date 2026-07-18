@@ -1,0 +1,114 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8"/>
+<title>The Pack — Deployment</title>
+<style>
+  @font-face{font-family:'Poppins';font-weight:400;src:url('fonts/poppins-400.woff2') format('woff2');}
+  @font-face{font-family:'Poppins';font-weight:500;src:url('fonts/poppins-500.woff2') format('woff2');}
+  @font-face{font-family:'Poppins';font-weight:600;src:url('fonts/poppins-600.woff2') format('woff2');}
+  @font-face{font-family:'Poppins';font-weight:700;src:url('fonts/poppins-700.woff2') format('woff2');}
+  @font-face{font-family:'Poppins';font-weight:800;src:url('fonts/poppins-800.woff2') format('woff2');}
+  :root{--ink:#15171c;--ink2:#5c636e;--ink3:#9aa0aa;--hair:#e4e6ea;}
+  *{margin:0;padding:0;box-sizing:border-box;}
+  html,body{width:1620px;}
+  body{font-family:'Poppins',Arial,sans-serif;background:#fff;color:var(--ink);-webkit-font-smoothing:antialiased;padding:52px 60px 44px;}
+  .kick{font-size:13px;font-weight:700;letter-spacing:5px;text-transform:uppercase;color:var(--ink3);}
+  h1{font-size:40px;font-weight:800;letter-spacing:-1px;margin:10px 0 8px;}
+  .sub{font-size:17px;font-weight:400;color:var(--ink2);line-height:1.5;max-width:1040px;}
+  .rule{height:1.6px;background:var(--hair);margin:24px 0 30px;}
+
+  .canvas{position:relative;height:560px;}
+  svg.wires{position:absolute;inset:0;z-index:0;}
+
+  /* A node = a titled box, exactly like the ERD entity. */
+  .node{background:#fff;border:1.7px solid var(--ink);border-radius:15px;overflow:hidden;z-index:1;}
+  .abs{position:absolute;}
+  .node h3{font-size:18px;font-weight:700;padding:12px 17px;border-bottom:1.5px solid var(--hair);letter-spacing:.2px;
+           display:flex;align-items:baseline;gap:9px;}
+  .node h3 .tech{font-weight:400;font-size:12px;color:var(--ink3);}
+  .node .b{padding:12px 17px 14px;font-size:13.5px;font-weight:400;color:var(--ink2);line-height:1.46;}
+  .node .b .cap{display:block;font-size:10.5px;font-weight:700;letter-spacing:1.3px;text-transform:uppercase;color:var(--ink3);margin-bottom:6px;}
+
+  /* The one element that carries the requirement inverts to solid ink — the ERD's "spine" move. */
+  .node.spine{border-width:2.4px;}
+  .node.spine > h3{background:var(--ink);color:#fff;border-bottom-color:var(--ink);}
+  .node.spine > h3 .tech{color:#c3c8d0;}
+
+  /* Managed services sit in a dashed group, like the ERD's "children / global" clusters. */
+  .group{position:absolute;border:1.6px dashed var(--hair);border-radius:18px;z-index:1;padding:28px 20px 20px;}
+  .glab{position:absolute;top:-11px;left:20px;background:#fff;padding:0 11px;font-size:12px;font-weight:700;
+        letter-spacing:1.6px;text-transform:uppercase;color:var(--ink3);}
+
+  /* The Alibaba compute boundary — a solid-ink labelled frame around the two containers. */
+  .zone{position:absolute;border:2px solid var(--ink);border-radius:20px;z-index:1;padding:30px 20px 22px;background:#fff;}
+  .zlab{position:absolute;top:-13px;left:22px;background:var(--ink);color:#fff;padding:5px 14px;border-radius:999px;
+        font-size:12.5px;font-weight:700;letter-spacing:1px;text-transform:uppercase;}
+  .zfoot{position:absolute;bottom:9px;left:24px;font-size:11px;font-weight:600;color:var(--ink3);letter-spacing:.4px;
+         font-variant-numeric:tabular-nums;}
+
+  /* Pill connector labels, straight from the ERD. */
+  .clab{position:absolute;z-index:3;background:#fff;padding:3px 12px;font-size:12.5px;font-weight:600;color:var(--ink);
+        border:1.4px solid var(--hair);border-radius:999px;transform:translate(-50%,-50%);white-space:nowrap;}
+
+  .why{position:absolute;padding:10px 0 10px 18px;border-left:3px solid var(--ink);font-size:15px;color:var(--ink2);line-height:1.5;z-index:1;}
+  .why b{color:var(--ink);font-weight:600;}
+</style></head>
+<body>
+  <div class="kick">The Pack &nbsp;·&nbsp; Deployment</div>
+  <h1>Running live on Alibaba Cloud</h1>
+  <div class="sub">You ask a question in the browser. A team of AI agents on an <b style="color:var(--ink)">Alibaba Cloud</b> server researches it, and streams the answer back to your screen, step by step. The AI brain is <b style="color:var(--ink)">Qwen</b>; the data lives on managed Neon and Upstash.</div>
+  <div class="rule"></div>
+
+  <div class="canvas">
+    <svg class="wires" viewBox="0 0 1500 560" preserveAspectRatio="none">
+      <!-- browser -> server -->
+      <line x1="250" y1="180" x2="366" y2="180" stroke="#15171c" stroke-width="1.8"/>
+      <path d="M359,173 L369,180 L359,187" fill="none" stroke="#15171c" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
+      <!-- server -> services group -->
+      <line x1="980" y1="180" x2="1096" y2="180" stroke="#15171c" stroke-width="1.8"/>
+      <path d="M1089,173 L1099,180 L1089,187" fill="none" stroke="#15171c" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
+    </svg>
+
+    <!-- 1 · BROWSER -->
+    <div class="node abs" style="top:108px;left:20px;width:230px;height:150px;">
+      <h3>Browser</h3>
+      <div class="b"><span class="cap">You</span>The web app you open and type your question into.</div>
+    </div>
+
+    <!-- 2 · ALIBABA CLOUD SERVER — a boundary frame; the two containers are absolutely placed inside. -->
+    <div class="zone abs" style="top:46px;left:368px;width:612px;height:272px;">
+      <span class="zlab">Alibaba Cloud server</span>
+      <div class="node abs spine" style="top:34px;left:22px;width:270px;height:176px;">
+        <h3>Engine <span class="tech">· Python</span></h3>
+        <div class="b">Runs the AI agents, does the research, and records every step.</div>
+      </div>
+      <div class="node abs" style="top:34px;left:314px;width:270px;height:176px;">
+        <h3>Live stream <span class="tech">· Rust</span></h3>
+        <div class="b">Pushes each step back to your screen the moment it happens.</div>
+      </div>
+      <span class="zfoot">1 server · Singapore · Docker · behind HTTPS</span>
+    </div>
+
+    <!-- 3 · MANAGED SERVICES — dashed group; three boxes absolutely placed. -->
+    <div class="group abs" style="top:46px;left:1098px;width:462px;height:272px;">
+      <span class="glab">Managed services · secured</span>
+      <div class="node abs" style="top:32px;left:22px;width:418px;height:96px;">
+        <h3>Qwen AI <span class="tech">· Alibaba Model Studio</span></h3>
+        <div class="b">The brain. Every agent does its thinking here.</div>
+      </div>
+      <div class="node abs" style="top:142px;left:22px;width:200px;height:96px;">
+        <h3 style="font-size:16px;">Database <span class="tech">· Neon</span></h3>
+        <div class="b" style="padding:11px 15px 13px;">Stores every step.</div>
+      </div>
+      <div class="node abs" style="top:142px;left:240px;width:200px;height:96px;">
+        <h3 style="font-size:16px;">Stream <span class="tech">· Upstash</span></h3>
+        <div class="b" style="padding:11px 15px 13px;">Real-time relay.</div>
+      </div>
+    </div>
+
+    <!-- connector pill labels -->
+    <div class="clab" style="left:309px;top:180px;">your question · https</div>
+    <div class="clab" style="left:1039px;top:180px;">calls out to</div>
+
+    <!-- why -->
+    <div class="why" style="top:400px;left:20px;width:1180px;"><b>Why this shape.</b> Your browser only ever shows what the server actually did — every step is recorded first, then streamed back live, so nothing happens off-screen. Both the AI (Qwen) and the server run on <b>Alibaba Cloud</b>.</div>
+  </div>
+</body></html>

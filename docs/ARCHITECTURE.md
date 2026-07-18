@@ -10,6 +10,14 @@ Each diagram is a high-resolution PNG rendered from a self-contained HTML source
 [`diagram-src/`](diagram-src/) (edit the `.html`, re-render, see below). The narrated walkthrough of
 all five, in plain words, is [`The-Pack-Architecture.pdf`](The-Pack-Architecture.pdf).
 
+## Deployment — where it runs
+The live shape: the browser talks to one **Alibaba Cloud** server (the Python engine + the Rust live
+stream, in Docker, behind HTTPS), which calls out to **Qwen** (Alibaba Model Studio) for every agent's
+reasoning and to managed Neon (Postgres) and Upstash (Redis) for storage. The AI and the compute both
+run on Alibaba Cloud.
+
+![Deployment on Alibaba Cloud](deployment.png)
+
 ## 1. System overview
 The signature loop at a glance: a command comes in, becomes one validated event, one write to
 Postgres (the truth); a relay projects it to Redis; the read-only Rust gateway fans it back over
