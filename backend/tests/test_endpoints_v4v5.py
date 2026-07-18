@@ -161,7 +161,11 @@ def test_instinct_reuse_pulls_shape_not_stale_task() -> None:
         "/instincts",
         json={
             "label": "Deep pack",
-            "spec": {"strategy": "deep_dive", "team": [{"role": "scout", "count": 5}], "task": "OLD stale task"},
+            "spec": {
+                "strategy": "deep_dive",
+                "team": [{"role": "scout", "count": 5}],
+                "task": "OLD stale task",
+            },
         },
     ).json()["instinct_id"]
 

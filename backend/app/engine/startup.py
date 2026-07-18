@@ -53,7 +53,11 @@ async def recover_stranded_hunts(app: FastAPI, repo: Repo) -> None:
             # mid-flush during a fast, graceful reload — skip it this pass rather than reap it a
             # heartbeat early. A crashed hunt is far staler than the grace and is reaped now.
             if float(h.get("last_event_age_s") or 0.0) < _REAP_GRACE_S:
-                logger.info("stranded hunt %s still fresh (%.1fs) — leaving for grace pass", hid, h.get("last_event_age_s") or 0.0)
+                logger.info(
+                    "stranded hunt %s still fresh (%.1fs) — leaving for grace pass",
+                    hid,
+                    h.get("last_event_age_s") or 0.0,
+                )
                 continue
             seq = (await repo.get_last_seq(hid)) + 1
             await repo.append_event(

@@ -159,7 +159,9 @@ class Supervisor:
         self._strategy_explicit = strategy is not None
         self._wolves: dict[str, Wolf] = {}
         self._team: list[dict] = []  # the per-task formation Beta proposes / the user edits
-        self._wolf_notes: dict[str, str] = {}  # per-wolf handler note from the Edit Formations panel
+        self._wolf_notes: dict[
+            str, str
+        ] = {}  # per-wolf handler note from the Edit Formations panel
         self._seed_team = seed_team or []  # a saved Instinct's formation overrides Beta's
         self._wolf_budget: dict[str, float] = {}  # per-wolf spend cap
         self._wolf_spend: dict[str, float] = {}  # per-wolf cumulative spend
