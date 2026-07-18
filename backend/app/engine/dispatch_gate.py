@@ -1,11 +1,11 @@
-"""The boundary gate — the pure decision at the heart of every model dispatch (Doc 04 §04, F7).
+"""The boundary gate — the pure decision at the heart of every model dispatch.
 
-This is the flagship spend-safety logic, lifted out of the Supervisor so it can be unit-tested in
-isolation: given a wolf and the hunt's spend state, decide — BEFORE the call — whether to downgrade
-the tier, relieve the wolf at its own cap, halt at the Boundary, or warn, and RESERVE the estimated
-cost. It is pure of I/O: it mutates the passed-in spend state (the Boundary, the per-wolf spend, the
-relieved set) and returns a `GateDecision` describing what the caller must emit/act on. The caller
-holds the dispatch lock around this call, so check-and-reserve stays atomic against parallel scouts.
+Lifted out of the Supervisor so it can be unit-tested in isolation: given a wolf and the hunt's
+spend state, decide — BEFORE the call — whether to downgrade the tier, relieve the wolf at its own
+cap, halt at the Boundary, or warn, and RESERVE the estimated cost. Pure of I/O: mutates the
+passed-in spend state and returns a `GateDecision` describing what the caller must emit/act on. The
+caller holds the dispatch lock around this call, so check-and-reserve stays atomic against parallel
+scouts.
 """
 
 from __future__ import annotations
@@ -43,12 +43,11 @@ def decide_and_reserve(
 ) -> GateDecision:
     """Per-wolf cap + hunt Boundary gate BEFORE a model call, reserving the estimate. Mutates
     `wolf.tier`/`wolf.thinking` on a downgrade, adds to `relieved` on relief, and reserves `est` into
-    `boundary`/`wolf_spend`. Returns the decisions the caller acts on. No I/O — call under the lock.
+    `boundary`/`wolf_spend`. No I/O — call under the lock.
 
-    Note (preserved behavior): a Boundary DOWNGRADE drops the wolf to flash but does NOT re-estimate,
-    so it reserves the original (higher) estimate and reconciles to actual after the call — a
-    conservative over-reserve. Only a per-WOLF-cap downgrade re-estimates, because that estimate is
-    what the cap comparison then hinges on.
+    Preserved behavior: a Boundary DOWNGRADE drops the wolf to flash but does NOT re-estimate — a
+    conservative over-reserve, reconciled to actual after the call. Only a per-WOLF-cap downgrade
+    re-estimates, because that estimate is what the cap comparison then hinges on.
     """
     est = pricing.estimate(wolf.tier)
     d = GateDecision(est=est)

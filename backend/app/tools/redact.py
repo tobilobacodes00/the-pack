@@ -1,4 +1,4 @@
-"""PII + secret redaction — the Tracks export AND every process log line (Doc 04).
+"""PII + secret redaction — the Tracks export AND every process log line.
 
 Two complementary layers, so nothing slips through EITHER a shape gap or a config gap:
 
@@ -6,13 +6,11 @@ Two complementary layers, so nothing slips through EITHER a shape gap or a confi
      and secret-ish tokens (sk-… keys, 32+ char opaque runs, JWTs, AWS access keys).
   2. An exact-value registry (identity-based): the process's OWN configured secrets — the real
      QWEN_API_KEY, SESSION_SECRET, OSS secret, etc. — scrubbed verbatim regardless of shape. A short
-     or oddly-punctuated key that the regexes can't match still can't leak once it's registered, and
-     we know its exact value at startup.
+     or oddly-punctuated key that the regexes can't match still can't leak once it's registered.
 
 Deliberately conservative — it over-masks rather than leaks. Two call sites: `redact_event` for the
 exported Tracks copy (the event log itself is never mutated), and `app.core.logging.JsonFormatter`
-for every live log line — a raw exception message or a scraped page's content can carry the same
-PII/secrets, and the log stream had no redaction at all until this second wiring.
+for every live log line.
 """
 
 from __future__ import annotations
@@ -24,8 +22,7 @@ _EMAIL = re.compile(r"[\w.+-]+@[\w-]+\.[\w.-]+")
 _CARD = re.compile(r"(?<!\d)(?:\d[ -]?){13,19}(?!\d)")
 _PHONE = re.compile(r"(?<!\d)\+?\d[\d\s().-]{7,}\d(?!\d)")
 # sk-... (OpenAI-style) / a bare 32+ char opaque run / a JWT (3 dot-separated base64url segments,
-# each segment individually failing the 32-char floor so a short JWT wasn't caught before) /
-# AWS-style access keys (AKIA/ASIA + 16 alnum, 20 chars total — under the 32-char floor).
+# each individually under the 32-char floor) / AWS-style keys (AKIA/ASIA + 16 alnum, also under it).
 _TOKEN = re.compile(
     r"\b(?:"
     r"sk-[A-Za-z0-9]{6,}"
@@ -35,9 +32,9 @@ _TOKEN = re.compile(
     r")\b"
 )
 
-# Exact configured-secret values to scrub verbatim, longest-first (so a secret that is a substring of
-# another is masked by the longer match first). Seeded lazily from `settings` on first use so import
-# order and test monkeypatching of settings both work; refreshable via `refresh_secret_registry()`.
+# Exact configured-secret values to scrub verbatim, longest-first (so a secret that's a substring of
+# another is masked by the longer match first). Seeded lazily from `settings` on first use; refreshable
+# via `refresh_secret_registry()`.
 _SECRET_VALUES: list[str] | None = None
 # Which settings fields hold a real secret. A value shorter than this is ignored — masking a 1-2 char
 # "secret" (e.g. an unset/placeholder) would redact swathes of ordinary text. 8 is the shortest a real
@@ -77,8 +74,8 @@ def _secret_values() -> list[str]:
 
 
 def refresh_secret_registry() -> None:
-    """Force the exact-value registry to re-read `settings` on next use — for tests that monkeypatch a
-    secret after this module was first imported, and for a config reload."""
+    """Force the exact-value registry to re-read `settings` on next use — for tests that monkeypatch
+    a secret after import, and for a config reload."""
     global _SECRET_VALUES
     _SECRET_VALUES = None
 

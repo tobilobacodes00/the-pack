@@ -1,4 +1,4 @@
-"""The Boundary — a gate BEFORE the call, not a graph after it (Doc 04 §04, F7).
+"""The Boundary — a gate BEFORE the call, not a graph after it.
 
 Every LLM and tool call passes a gate that checks PROJECTED spend before dispatch:
   * 70%  -> emit boundary_warning
@@ -6,13 +6,12 @@ Every LLM and tool call passes a gate that checks PROJECTED spend before dispatc
             safe) and emit boundary_downgrade
   * 100% -> BLOCK the call, checkpoint, and emit boundary_halt
 
-This must INTERCEPT, never merely observe. It is the market gap we demonstrate. First hunts carry a
-silent cap (settings.first_hunt_cap_usd — 3.00 by default; the prod template lowers it to 0.50)
-regardless of the approved boundary. Per-wolf sub-budgets are enforced the same way.
+This must INTERCEPT, never merely observe. First hunts carry a silent cap
+(settings.first_hunt_cap_usd) regardless of the approved boundary. Per-wolf sub-budgets are
+enforced the same way.
 
-Scaffold: the thresholds and the gate signature are fixed here; the engine wires dispatch
-through `check()` so no call can escape it. See fixtures/boundary_halt.jsonl for the
-expected event sequence and backend/tests for the assertion that nothing dispatches >100%.
+See fixtures/boundary_halt.jsonl for the expected event sequence and backend/tests for the
+assertion that nothing dispatches >100%.
 """
 
 from __future__ import annotations

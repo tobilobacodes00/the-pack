@@ -20,6 +20,7 @@ import { DoorLanding } from './door-landing'
 import { useHuntStore } from '@/store/hunt-store'
 import { useHuntStream } from '@/hooks/use-hunt-stream'
 import { useApprovePlan } from '@/api/hunts'
+import { rememberHunt } from '@/lib/local-history'
 import { color, warm } from '@/lib/theme'
 
 // Territory-only surfaces (and the fluid smoke) load on demand: keeps @xyflow/react and the
@@ -37,19 +38,17 @@ const MORPH = { duration: 0.55, ease: [0.4, 0, 0.2, 1] as const }
 // job — one continuous animation, chat stays mounted, no route change (see useDoorLogic).
 export default function DoorPage() {
   const qc = useQueryClient()
-  // React to chat-driven brief iteration / follow-up hunts once this door is a live hunt (see
-  // RightPanel for the same handler on the standalone territory view).
+  // Reacts to chat-driven brief iteration / follow-up hunts (see RightPanel for the territory-view twin).
   const onAskAction = useCallback(
     (action: AskAction, newHuntId: string | null) => {
       if (action === 'refined') {
-        // Refresh any cached brief/format artifacts so the reward shows the re-worked version.
         void qc.invalidateQueries({ queryKey: ['hunts'], predicate: (q) => q.queryKey.includes('artifact') || q.queryKey.includes('artifacts') })
         toast({ title: 'Brief updated', description: 'Alpha re-worked the brief.', variant: 'default' })
       } else if ((action === 'subhunt' || action === 'new_hunt') && newHuntId) {
-        // A follow-up is a NEW hunt (its own hunt_id) that lands in plan_ready and waits for approval.
-        // Take the Packmaster there — same as retry below — so they see it, approve the plan, and watch
-        // it run. Without this the new hunt starves at the approval gate and gets reaped as failed on the
-        // next engine restart, with the user never told it existed.
+        // A follow-up lands in plan_ready waiting for approval — without navigating there it starves
+        // at the gate and gets reaped as failed on the next engine restart.
+        // Claim it for this browser (created outside useCreateHunt) so it stays in local history.
+        rememberHunt(newHuntId)
         void qc.invalidateQueries({ queryKey: ['hunts'] })
         toast({
           title: action === 'subhunt' ? 'Digging deeper' : 'New hunt launched',
@@ -62,6 +61,7 @@ export default function DoorPage() {
         window.location.assign(`/hunts/${newHuntId}`)
       } else if (action === 'retry' && newHuntId) {
         // Alpha re-ran the job as a fresh hunt — send the Packmaster to it so they watch it run.
+        rememberHunt(newHuntId)
         void qc.invalidateQueries({ queryKey: ['hunts'] })
         toast({ title: 'Running it again', description: 'Taking you to the new run.', variant: 'default' })
         window.location.assign(`/hunts/${newHuntId}`)
@@ -69,11 +69,9 @@ export default function DoorPage() {
     },
     [qc],
   )
-  // A reused Instinct arrives via router state (from the Instincts library OR the Past-Hunts sidebar):
-  // its proven formation rides along as the hunt's seed_team, but the TASK is gathered fresh here —
-  // Alpha greets naming the pack and asks what to point it at, then the normal intake flow runs. Held
-  // as state (not a mount-only memo) so a navigation to '/' that arrives while the Door is ALREADY
-  // mounted — the sidebar's own "Use This" — still activates it (React Router won't remount same-path).
+  // A reused Instinct arrives via router state; its formation rides as seed_team but the task is
+  // gathered fresh. Held as state (not a mount-only memo) so a same-path nav while the Door is
+  // already mounted — the sidebar's own "Use This" — still activates it (React Router won't remount).
   const location = useLocation()
   const [reusedInstinct, setReusedInstinct] = useState<ReusedInstinct | null>(
     () => (location.state as { instinct?: ReusedInstinct } | null)?.instinct ?? null,
@@ -86,8 +84,7 @@ export default function DoorPage() {
   const applyLocalEdits = useHuntStore((s) => s.applyLocalEdits)
   const seedPreviewPlan = useHuntStore((s) => s.seedPreviewPlan)
   const [editing, setEditing] = useState(false)
-  // First paint leads with the chat: sidebar starts collapsed (the top-nav hamburger opens
-  // Past Hunts on demand), so the intake chat renders centered and full-width.
+  // Sidebar starts collapsed so the intake chat renders centered and full-width.
   const [sidebarOpen, setSidebarOpen] = useState(false)
   // Tracks whether you've scrolled into the landing sections (hides the scroll-to-explore cue).
   const [pastHero, setPastHero] = useState(false)
@@ -99,12 +96,11 @@ export default function DoorPage() {
   }, [phase])
   useHuntStream(huntId)
 
-  // Smoke is a cursor effect — only mount it where a real cursor exists. Touch devices skip
-  // the full-screen fluid sim entirely (their scroll stays butter).
+  // Touch devices skip the full-screen fluid sim entirely (their scroll stays butter).
   const finePointer = useMemo(() => window.matchMedia('(pointer: fine)').matches, [])
 
-  // Quietly warm the territory chunks once the landing has settled, so the intake→territory
-  // morph never waits on the network even though the landing didn't pay for them up front.
+  // Warm the territory chunks once the landing settles, so the intake→territory morph never
+  // waits on the network.
   useEffect(() => {
     const t = window.setTimeout(() => {
       void import('../territory/graph-canvas')
@@ -113,18 +109,14 @@ export default function DoorPage() {
     return () => window.clearTimeout(t)
   }, [])
 
-  // Fresh door session: clear any hunt state left over from a prior visit (the store
-  // is a global singleton and survives SPA nav back to '/'), so the canvas that opens
-  // on the first message doesn't flash a previous hunt's formation.
+  // Store is a global singleton that survives SPA nav — clear leftover hunt state so the canvas
+  // doesn't flash a previous hunt's formation.
   useEffect(() => {
     resetHunt()
   }, [resetHunt])
 
-  // React to arrivals from an Instinct's "Use This" — a built-in (text-only composer prefill) or a saved
-  // instinct (formation reuse). Keyed on location.key so it fires on EVERY navigation to the door, incl.
-  // the sidebar's own "Use This" while the door is already mounted (same-path nav → no remount). For a
-  // saved instinct: reset to a clean session, greet as Alpha, and show the formation on the canvas; the
-  // formation rides along in useDoorLogic (→ seed_team on the created hunt).
+  // Keyed on location.key so it fires on every navigation to the door, incl. the sidebar's own
+  // "Use This" while already mounted (same-path nav → no remount).
   useEffect(() => {
     const st = location.state as { seed?: string; instinct?: ReusedInstinct } | null
     if (st?.seed) door.setInput(st.seed)
@@ -145,11 +137,8 @@ export default function DoorPage() {
   const isTerritory = phase === 'territory'
   const canEdit = huntState.status === 'plan_ready' && huntState.plan !== null
 
-  // The door morphs to territory on the first message, before any hunt exists. Reflect that in the
-  // URL so it doesn't look like nothing changed. Raw History API (not React Router nav) → no remount
-  // → the morph keeps animating. `!huntId` is load-bearing: once a real hunt is created, use-intake
-  // writes /hunts/<id> and sets huntId, so this never overwrites it (a bare replaceState doesn't
-  // update location.pathname, so huntId — not pathname — is the authoritative gate).
+  // Raw History API (not React Router nav) so the morph keeps animating without a remount.
+  // `!huntId` is load-bearing: once use-intake writes /hunts/<id>, huntId (not pathname) gates this.
   useEffect(() => {
     if (isTerritory && !huntId && location.pathname === '/') {
       window.history.replaceState(null, '', '/new')
@@ -164,8 +153,7 @@ export default function DoorPage() {
       approving={approving}
       onEditFormation={() => setEditing(true)}
       onOpenReward={reward.openReward}
-      // "Try again" on a failed/stopped hunt: fire the same "retry" the chat understands (routes to
-      // the backend retry intent → a fresh hunt), without the user having to type it.
+      // Fires the same "retry" the chat understands, routing to the backend retry intent.
       onRetry={() => void door.send('retry')}
       retrying={door.isPending}
     />
@@ -181,11 +169,9 @@ export default function DoorPage() {
       onDragLeave={onDragLeave}
       onDrop={onDrop}
     >
-      {/* The wolf (hero emblem → pack → big lone wolf) lives entirely in DoorLanding's PackReveal
-          now — one continuous fixed element across the whole scroll, so there's no separate hero
-          wolf to hand off from. */}
-      {/* Fluid smoke rides the cursor across the ENTIRE landing (hero + every section below).
-          Desktop-only (needs a cursor) and lazy — it never blocks the landing's first paint. */}
+      {/* The wolf lives entirely in DoorLanding's PackReveal — one continuous fixed element
+          across the whole scroll. */}
+      {/* Fluid smoke rides the cursor across the landing. Desktop-only, lazy. */}
       {!isTerritory && finePointer && (
         <Suspense fallback={null}>
         <SplashCursor
@@ -206,13 +192,10 @@ export default function DoorPage() {
         </Suspense>
       )}
 
-      {/* HERO — always exactly one viewport; the landing (intake only) scrolls in below it. On the
-          cream door it inherits the page's warm bg. `z-20` lifts the whole hero (nav + chat +
-          composer + presets + cue) above DoorLanding's z-10 layer so the fixed wolf sits BEHIND it
-          — the transparent hero lets the faint wolf show in the gaps but never over the composer. */}
+      {/* HERO — always exactly one viewport. `z-20` lifts it above DoorLanding's z-10 layer so the
+          fixed wolf sits behind it, showing through the gaps but never over the composer. */}
       <div className={isTerritory ? 'flex-1 flex flex-col min-h-0 overflow-hidden' : 'relative z-20 h-dvh flex flex-col'}>
-      {/* Top nav — intake only, and only while the sidebar is collapsed (the sidebar carries its own
-          header). The roster carries the branding once we're in territory. */}
+      {/* Top nav — intake only. `pl-16` clears the fixed hamburger at top-left. */}
       <AnimatePresence>
         {!isTerritory && !sidebarOpen && (
           <motion.nav
@@ -221,50 +204,15 @@ export default function DoorPage() {
             transition={MORPH}
             className="h-[52px] flex items-stretch shrink-0 overflow-hidden"
           >
-            <div className="flex items-center gap-3 px-5">
+            <div className="flex items-center gap-3 pl-16 pr-5">
               <img src="/pack-logo.svg" className="w-[22px] h-[26px]" alt="Pack" />
               <span className="font-display text-base font-extrabold tracking-wide text-ink-900">A Pack</span>
-              <button
-                onClick={() => setSidebarOpen(true)}
-                className="p-1 opacity-70 hover:opacity-100 transition-opacity"
-                aria-label="Open past hunts"
-              >
-                <img src="/icon-menu.svg" className="w-5 h-5" alt="" style={{ filter: 'brightness(0) saturate(100%) opacity(0.75)' }} />
-              </button>
             </div>
           </motion.nav>
         )}
       </AnimatePresence>
 
       <div className="flex-1 relative overflow-hidden min-h-0">
-        {/* Past-Hunts sidebar — intake only, slides in from the left when the hamburger is tapped.
-            On mobile a tap-to-close scrim sits behind it (the sidebar is a full overlay there). */}
-        <AnimatePresence>
-          {!isTerritory && sidebarOpen && (
-            <>
-              <motion.div
-                key="sidebar-scrim"
-                initial={{ opacity: 0 }}
-                animate={{ opacity: 1 }}
-                exit={{ opacity: 0 }}
-                transition={MORPH}
-                onClick={() => setSidebarOpen(false)}
-                className="absolute inset-0 z-20 bg-black/40 sm:hidden"
-              />
-              <motion.div
-                key="sidebar"
-                initial={{ x: -300, opacity: 0 }}
-                animate={{ x: 0, opacity: 1 }}
-                exit={{ x: -300, opacity: 0 }}
-                transition={MORPH}
-                className="absolute left-0 top-0 bottom-0 z-30"
-              >
-                <HuntSidebar onCollapse={() => setSidebarOpen(false)} />
-              </motion.div>
-            </>
-          )}
-        </AnimatePresence>
-
         {/* Full-bleed canvas — the sidebars float on top of it. */}
         <AnimatePresence>
           {isTerritory && (
@@ -283,8 +231,7 @@ export default function DoorPage() {
           )}
         </AnimatePresence>
 
-        {/* Left roster — floating overlay on top of the canvas. It sizes itself (52px collapsed corner
-            square on mobile, 300px rail on desktop), so the wrapper just fades in and hugs content. */}
+        {/* Left roster — floating overlay; sizes itself, so the wrapper just fades in. */}
         <AnimatePresence>
           {isTerritory && (
             <motion.div
@@ -309,7 +256,7 @@ export default function DoorPage() {
               animate={{ x: 0, opacity: 1 }}
               exit={{ opacity: 0 }}
               transition={MORPH}
-              // Mobile: a bottom sheet spanning the width, capped height. Desktop: the right-side column.
+              // Mobile: bottom sheet, capped height. Desktop: right-side column.
               className="absolute inset-x-2 bottom-2 top-auto h-[62dvh] sm:inset-x-auto sm:right-3 sm:top-3 sm:bottom-3 sm:h-auto sm:w-[320px] z-20 flex flex-col min-h-0 overflow-hidden"
               style={{ background: color.surface, border: `1px solid ${color.border}`, borderRadius: 16 }}
             >
@@ -318,7 +265,6 @@ export default function DoorPage() {
                 {...door}
                 footer={planFooter}
                 hideComposer={hideComposer}
-                activity={huntState.activity}
                 placeholder={composerPlaceholder(huntState.status)}
               />
             </motion.div>
@@ -329,14 +275,13 @@ export default function DoorPage() {
               animate={{ opacity: 1 }}
               exit={{ opacity: 0, scale: 0.98 }}
               transition={MORPH}
-              // On mobile the sidebar is a full overlay (with a scrim), so the chat never shifts right;
-              // on desktop it slides the content over by the sidebar width.
-              className={`absolute top-0 bottom-0 right-0 left-0 ${sidebarOpen ? 'sm:left-[300px]' : 'sm:left-0'} flex flex-col items-center justify-center overflow-y-auto px-4 py-8 min-h-0`}
+              // `my-auto` (not `justify-center`) so when content overflows the viewport the top
+              // stays reachable and the column scrolls, instead of clipping off-screen.
+              className="absolute inset-0 flex flex-col items-center overflow-y-auto px-4 py-8 min-h-0"
             >
-              <div className="w-full max-w-[700px] flex flex-col gap-6">
-                {/* Reserve the line so the composer never jumps as the rotating clause changes length.
-                    The question fits one line on desktop; a touch more room on mobile for a wrap. */}
-                <div className="min-h-[80px] flex items-center justify-center md:min-h-[52px]">
+              <div className="w-full max-w-[700px] my-auto flex flex-col gap-6">
+                {/* Reserve the line so the composer never jumps as the rotating clause changes length. */}
+                <div className="min-h-[52px] flex items-center justify-center">
                   <HeroTypewriter />
                 </div>
 
@@ -371,7 +316,7 @@ export default function DoorPage() {
           <motion.button
             onClick={() => window.scrollTo({ top: window.innerHeight, behavior: 'smooth' })}
             initial={{ opacity: 0 }}
-            // Stop the infinite bob once it's invisible — framer keeps a rAF alive for it otherwise.
+            // Stop the infinite bob once invisible — framer keeps a rAF alive for it otherwise.
             animate={{ opacity: pastHero ? 0 : 1, y: pastHero ? 0 : [0, 6, 0] }}
             transition={{ opacity: { duration: 0.4 }, y: pastHero ? { duration: 0.2 } : { duration: 1.8, repeat: Infinity, ease: 'easeInOut' } }}
             style={{ pointerEvents: pastHero ? 'none' : 'auto' }}
@@ -385,6 +330,48 @@ export default function DoorPage() {
       </div>
       {/* /hero */}
 
+      {/* Past-Hunts sidebar — intake only. Fixed to the viewport, mounted at the DoorPage root
+          (free of the hero's overflow-hidden / framer-transform ancestors that would trap it). */}
+      {!isTerritory && (
+        <AnimatePresence>
+          {sidebarOpen && (
+            <>
+              <motion.div
+                key="sidebar-scrim"
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                exit={{ opacity: 0 }}
+                transition={MORPH}
+                onClick={() => setSidebarOpen(false)}
+                className="fixed inset-0 z-[70] bg-black/40"
+              />
+              <motion.div
+                key="sidebar"
+                initial={{ x: -300, opacity: 0 }}
+                animate={{ x: 0, opacity: 1 }}
+                exit={{ x: -300, opacity: 0 }}
+                transition={MORPH}
+                className="fixed left-0 top-0 bottom-0 z-[71]"
+              >
+                <HuntSidebar onCollapse={() => setSidebarOpen(false)} />
+              </motion.div>
+            </>
+          )}
+        </AnimatePresence>
+      )}
+
+      {/* Persistent hamburger — fixed top-left so Past Hunts stays reachable after the hero scrolls away. */}
+      {!isTerritory && !sidebarOpen && (
+        <button
+          onClick={() => setSidebarOpen(true)}
+          className="fixed left-4 top-4 z-[69] flex h-10 w-10 items-center justify-center rounded-full border transition-shadow hover:shadow-chunk-sm"
+          style={{ background: color.surface, borderColor: color.border }}
+          aria-label="Open past hunts"
+        >
+          <img src="/icon-menu.svg" className="w-5 h-5" alt="" style={{ filter: 'brightness(0) saturate(100%) opacity(0.75)' }} />
+        </button>
+      )}
+
       {!isTerritory && <DoorLanding setInput={door.setInput} />}
 
       {huntId && (
@@ -392,8 +379,8 @@ export default function DoorPage() {
           <RewardModal huntId={huntId} open={reward.open} onClose={reward.close} />
         </Suspense>
       )}
-      {/* The composer's `+` file input lives here — in the stable DoorPage subtree, not inside
-          ChatColumn (which remounts at the morph and would detach the ref, breaking the `+`). */}
+      {/* Lives in the stable DoorPage subtree — ChatColumn remounts at the morph, which would
+          detach the ref and break the composer's `+`. */}
       <HiddenFileInput inputRef={door.fileInputRef} onFiles={door.addFiles} />
       {isDragging && <FileDropOverlay />}
     </div>

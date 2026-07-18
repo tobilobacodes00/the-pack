@@ -1,6 +1,5 @@
 import { useState } from 'react'
 import { ChevronLeft, PanelLeftClose, PanelLeftOpen, Loader2, SquarePen } from 'lucide-react'
-import { useNavigate } from 'react-router-dom'
 import { useIsMobile } from '@/hooks/use-is-mobile'
 import { color } from '@/lib/theme'
 import type { HuntState, HuntStatus, WolfState } from '@/events/schema'
@@ -83,13 +82,14 @@ const iconBtn: React.CSSProperties = {
 }
 
 export function LeftPanel({ huntState }: LeftPanelProps) {
-  const navigate = useNavigate()
   const isMobile = useIsMobile()
-  // On a phone the roster starts as the compact corner square so it never covers the canvas/chat; on
-  // desktop it opens as the full rail. The user can still toggle either way.
+  // Hard navigation, not react-router's navigate('/'): on the door, territory phase is local state
+  // set via raw history.replaceState, so a plain navigate wouldn't remount DoorPage and the view
+  // would stay stuck in territory. A full document load guarantees a fresh Door in every context.
+  const goToDoor = () => window.location.assign('/')
+  // Mobile starts as the compact corner square so it never covers the canvas/chat.
   const [collapsed, setCollapsed] = useState(isMobile)
 
-  // Roles from the plan's canonical team (with leads), grouped by role — NOT plan.wolves (wolf-ids).
   const roles = rosterRoles(planRoleList(huntState.plan))
   const badge = statusBadge(huntState.status)
   const emptyCopy =
@@ -120,7 +120,7 @@ export function LeftPanel({ huntState }: LeftPanelProps) {
           borderBottom: '1px solid #dcdcd8',
         }}
       >
-        <button onClick={() => navigate('/')} style={iconBtn} title="Back">
+        <button onClick={goToDoor} style={iconBtn} title="Back">
           <ChevronLeft size={18} />
         </button>
         <span style={{ flex: 1, fontSize: 15, fontWeight: 600, color: '#1a1a1a' }}>A Pack</span>
@@ -132,7 +132,7 @@ export function LeftPanel({ huntState }: LeftPanelProps) {
       {/* New Hunt Button */}
       <div style={{ padding: '16px 16px 4px' }}>
         <button
-          onClick={() => navigate('/')}
+          onClick={goToDoor}
           style={{
             width: '100%',
             display: 'flex',

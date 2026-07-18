@@ -1,11 +1,8 @@
-// Shared geometry + shaders for the faceted wolf, used by both the single hero mascot
-// (alpha-wolf) and the multi-instance pack scene (pack-canvas). ONE source of truth for the
-// mesh so every wolf on the site is the same logo-exact head.
+// Shared geometry + shaders for the faceted wolf, used by both the hero mascot (alpha-wolf) and
+// the pack scene (pack-canvas) — one source so every wolf on the site is the same logo-exact head.
 //
-// The front of the head is built VERBATIM from public/pack-logo.svg (every vertex + stroked
-// facet edge, 1:1; silhouette on z=0 with a near-orthographic camera, so head-on it IS the
-// logo). Interior vertices carry a sculpted relief; the silhouette is swept back into a
-// faceted cranium so the head is a complete volume from every angle.
+// Front of the head is built verbatim from public/pack-logo.svg (every vertex + facet edge, 1:1;
+// silhouette on z=0 so head-on it IS the logo). Silhouette swept back into a faceted cranium.
 
 type Vec3 = number[]
 

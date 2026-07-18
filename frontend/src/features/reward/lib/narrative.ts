@@ -85,8 +85,7 @@ export function deriveNarrative(events: RawTrackEvent[]): NarrativeItem[] {
         })
         break
       case 'hold_resolved':
-        // Alpha's autonomous (Wild-mode) conflict call — surface WHY it chose. A human-resolved hold
-        // isn't narrated here (the user made that call themselves).
+        // Only narrate Alpha's autonomous call — a human-resolved hold needs no explanation.
         if (p.auto) {
           out.push({
             id,

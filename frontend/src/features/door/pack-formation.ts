@@ -12,10 +12,9 @@ export interface PackSlot {
   z: number
 }
 
-// Apex-first. Alpha front & largest (bottom); the open top row (Scout/Tracker/Sentinel/Howler)
-// is the widest — a downward-pointing triangle with no base.
-// Columns are INTERLEAVED between rows (mid wolves sit in the gaps of the top row) so no
-// caption ever falls straight onto the head below it.
+// Apex-first: Alpha front & largest, the open top row (Scout/Tracker/Sentinel/Howler) widest —
+// a downward-pointing triangle with no base. Columns interleave between rows so no caption
+// ever falls straight onto the head below it.
 export const PACK_SLOTS: PackSlot[] = [
   { role: 'alpha', sx: 0.0, sy: -0.42, scale: 1.0, z: 7 },
   { role: 'beta', sx: -0.4, sy: -0.02, scale: 0.8, z: 6 },
@@ -40,8 +39,9 @@ export const PACK_ACCENT: Record<string, { ink: string; ring: string; wash: stri
 }
 
 // Clip-space → model scale. Kept compact so the whole triangle sits with clear margin on every
-// side (never edge-to-edge). Alpha at its slot (scale 1) → ~26vh tall; back row ~15vh.
-export const BASE_SCALE = 0.34
+// side (never edge-to-edge), with extra breathing room in the Meet-the-Pack scene. Alpha at its
+// slot (scale 1) → ~21vh tall; back row ~13vh. Captions/badges derive from this, so they follow.
+export const BASE_SCALE = 0.28
 
 // Alpha's size as a lone wolf (hero + rest) — matches the hero emblem so the journey reads as
 // ONE wolf: big on the hero, shrinks to the triangle apex as the pack fans out, then grows back

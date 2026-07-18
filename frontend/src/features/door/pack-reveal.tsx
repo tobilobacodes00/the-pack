@@ -138,7 +138,7 @@ function StageInner({
 
 /** Static, fully-legible layout for reduced-motion: the triangle + the use-cases, in flow. */
 function StaticFallback() {
-  const Head = ({ role, size = 96 }: { role: string; size?: number }) => {
+  const Head = ({ role, size = 80 }: { role: string; size?: number }) => {
     const accent = PACK_ACCENT[role]
     return (
       <div className="flex w-[150px] flex-col items-center sm:w-[190px]">
@@ -164,7 +164,7 @@ function StaticFallback() {
         {rows.map((row, i) => (
           <div key={i} className="flex flex-wrap justify-center gap-x-6 gap-y-8 sm:gap-x-8 sm:gap-y-10">
             {row.map((r) => (
-              <Head key={r} role={r} size={i === 0 ? 108 : 84} />
+              <Head key={r} role={r} size={i === 0 ? 90 : 70} />
             ))}
           </div>
         ))}
@@ -188,9 +188,8 @@ function StaticFallback() {
 }
 
 export function PackReveal(): ReactNode {
-  // The scroll-jacked WebGL reveal is a wide-DESKTOP experience — on phones AND tablets (or reduced
-  // motion) the absolutely-positioned wolf + captions + use-cases overlap and break, so fall back to
-  // the clean, flow-based static layout below the lg breakpoint.
+  // Scroll-jacked WebGL reveal is desktop-only — on phones/tablets the absolutely-positioned wolf
+  // + captions + use-cases overlap and break, so fall back to the static layout below lg.
   const reduceMotion = useReducedMotion() ?? false
   const belowLg = useIsBelowLg()
   const reduce = reduceMotion || belowLg

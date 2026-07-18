@@ -8,8 +8,7 @@ interface Props {
   loading: boolean
   /** A benchmark run is in flight — POST accepted, scorecard not landed yet. */
   running: boolean
-  /** The benchmark didn't produce a scorecard — the launch POST failed, or it was accepted but never
-   *  landed within the poll budget (a background failure). Either way, offer a retry. */
+  /** Launch POST failed, or it landed but never produced a scorecard within the poll budget. */
   failed: boolean
   onRun: () => void
   onCancel: () => void
@@ -18,8 +17,7 @@ interface Props {
 
 function Row({ lone, label, pack }: { lone: ReactNode; label: string; pack: ReactNode }) {
   return (
-    // Keep the lone-vs-pack comparison side by side; on mobile the middle label column and gaps shrink
-    // so the two value columns keep room for numbers/currency/time.
+    // Middle label column and gaps shrink on mobile so the value columns keep room for numbers.
     <div className="grid grid-cols-[1fr_auto_1fr] items-center gap-2 py-3 sm:gap-4">
       <div className="text-right text-[13.5px] text-ink-700 tabular-nums sm:text-[15px]">{lone}</div>
       <div className="w-[76px] text-center text-[11px] text-muted sm:w-[112px] sm:text-[12px]">{label}</div>
@@ -42,7 +40,6 @@ export function ScorecardPanel({ scorecard, loading, running, failed, onRun, onC
       <div className="flex h-full flex-col">
         <div className="flex flex-1 items-center justify-center px-5 sm:px-8 text-center">
           {running ? (
-            // In flight: the lone wolf is genuinely re-running the same task solo right now.
             <div>
               <Loader2 size={22} className="mx-auto animate-spin text-brand-500" />
               <p className="mt-3 text-[15px] font-semibold text-ink-900">
@@ -69,6 +66,7 @@ export function ScorecardPanel({ scorecard, loading, running, failed, onRun, onC
                 </p>
               )}
               <button
+                type="button"
                 onClick={onRun}
                 className="mt-5 rounded-full bg-brand-500 px-5 py-2 text-[13px] font-semibold text-white transition-colors hover:bg-brand-600"
               >

@@ -1,9 +1,8 @@
-"""The outbox relay — Postgres → Redis, the only writer to the stream (Doc 04 §5).
+"""The outbox relay — Postgres → Redis, the only writer to the stream.
 
 This is the message-relay half of the transactional outbox. The Emitter writes events to
 Postgres (the source of truth); this relay tails the committed-but-unpublished rows and
-republishes each through the existing `EventBus.append` (unchanged Redis XADD + envelope),
-then marks it relayed.
+republishes each through the existing `EventBus.append`, then marks it relayed.
 
 It wakes two ways:
   * `LISTEN pack_events` — Postgres delivers a notification on every committed append, so
@@ -12,10 +11,10 @@ It wakes two ways:
     notification left behind, and drains the backlog on startup.
 
 Delivery is AT-LEAST-ONCE: _drain runs SELECT FOR UPDATE SKIP LOCKED → XADD → mark relayed all
-inside one Postgres transaction. Two relay workers skip each other's locked rows. If the process
-dies before XADD the txn rolls back and the row stays unrelayed for the next pass. If it dies
-after commit the event is both published and marked — no loss. A duplicate publish (XADD ok,
-commit fail) is a no-op because the frontend reducer drops seq <= lastSeq.
+inside one Postgres transaction. If the process dies before XADD the txn rolls back and the row
+stays unrelayed for the next pass. If it dies after commit the event is both published and marked
+— no loss. A duplicate publish (XADD ok, commit fail) is a no-op: the frontend reducer drops
+seq <= lastSeq.
 """
 
 from __future__ import annotations
@@ -48,8 +47,8 @@ class OutboxRelay:
         self._repo = repo
         self._poll_interval = poll_interval
         self._max_attempts = max_attempts or settings.max_relay_attempts
-        # Publish-failure counts are persisted on the event row (events.relay_attempts), so a poison
-        # event's quarantine decision survives a relay restart — see _drain.
+        # Publish-failure counts persist on the event row (events.relay_attempts), so a poison event's
+        # quarantine decision survives a relay restart — see _drain.
         self._wake = asyncio.Event()
         self._task: asyncio.Task | None = None
         self._listen_conn: asyncpg.Connection | None = None
@@ -104,12 +103,10 @@ class OutboxRelay:
           3. Mark the published events relayed and commit — atomically.
 
         At-least-once: if the process dies before commit the rows stay unrelayed → retry next pass.
-        A duplicate publish (XADD ok, commit fails) is harmless (the reducer drops seq <= lastSeq).
 
         Poison handling: a single event whose XADD keeps failing is retried up to `max_attempts`
         (across sweeps), then QUARANTINED to dead_events and marked relayed so it can't wedge the
-        hunt's tail. On a transient failure mid-batch we stop and keep order — the failed event and
-        everything after it stay unrelayed for the next pass.
+        hunt's tail. On a transient failure mid-batch we stop and keep order.
         """
         while True:
             stalled = False
@@ -124,13 +121,12 @@ class OutboxRelay:
                             await self._bus.append(event)
                             relayed.append(event)
                         except Exception as exc:  # noqa: BLE001 — one bad event must not stall all
-                            # Durable count (survives a relay restart), incremented in this txn.
                             attempts = await self._repo.bump_relay_attempts(conn, event)
                             if attempts >= self._max_attempts:
                                 await self._repo.quarantine_event(
                                     conn, event, attempts=attempts, reason=repr(exc)
                                 )
-                                relayed.append(event)  # marked relayed → tail unblocks (logged gap)
+                                relayed.append(event)  # marked relayed so the tail unblocks
                                 _LOG.warning(
                                     "quarantined poison event %s seq=%s after %d attempts: %s",
                                     event.hunt_id,

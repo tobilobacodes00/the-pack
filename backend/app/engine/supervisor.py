@@ -1,4 +1,4 @@
-"""The Supervisor — Alpha's loop, one async task per hunt (Doc 04 §04).
+"""The Supervisor — Alpha's loop, one async task per hunt.
 
 This drives a REAL hunt end to end and narrates every step as a typed event through the one
 Emitter. Beta plans from the actual task (structured output), the user approves, the pack
@@ -76,8 +76,8 @@ from app.tools.memory import as_sources, normalize_kind, recall_items, remember,
 from app.tools.providers.base import canonical_url
 from app.tools.web import WEB_FETCH, WEB_SEARCH
 
-# When research comes back empty the pack must NOT fabricate a brief — it says so plainly. Two honest
-# cases: the providers errored / were rate-limited, or they genuinely found nothing.
+# Research comes back empty → the pack must NOT fabricate a brief. Two honest cases: the providers
+# errored / were rate-limited, or they genuinely found nothing.
 _NO_SOURCES_NOTE = (
     "The pack couldn't find sources for this one. The topic may be too sparse or the wording too "
     "narrow — try rephrasing it, or drop in your own material, and send the pack again."
@@ -87,10 +87,9 @@ _SEARCH_UNAVAILABLE_NOTE = (
     "minutes and try again, or add your own material for the pack to work from."
 )
 
-# Matching a Sentinel-flagged claim back to a merge claim so the flag has teeth. Sentinel paraphrases
-# (a max-tier critic rarely echoes the merge text verbatim), so a substring match drops nothing — it's
-# content-token overlap instead. Task-topic words are stripped too: every claim on a hunt about "the
-# BNPL market in Nigeria" shares those words, so leaving them in would match (and drop) every claim.
+# Matching a Sentinel-flagged claim back to a merge claim so the flag has teeth. Sentinel paraphrases,
+# so this is content-token overlap, not substring match. Task-topic words are stripped too — every
+# claim on a hunt about "the BNPL market in Nigeria" shares those words and would over-match otherwise.
 _CRITIQUE_STOPWORDS = frozenset(
     "a an and are as at be but by for from has have in into is it its of on or that the their this to "
     "was were will with not no's these those which who whose what when where why how than then over "
@@ -98,27 +97,23 @@ _CRITIQUE_STOPWORDS = frozenset(
     "would should about only also just very".split()
 )
 # Coverage above which a flagged claim's content tokens are considered "the same claim" as a merge
-# claim. 0.75 clears the real paraphrase (coverage 1.00 on the flagged claim) without catching claims
-# that merely share a couple of task words (which land ~0.5 even after task-word stripping).
+# claim. 0.75 clears a real paraphrase without catching claims that merely share a couple task words.
 _CRITIQUE_MATCH_COVERAGE = 0.75
 
-# The per-depth estimates emitted on plan_proposed are REHEARSED for the actual team + strategy
-# (app.engine.rehearse — the same pricing.estimate the spend gate reserves from), not a fixed table.
-# A 5-scout deep_dive and a 1-scout brief check now show honestly different numbers. Still preview
-# figures — the Boundary enforces from live per-call estimates, not these. (Beta can't ground token
-# pricing/latency, so its own est guesses are always discarded in favor of the rehearsal.)
+# Per-depth estimates on plan_proposed are REHEARSED for the actual team + strategy (app.engine.rehearse
+# — the same pricing.estimate the spend gate reserves from), not a fixed table. Still preview figures —
+# the Boundary enforces from live per-call estimates, not these.
 
 
 def _content_tokens(text: str, extra_stop: AbstractSet[str] = frozenset()) -> set[str]:
-    """Lowercase word tokens minus stopwords and any extra (task-topic) words — the meaningful
-    content of a claim, for overlap matching."""
+    """Lowercase word tokens minus stopwords and any extra (task-topic) words, for overlap matching."""
     words = re.findall(r"[a-z0-9]+", text.lower())
     return {w for w in words if w not in _CRITIQUE_STOPWORDS and w not in extra_stop and len(w) > 1}
 
 
 def _claim_matches(issue_claim: str, merge_claim: str, task_stop: AbstractSet[str]) -> bool:
-    """True when the flagged claim's content tokens are ≥ _CRITIQUE_MATCH_COVERAGE covered by the
-    merge claim's tokens — a paraphrase-tolerant 'these name the same claim' test."""
+    """Paraphrase-tolerant 'these name the same claim' test: True when the flagged claim's content
+    tokens are ≥ _CRITIQUE_MATCH_COVERAGE covered by the merge claim's tokens."""
     issue_tokens = _content_tokens(issue_claim, task_stop)
     if not issue_tokens:
         return False
@@ -159,29 +154,29 @@ class Supervisor:
         self._source = source
         self._raw_input = raw_input
         self._strategy = get_strategy(strategy)
-        # v3: did the caller pin a strategy? If not, a "deep" plan may auto-upgrade orchestrate →
+        # Did the caller pin a strategy? If not, a "deep" plan may auto-upgrade orchestrate →
         # deep_dive (an explicit Door choice always wins).
         self._strategy_explicit = strategy is not None
         self._wolves: dict[str, Wolf] = {}
-        self._team: list[dict] = []  # v2: the per-task formation Beta proposes / the user edits
+        self._team: list[dict] = []  # the per-task formation Beta proposes / the user edits
         self._wolf_notes: dict[
             str, str
-        ] = {}  # v6: per-wolf handler note from the Edit Formations panel
-        self._seed_team = seed_team or []  # v5.1: a saved Instinct's formation overrides Beta's
-        self._wolf_budget: dict[str, float] = {}  # v2: per-wolf spend cap
-        self._wolf_spend: dict[str, float] = {}  # v2: per-wolf cumulative spend
-        self._relieved: set[str] = set()  # v2: wolves stood down at their own cap
-        # v2: Doctor + Stray healing lives in a collaborator (owns faulted/doctor bookkeeping);
-        # it emits + spawns through this Supervisor so seq assignment and the roster stay in one place.
+        ] = {}  # per-wolf handler note from the Edit Formations panel
+        self._seed_team = seed_team or []  # a saved Instinct's formation overrides Beta's
+        self._wolf_budget: dict[str, float] = {}  # per-wolf spend cap
+        self._wolf_spend: dict[str, float] = {}  # per-wolf cumulative spend
+        self._relieved: set[str] = set()  # wolves stood down at their own cap
+        # Doctor + Stray healing lives in a collaborator (owns faulted/doctor bookkeeping); it emits +
+        # spawns through this Supervisor so seq assignment and the roster stay in one place.
         self._healer = Healer(self._emit, self._spawn_wolf)
-        self._memory_note: str = ""  # v2: what the Elder recalled to seed the plan
-        self._memory_items: list[dict] = []  # v6: the recalled lessons themselves (citable)
-        self._search_attempts = 0  # v2: web searches run (to tell "no results" from "search down")
-        self._search_ok = 0  # v2: web searches that succeeded
-        self._no_sources = False  # v2: the hunt found no traceable ground — never fabricate
-        self._blocks: list[dict] = []  # v3: Howler's tagged blocks [{text, source_ids}] for trace
-        self._kb_picks: list[dict] = []  # v4.2: your-library docs injected as sources this hunt
-        self._kb_absorbed = False  # v4.2: absorb the KB once, not per merge() (deep_dive/critique)
+        self._memory_note: str = ""  # what the Elder recalled to seed the plan
+        self._memory_items: list[dict] = []  # the recalled lessons themselves (citable)
+        self._search_attempts = 0  # web searches run (to tell "no results" from "search down")
+        self._search_ok = 0  # web searches that succeeded
+        self._no_sources = False  # the hunt found no traceable ground — never fabricate
+        self._blocks: list[dict] = []  # Howler's tagged blocks [{text, source_ids}] for trace
+        self._kb_picks: list[dict] = []  # your-library docs injected as sources this hunt
+        self._kb_absorbed = False  # absorb the KB once, not per merge() (deep_dive/critique)
         # Alpha's lead node (s0-lead) is opened in _open_pack and closed in finish(); on an abnormal
         # terminal exit (stop/fail) it must ALSO settle so it doesn't hang "active" forever. Two flags
         # so we never emit an orphan close (stop before _open_pack) or close during a resumable halt.
@@ -194,17 +189,15 @@ class Supervisor:
         self._plan: dict = {}
         self._queries: list[str] = []
         self._sources: list[dict] = []
-        self._extra_inputs: list[str] = []  # mid-hunt inputs absorbed without a restart (A7)
+        self._extra_inputs: list[str] = []  # mid-hunt inputs absorbed without a restart
         self._mode = "on_signal"  # autonomy: how tightly the Packmaster holds the leash
         self._step_timeout: float = settings.step_timeout_s
         # The two heavy synthesis calls (merge, draft) get their own longer budget — they were the
         # calls silently timing out and collapsing the brief to a raw-findings paste.
         self._synthesis_timeout: float = settings.synthesis_timeout_s
-        # Wall-clock anchor for the hunt's measured runtime. Set the moment the pack starts
-        # working (plan approved / resume raised), NOT at run() entry — the plan-approval gate is
-        # unbounded human think-time and must not count against the hunt's elapsed. `time_s` in the
-        # completion totals is `monotonic() - this`, so the final clock matches the live counter the
-        # user watched (both start when the hunt goes `running`).
+        # Wall-clock anchor for the hunt's measured runtime. Set when the pack starts working (plan
+        # approved / resume raised), NOT at run() entry — the plan-approval gate is unbounded human
+        # think-time and must not count against elapsed. Mirrors the live client clock the user watched.
         self._run_started_monotonic: float | None = None
 
     # --- the run -----------------------------------------------------------------------
@@ -249,11 +242,10 @@ class Supervisor:
                 await self._repo.set_hunt_state(self._hunt_id, "failed")
 
     async def resume_run(self) -> None:
-        """Continue a hunt that survived an engine restart in `halted_boundary` (B11). Events are
-        the source of truth: rebuild the plan, team, and cumulative spend from the log, stay paused,
-        and wait for the Packmaster's `/resume` (a raised Boundary) before re-running the strategy
-        from the saved plan. Re-scouting reuses the search cache, so resuming is cheap; prior
-        spend carries over so the Boundary is honored across the restart."""
+        """Continue a hunt that survived an engine restart in `halted_boundary`. Events are the source
+        of truth: rebuild the plan, team, and cumulative spend from the log, stay paused, and wait for
+        the Packmaster's `/resume` before re-running the strategy from the saved plan. Prior spend
+        carries over so the Boundary is honored across the restart."""
         try:
             await self._rehydrate_from_events()
             await self._repo.set_hunt_state(self._hunt_id, "halted_boundary")  # stay paused
@@ -263,8 +255,7 @@ class Supervisor:
             self._boundary = Boundary(boundary_usd=raised)
             self._boundary.cumulative_usd = spent
             await self._repo.set_boundary(self._hunt_id, raised)
-            # Resuming after a halt: the pack starts working again now, so re-anchor the runtime
-            # clock (the pause + the human raising the Boundary is wait time, not hunt work).
+            # Re-anchor the runtime clock — the pause + human wait is not hunt work.
             self._run_started_monotonic = time.monotonic()
             await self._repo.set_hunt_state(self._hunt_id, "hunting")
             await self._spawn_roster()
@@ -299,9 +290,8 @@ class Supervisor:
             self._plan = dict(plan_ev.payload)
             self._team = build_team(plan_ev.payload)
             self._queries = [str(q).strip() for q in (plan_ev.payload.get("queries") or []) if q]
-            # v3: re-resolve the strategy from the restored plan — a hunt that auto-upgraded to
-            # deep_dive (or was started with an explicit strategy) would otherwise silently revert to
-            # the __init__ default on resume.
+            # Re-resolve the strategy from the restored plan — a hunt that auto-upgraded to deep_dive
+            # would otherwise silently revert to the __init__ default on resume.
             self._strategy = get_strategy(self._plan.get("strategy"))
         # Restore the user's per-wolf notes from the last plan_edited so a resumed hunt keeps them.
         edit_ev = next((e for e in reversed(events) if e.type == "plan_edited"), None)
@@ -311,8 +301,7 @@ class Supervisor:
                 self._wolf_notes = {str(k): str(v) for k, v in notes.items()}
         if appr_ev is not None:
             self._mode = str(appr_ev.payload.get("mode") or "on_signal")
-            # v3: the user may have overridden depth at approval; that choice (persisted on
-            # plan_approved) wins over Beta's proposed depth on resume.
+            # The user's depth override at approval (persisted on plan_approved) wins on resume.
             approved_depth = appr_ev.payload.get("depth")
             if approved_depth in ("brief", "standard", "deep"):
                 self._plan["depth"] = approved_depth
@@ -327,10 +316,9 @@ class Supervisor:
         """Beta turns the real task into a plan (structured output). Pre-budget, so this call is NOT
         boundary-gated. The Elder first recalls past lessons and whispers them to Beta.
 
-        Beta plans in THINKING mode — a 60–120s streamed reasoning trace before the plan lands.
-        We feed that stream through the same `_progress_sink` every step uses, plus one immediate
-        beat, so the forming state narrates live on Beta's node instead of sitting frozen for a
-        minute-plus while the pack forms."""
+        Beta plans in THINKING mode — a 60-120s streamed reasoning trace before the plan lands, fed
+        through the same `_progress_sink` every step uses so the forming state narrates live instead
+        of sitting frozen for a minute-plus."""
         # Recall ONCE: the same ranked lessons feed Beta's whisper (prose) AND become citable
         # memory:// sources at merge — a brief that leaned on the pack's memory says so.
         self._memory_items = await recall_items(self._repo, self.task)
@@ -339,8 +327,8 @@ class Supervisor:
         context = f"Coordination strategy: {self._strategy.label} ({self._strategy.pattern})."
         if self._memory_note:
             context += f"\n\n{self._memory_note}"
-        # Light Beta up the instant planning starts — the sink's first coalesced beat only lands
-        # after Beta's first full sentence, which on a cold thinking call can be several seconds.
+        # Light Beta up the instant planning starts — the sink's first coalesced beat can otherwise
+        # lag several seconds behind on a cold thinking call.
         await self.progress("beta", "thinking", "Reading your task and drawing up the plan…")
         parsed: dict = {}
         try:
@@ -352,26 +340,22 @@ class Supervisor:
             )
             parsed = res.parsed or {}
         except Exception as exc:  # noqa: BLE001 — a failed planner falls back, never sinks the hunt
-            # The fallback plan (3 facet queries, standard depth) is genuinely usable, but a total
-            # Beta failure must not masquerade as a bland-but-fine plan — log it so a systematically
-            # broken planner is visible.
+            # The fallback plan is genuinely usable, but a total Beta failure must not masquerade as
+            # a bland-but-fine plan — log it so a systematically broken planner is visible.
             logging.getLogger("pack").warning(
                 "beta plan call failed — using facet fallback: %r", exc
             )
         if not parsed:
             logging.getLogger("pack").warning("beta plan empty — using facet fallback")
-        # v3: a "deep" task auto-upgrades orchestrate → deep_dive (a second scout round) when the
-        # caller didn't pin a strategy. Must happen BEFORE _normalize_plan, which stamps the plan's
-        # pattern/strategy off self._strategy (self._plan is still empty here, so the helper mutates
-        # only self._strategy — normalize does the stamping).
+        # Must happen BEFORE _normalize_plan, which stamps the plan's pattern/strategy off
+        # self._strategy (self._plan is still empty here, so this only mutates self._strategy).
         self._resolve_strategy_for_depth(parsed.get("depth"))
         self._plan = self._normalize_plan(parsed)
         self._queries = list(self._plan["queries"])
         await self._emit("plan_proposed", "beta", self._plan)
-        # Settle Beta's node the instant the plan lands — otherwise its `thinking` phase spins
-        # through the whole approval wait (the clearing step lands only in _open_pack, post-approval).
-        # Reuse the in-enum `thinking` phase with settled text; a "" / "ready" phase would fail the
-        # frozen wolf_progress.phase enum and sink the offline schema check.
+        # Settle Beta's node the instant the plan lands — otherwise `thinking` spins through the whole
+        # approval wait. Reuse the in-enum `thinking` phase with settled text; an out-of-enum phase
+        # would fail the frozen wolf_progress.phase schema.
         await self.progress("beta", "thinking", "Plan ready — review and approve.")
         await self._repo.set_hunt_state(self._hunt_id, "plan_ready")
 
@@ -382,7 +366,7 @@ class Supervisor:
 
     @staticmethod
     def _clamp_depth(value: object) -> str:
-        """v3: coerce any model/user depth to the enum, defaulting to 'standard'. An out-of-enum value
+        """Coerce any model/user depth to the enum, defaulting to 'standard'. An out-of-enum value
         must never reach the wire — the frontend's z.enum would reject the whole plan_proposed event
         and drop the plan on the floor."""
         d = str(value or "standard").strip().lower()
@@ -391,10 +375,8 @@ class Supervisor:
     @staticmethod
     def _dedup_and_fill(queries: object, n: int, task: str) -> list[str]:
         """The N scout angles: take the model/user queries, drop blanks and case-insensitive
-        duplicates (order-preserving), then backfill to N with distinct facet angles. Two identical
-        Beta queries used to BOTH survive and shrink real coverage without triggering a backfill;
-        this collapses them and fills the freed slots with real, non-colliding facets so N scouts
-        always range N distinct angles. Always returns exactly N queries."""
+        duplicates (order-preserving), then backfill to N with distinct facet angles — two identical
+        Beta queries used to both survive and shrink real coverage. Always returns exactly N queries."""
         seen: set[str] = set()
         out: list[str] = []
         for raw in queries if isinstance(queries, list) else []:
@@ -405,8 +387,7 @@ class Supervisor:
             out.append(q)
             if len(out) >= n:
                 return out
-        # Backfill with facet angles, skipping any that collide with a query already kept. FACETS is
-        # finite (5); once exhausted, an index suffix guarantees uniqueness so the loop always ends.
+        # FACETS is finite (5); once exhausted, an index suffix guarantees uniqueness so this ends.
         k = 0
         while len(out) < n:
             cand = facet_query(task, k)
@@ -420,12 +401,8 @@ class Supervisor:
 
     def _resolve_strategy_for_depth(self, depth: str | None = None) -> None:
         """Re-drive the coordination strategy from the current depth: a `deep` hunt auto-upgrades
-        orchestrate → deep_dive (a second scout round); a downgrade off `deep` reverts an
-        auto-upgrade back to orchestrate. An EXPLICIT strategy choice always wins and is never
-        touched. Called from two seams: `_propose_plan` (Beta's proposed depth, before the plan dict
-        exists — mutates only self._strategy) and `_approve` (the user's depth override, where the
-        normalized plan exists — also re-stamps self._plan['strategy'] so a resumed hunt restores
-        the right strategy)."""
+        orchestrate → deep_dive (a second scout round); a downgrade off `deep` reverts it. An
+        EXPLICIT strategy choice always wins and is never touched."""
         if self._strategy_explicit:
             return
         d = self._clamp_depth(depth) if depth is not None else self.depth
@@ -438,9 +415,7 @@ class Supervisor:
 
     def _strategy_name_for_depth(self, depth: str) -> str:
         """The strategy a hunt WOULD run at `depth` — the pure (no-mutation) twin of
-        `_resolve_strategy_for_depth`, for pricing the per-depth estimate table honestly. An explicit
-        strategy always wins; otherwise the orchestrate↔deep_dive auto-upgrade tracks the depth, and
-        any other strategy (critique) is depth-independent."""
+        `_resolve_strategy_for_depth`, for pricing the per-depth estimate table honestly."""
         if self._strategy_explicit or self._strategy.name not in ("orchestrate", "deep_dive"):
             return self._strategy.name
         return "deep_dive" if depth == "deep" else "orchestrate"
@@ -449,31 +424,25 @@ class Supervisor:
         """Coerce the model's plan into a schema-valid plan_proposed payload: build the per-task
         TEAM, then derive the scout angles/steps/worker-roster from it (additive canvas fields)."""
         task = self._raw_input or "the topic"
-        # v5.1: a saved Instinct's formation seeds the team (overrides Beta's sizing); else Beta's.
-        # NOTE: when a seed is present the queries below are re-sized to the SEED's scout count, so
-        # Beta's extra angles beyond the seed are trimmed by design — the Instinct's formation wins.
+        # A saved Instinct's formation seeds the team (overrides Beta's sizing); else Beta's. The
+        # queries below re-size to the SEED's scout count when a seed is present, trimming Beta's
+        # extra angles by design — the Instinct's formation wins.
         self._team = build_team({"team": self._seed_team} if self._seed_team else parsed)
         scout_ids = wolf_ids("scout", self._scout_count())
         n = len(scout_ids)
-        # Dedup Beta's queries, then backfill to n with distinct facet angles — n scouts always range
-        # n distinct angles (duplicates no longer silently shrink coverage).
         queries = self._dedup_and_fill(parsed.get("queries"), n, task)
         assumptions = [str(a).strip() for a in (parsed.get("assumptions") or []) if str(a).strip()]
         summary = str(parsed.get("summary") or "").strip()
-        # v3: adaptive depth — Beta's judgment, clamped. Coherence floor: a team carrying ≥4 scouts
-        # (whatever Beta or an Instinct seed set) is not a "brief" fact-check — floor brief→standard.
-        # (Only brief→standard: never auto-force `deep`, which spends a whole second scout round on a
-        # sizing heuristic instead of Beta's explicit scope judgment.)
+        # Coherence floor: a team carrying ≥4 scouts is not a "brief" fact-check — floor brief→standard.
+        # Never auto-force `deep`, which spends a whole second scout round on a sizing heuristic
+        # instead of Beta's explicit scope judgment.
         depth = self._clamp_depth(parsed.get("depth"))
         if depth == "brief" and n >= 4:
             depth = "standard"
         # est_cost/est_time are UI-preview numbers (the spend gate reserves from pricing.estimate, not
-        # these). ALWAYS derive them per depth — Beta can't ground token pricing/latency, and its guess
-        # used to override the correct default (or propagate an absurd/negative value). Each depth is
-        # REHEARSED for the actual team + the strategy that depth would run (deep may auto-upgrade to
-        # deep_dive), so the plan card shows honest per-formation figures and updates live as the user
-        # toggles Brief/Standard/Deep. `calls` rides each entry (additive) — the breakdown the card
-        # shows so "priced by rehearsal" is checkable, not asserted.
+        # these) — Beta can't ground token pricing/latency, so its guess is always discarded. Each
+        # depth is REHEARSED for the actual team + the strategy that depth would run, so the plan card
+        # updates live as the user toggles Brief/Standard/Deep.
         est_by_depth: dict[str, dict[str, float]] = {}
         rehearsed: dict[str, dict] = {}
         for d in ("brief", "standard", "deep"):
@@ -506,23 +475,19 @@ class Supervisor:
             ],
             "wolves": [*scout_ids, "tracker", "sentinel", "howler", "elder", "warden"],
             "pattern": self._strategy.pattern,
-            # Empty when Beta surfaced no real ambiguity — reads honestly as "nothing to resolve"
-            # instead of the old non-editable boilerplate triple.
+            # Empty when Beta surfaced no real ambiguity — reads honestly instead of a boilerplate triple.
             "assumptions": assumptions,
             "est_cost": est_cost,
             "est_time": est_time,
-            # additive: the full per-depth REHEARSED estimate table ({cost,time,calls} per depth for
-            # THIS team) so the plan card shows the true figure for whichever depth the user selects.
+            # The full per-depth REHEARSED estimate table so the plan card shows the true figure for
+            # whichever depth the user selects.
             "est_by_depth": est_by_depth,
-            # additive: the rehearsal's team-level detail — scout count priced, plus any warnings
-            # (e.g. an over-cap scout count the engine will clamp). Depth-independent.
             "est_detail": {
                 "scouts": int(rehearsed[depth]["scouts"]),
                 "warnings": list(rehearsed[depth]["warnings"]),
             },
-            # additive (schema allows extra fields): the canvas + Door + Edit Panel read these.
-            # `summary` is carried for observability — a real plan has one, a fallback (empty parsed)
-            # doesn't, so the two are distinguishable in the event log.
+            # `summary` is carried for observability — a real plan has one, a fallback doesn't, so the
+            # two are distinguishable in the event log.
             "summary": summary,
             "queries": queries,
             "strategy": self._strategy.name,
@@ -531,14 +496,13 @@ class Supervisor:
         }
 
     async def _approve(self, cmd: dict) -> None:
-        # v3: the user may have overridden depth on the plan card. Apply it BEFORE spawn/execute so
-        # merge/draft honor it. Ignore anything not in the enum (keeps Beta's proposed depth).
+        # Apply a depth override BEFORE spawn/execute so merge/draft honor it. Ignore anything not
+        # in the enum (keeps Beta's proposed depth).
         override = cmd.get("depth")
         if override in ("brief", "standard", "deep"):
             self._plan["depth"] = override
-            # Re-drive the strategy for the overridden depth: bumping to `deep` must actually run the
-            # deep_dive second round (not just scale merge/draft targets), and a downgrade reverts an
-            # auto-upgrade. Also re-stamps self._plan['strategy'] so a resumed hunt restores it.
+            # Bumping to `deep` must actually run the deep_dive second round, not just scale
+            # merge/draft targets; also re-stamps self._plan['strategy'] for a resumed hunt.
             self._resolve_strategy_for_depth()
         await self._apply_edits(cmd.get("edits") or {})
 
@@ -553,12 +517,11 @@ class Supervisor:
         await self._emit(
             "plan_approved",
             "user",
-            # v3: persist the (possibly overridden) depth so a resumed hunt keeps it.
+            # Persist the (possibly overridden) depth so a resumed hunt keeps it.
             {"mode": self._mode, "boundary_usd": effective, "depth": self.depth},
         )
-        # The pack starts working now — anchor the measured runtime here (the approval gate before
-        # this is human wait time and is deliberately excluded). Mirrors the live client clock, which
-        # also starts ticking on the plan_approved → running transition.
+        # Anchor the measured runtime here — the approval gate before this is human wait time and is
+        # deliberately excluded, mirroring the live client clock.
         self._run_started_monotonic = time.monotonic()
         await self._repo.set_hunt_state(self._hunt_id, "hunting")
 
@@ -579,8 +542,7 @@ class Supervisor:
         raw_queries = edits.get("queries")
         if isinstance(raw_queries, list):
             # Only rewrite queries when the user actually supplied some — editing team/assumptions
-            # alone must not touch queries or emit a spurious diff. When they did, dedup-and-fill to
-            # n with the same logic _normalize_plan uses (distinct angles, no duplicates).
+            # alone must not touch queries or emit a spurious diff.
             if any(str(q).strip() for q in raw_queries):
                 qs = self._dedup_and_fill(raw_queries, self._scout_count(), self.task)
                 self._plan["queries"] = qs
@@ -644,9 +606,8 @@ class Supervisor:
 
     async def _spawn_roster(self) -> None:
         roster = roster_from_team(self._team or build_team({}))
-        # v3: scouts run a stronger tier on a deep hunt (real fact-extraction with reasoning). Resolve
-        # here — depth is final after _approve, and build_team/roster_from_team stay depth-agnostic
-        # (reused by rehydrate/apply_edits/resume). wolf_spawned then reports the truth to the canvas.
+        # Scouts run a stronger tier on a deep hunt. Resolve here — depth is final after _approve,
+        # and build_team/roster_from_team stay depth-agnostic (reused by rehydrate/apply_edits/resume).
         s_tier, s_think, s_budget = scout_spec(self.depth)
         for wolf_id, role, tier, thinking, budget in roster:
             if role == "scout":
@@ -681,7 +642,7 @@ class Supervisor:
         d_tier, d_think, d_budget = ROLE_SPEC.get(role, ("flash", False, 0.05))
         if role == "scout":
             # A fresh mid-hunt scout matches the depth-appropriate tier (a clone passes explicit
-            # tier/thinking/budget from its source, so it never falls through to these defaults).
+            # tier/thinking/budget from its source, so it skips these defaults).
             d_tier, d_think, d_budget = scout_spec(self.depth)
         tier = tier or d_tier
         thinking = d_think if thinking is None else thinking
@@ -724,9 +685,8 @@ class Supervisor:
 
     async def _open_pack(self) -> None:
         """Wake the pack's leadership on the canvas at kickoff. Alpha takes the lead and stays active
-        until finish; Beta hands the approved plan to the pack (its planning is already done). Both
-        emit real lifecycle events so their nodes light up and the edges leaving them flow — without
-        this, Alpha/Beta sit dormant the whole hunt and their edges never animate."""
+        until finish; Beta hands the approved plan to the pack. Both emit real lifecycle events so
+        their nodes light up — without this, Alpha/Beta sit dormant the whole hunt."""
         await self._emit(
             "step_started",
             "alpha",
@@ -769,9 +729,8 @@ class Supervisor:
 
     async def _close_lead_if_open(self) -> None:
         """Settle Alpha's s0-lead node on a genuinely-terminal exit (stop/fail) so it doesn't hang
-        'active' forever. No-op if the lead never opened (a stop DURING plan approval, before
-        _open_pack) or was already closed by finish() — never emit an orphan or double close. NOT
-        called on a BoundaryHalt: that's a pause, the hunt resumes and re-opens the lead."""
+        'active' forever. No-op if the lead never opened or was already closed by finish(). NOT called
+        on a BoundaryHalt: that's a pause, the hunt resumes and re-opens the lead."""
         if not self._lead_opened or self._lead_closed:
             return
         self._lead_closed = True
@@ -798,9 +757,8 @@ class Supervisor:
 
     @property
     def depth(self) -> str:
-        """v3: adaptive research depth (brief|standard|deep) — the single source the merge/draft
-        targets and slice scaling read. Lives on self._plan, so it survives rehydrate and a user
-        override applied in _approve."""
+        """Adaptive research depth (brief|standard|deep) — the single source the merge/draft targets
+        and slice scaling read. Lives on self._plan, so it survives rehydrate and a user override."""
         return self._clamp_depth(self._plan.get("depth"))
 
     def scout_ids(self) -> list[str]:
@@ -809,11 +767,9 @@ class Supervisor:
 
     def _lead_of(self, role: str) -> Wolf:
         """The wolf that runs a support STEP for `role` (merge→tracker, critique→sentinel,
-        draft→howler). Normally the primary keeps the bare id (`roster.wolf_ids`), but NEVER index
-        `self._wolves[role]` directly: a formation edit that removed/renamed the primary, or added a
-        second instance ahead of it, would KeyError and crash the whole hunt at step setup — outside
-        `_dispatch`'s heal-don't-fail guard. Resolve defensively: bare id → else the first instance of
-        the role → else mint one on the fly so the step (and the hunt) always proceeds."""
+        draft→howler). NEVER index `self._wolves[role]` directly: a formation edit that
+        removed/renamed the primary would KeyError and crash the hunt outside `_dispatch`'s
+        heal-don't-fail guard. Resolve defensively: bare id → first instance → mint one on the fly."""
         w = self._wolves.get(role)
         if w is not None:
             return w
@@ -828,18 +784,16 @@ class Supervisor:
 
     def _wolves_of(self, role: str) -> list[Wolf]:
         """Every live instance of a support role, primary first — so an added second tracker/sentinel/
-        howler (a distinct editable agent with its own note) actually contributes instead of idling."""
+        howler actually contributes instead of idling."""
         primary = self._wolves.get(role)
         extras = [w for wid, w in self._wolves.items() if w.role == role and w is not primary]
         return ([primary] if primary is not None else []) + extras
 
     def _role_note(self, role: str) -> dict[str, str]:
         """A one-entry notes overlay for a support STEP, keyed by the PRIMARY's id, that folds in the
-        handler notes from EVERY instance of the role. A support step runs as one dispatch (the
-        primary), so when the Packmaster adds a second tracker/sentinel/howler with its own note ("this
-        one double-checks the figures"), that note must still reach the merge/critique/draft — otherwise
-        the extra agent is a no-op. Each distinct instance note is labelled so the model treats them as
-        separate directions to honor. Returns the plain notes dict unchanged when there's ≤1 instance."""
+        handler notes from EVERY instance of the role. A support step runs as one dispatch, so a second
+        tracker/sentinel/howler's note must still reach it or the extra agent is a no-op. Returns the
+        plain notes dict unchanged when there's ≤1 instance."""
         instances = self._wolves_of(role)
         if len(instances) <= 1:
             return self._wolf_notes
@@ -861,9 +815,8 @@ class Supervisor:
         return overlay
 
     async def _show_role_contributors(self, role: str, phase: str, text: str) -> None:
-        """Light up the EXTRA instances of a support role on the canvas while their role's step runs,
-        so an added second tracker/sentinel/howler is visibly contributing (its note is folded into the
-        step via `_role_note`) instead of sitting as a dead node. No-op for a lone instance."""
+        """Light up the EXTRA instances of a support role on the canvas while their step runs, so an
+        added second tracker/sentinel/howler doesn't sit as a dead node. No-op for a lone instance."""
         for w in self._wolves_of(role)[1:]:
             with contextlib.suppress(Exception):
                 await self.progress(w.wolf_id, phase, text)
@@ -880,8 +833,7 @@ class Supervisor:
     async def scout(self, wolf_id: str, query: str, step_id: str = "s1") -> Finding:
         """One scout's range — resilient wrapper. A scout may only return a Finding or raise the hunt's
         control-flow (Stop/Boundary). Any OTHER error is contained here so a single stray scout can
-        never sink the whole hunt (the pack's core resilience promise) — no matter the scout count.
-        This is what makes running a bigger formation safe."""
+        never sink the whole hunt, no matter the scout count."""
         wolf = self._wolves.get(wolf_id)
         if wolf is None:
             return Finding(wolf_id=wolf_id, summary="", sources=[], confidence=0.0)
@@ -925,10 +877,9 @@ class Supervisor:
 
         out_ref = ref or f"art_{wolf_id}_out"
         if not hits:
-            # No ground to read → do NOT dispatch the model. Handed "(No results returned.)", a flash
-            # model invents a plausible summary from prior knowledge with sources=[] — a hallucination
-            # stamped with fake confidence. Emit an honest completion and return an empty finding so
-            # keep_findings() drops it; the no_sources path in draft()/finish() handles a dry hunt.
+            # No ground to read → do NOT dispatch the model. A flash model handed "(No results
+            # returned.)" invents a plausible summary with sources=[] — a hallucination stamped with
+            # fake confidence. Emit an honest completion; keep_findings() drops the empty finding.
             await self._emit(
                 "step_completed",
                 wolf_id,
@@ -1004,7 +955,7 @@ class Supervisor:
 
     async def merge(self, findings: list[Finding], step_id: str = "s2") -> Merged:
         """Tracker cross-references the findings into claims and surfaces any real conflict."""
-        await self._absorb_inputs()  # A7: fold in anything the Packmaster added mid-hunt
+        await self._absorb_inputs()  # fold in anything the Packmaster added mid-hunt
         tracker = self._lead_of("tracker")
         await self._emit(
             "step_started",
@@ -1020,22 +971,18 @@ class Supervisor:
             "tracker", "merging", "Cross-checking alongside the lead"
         )
 
-        # Absorb the library BEFORE building the registry (on both branches below) so the KB docs get
-        # stable [N]s too — building the registry from findings alone would leave KB sources unnumbered
-        # in the prompt even though draft()/finish() dedupe them into the same list afterward.
+        # Absorb the library BEFORE building the registry so the KB docs get stable [N]s too — building
+        # the registry from findings alone would leave KB sources unnumbered in the prompt.
         raw_sources = [s for f in findings for s in f.sources]
         raw_sources.extend(await self._absorb_knowledge())
-        # v6: recalled lessons are citable like library docs — a claim grounded in the pack's
-        # memory cites memory://<id> and the receipt credits the Elder. Stable synthetic urls
-        # survive the same dedupe, so repeat merges (deep_dive) don't duplicate them.
+        # Recalled lessons are citable like library docs — a claim grounded in the pack's memory cites
+        # memory://<id>. Stable synthetic urls survive the same dedupe across repeat merges (deep_dive).
         raw_sources.extend(as_sources(self._memory_items))
         reg_sources, registry = prompt_context.numbered_sources(raw_sources)
 
-        # The merge is the single heaviest call — a plus+thinking model synthesizing every finding
-        # into claims. It legitimately runs 90-180s+; the old per-step timeout clipped it and the
-        # whole synthesis silently collapsed to a raw-findings paste. Give it the synthesis budget and
-        # retry ONCE (a single transient slow call shouldn't lose the whole brief) before the honest
-        # fallback.
+        # The merge legitimately runs 90-180s+; the old per-step timeout clipped it and the whole
+        # synthesis silently collapsed to a raw-findings paste. Give it the synthesis budget and retry
+        # ONCE before the honest fallback.
         res = None
         for attempt in range(settings.synthesis_retries + 1):
             try:
@@ -1064,8 +1011,8 @@ class Supervisor:
         if res is None:
             await self._stray_event("tracker", "timeout", None)
             out_ref = new_artifact_id()
-            # Map each finding's OWN sources to their registry number, so the honest fallback brief
-            # can cite exactly what that finding read — not a bare, unsourced snippet list.
+            # Map each finding's own sources to their registry number so the fallback brief can cite
+            # exactly what that finding read.
             index = {canonical_url(s.get("url", "")): i + 1 for i, s in enumerate(reg_sources)}
             stalled = [
                 (
@@ -1143,9 +1090,9 @@ class Supervisor:
     @staticmethod
     def _coerce_claims(raw: object, n_sources: int) -> tuple[list[str], list[list[int]]]:
         """Coerce Tracker's claims into (text, source_ids) pairs. Accepts either shape: an object
-        {text, source_ids} (the shape asked for) or a plain string (legacy / a model that ignores the
-        schema — FakeQwen included) which coerces to an empty source list. source_ids are clamped to
-        the registry's real range so an out-of-bounds or non-numeric id never corrupts a citation."""
+        {text, source_ids} or a plain string (a model that ignores the schema), which coerces to an
+        empty source list. source_ids are clamped to the registry's range so a bad id never corrupts
+        a citation."""
         claims: list[str] = []
         claims_src: list[list[int]] = []
         for c in raw if isinstance(raw, list) else []:
@@ -1160,9 +1107,9 @@ class Supervisor:
         return claims, claims_src
 
     async def _absorb_knowledge(self) -> list[dict]:
-        """v4.2: pick the most relevant of your library docs and return them as injectable sources
-        (synthetic lib:// url so de-dupe keeps them). Absorbed ONCE per hunt — deep_dive/critique
-        call merge() twice. Best-effort — never sink a hunt."""
+        """Pick the most relevant of your library docs and return them as injectable sources (synthetic
+        lib:// url so de-dupe keeps them). Absorbed ONCE per hunt — deep_dive/critique call merge()
+        twice. Best-effort — never sink a hunt."""
         if self._kb_absorbed:
             return list(self._kb_picks)
         self._kb_absorbed = True
@@ -1175,9 +1122,8 @@ class Supervisor:
 
     async def resolve_conflict(self, conflict: Conflict, sources: list[dict]) -> str:
         """Open a Hold for the human and block until they decide — unless the Packmaster set the leash
-        to On Wild, in which case ALPHA actually reasons about the conflict (weighs the options against
-        the numbered sources, via a real boundary-gated model call) and records WHY it chose. It used
-        to just echo Tracker's `recommended` with Alpha's name on it and no rationale."""
+        to On Wild, in which case ALPHA actually reasons about the conflict (a real boundary-gated
+        model call weighing the options against the numbered sources) and records WHY it chose."""
         hold_id = new_hold_id()
         await self._emit(
             "hold_opened",
@@ -1224,8 +1170,8 @@ class Supervisor:
         self, conflict: Conflict, sources: list[dict]
     ) -> tuple[str, str]:
         """Wild mode: Alpha weighs the options against the numbered sources and returns (choice,
-        rationale). Falls back to Tracker's `recommended` (with an honest note) when Alpha can't be
-        reached / times out / returns an off-menu choice — never a blank or a hallucinated option."""
+        rationale). Falls back to Tracker's `recommended` when Alpha can't be reached / times out /
+        returns an off-menu choice — never a blank or a hallucinated option."""
         fallback = (
             conflict.recommended,
             "Auto-resolved to the recommended option — Alpha's call could not be completed.",
@@ -1257,8 +1203,7 @@ class Supervisor:
         parsed = res.parsed or {}
         choice = str(parsed.get("choice") or "").strip()
         rationale = str(parsed.get("rationale") or res.text or "").strip()
-        # Membership check — Alpha must pick one of the OFFERED options; an off-menu paraphrase falls
-        # back to the recommended (never ship an option that wasn't on the table).
+        # Alpha must pick one of the OFFERED options; an off-menu paraphrase falls back to recommended.
         if choice in conflict.options and rationale:
             return choice, rationale
         return fallback
@@ -1282,8 +1227,8 @@ class Supervisor:
             await self._stray_event("tracker", "timeout", None)
             return []
         parsed = res.parsed or {}
-        # v3: a deeper hunt closes more gaps (a second scout round). The cap lives here (not in the
-        # strategy) so it's the single source of truth. self.depth is clamped, so no KeyError.
+        # A deeper hunt closes more gaps. Cap lives here (not the strategy) as the single source of
+        # truth; self.depth is clamped, so no KeyError.
         cap = {"brief": 1, "standard": 2, "deep": 4}[self.depth]
         return [str(g).strip() for g in (parsed.get("gaps") or []) if str(g).strip()][:cap]
 
@@ -1300,12 +1245,9 @@ class Supervisor:
             "sentinel", "critiquing", "Second pair of eyes on the claims"
         )
 
-        # A critique that didn't actually run must read as UNVERIFIED, not passed. The old code
-        # returned ok=True on timeout (blanket approval) and — worse — on a faulted/oversize dispatch
-        # (parsed=None) it fell through to ok=bool({}.get("ok", True))=True with confidence 0.9: a
-        # false clean bill. Both now return an honest "did not complete" verdict at confidence 0.0.
-        # The critique carries the whole merge context (all claims + registry), so it gets the same
-        # synthesis budget + one retry as merge/draft.
+        # A critique that didn't actually run must read as UNVERIFIED, not passed — never a false
+        # clean bill on timeout or a faulted/oversize dispatch. Gets the same synthesis budget + one
+        # retry as merge/draft (it carries the whole merge context).
         def _unverified() -> CritiqueResult:
             # Empty `claim` so apply_critique flags the STATE (ok=False opens the standoff) without
             # matching — and thus dropping — every claim in the brief.
@@ -1348,10 +1290,7 @@ class Supervisor:
                 "sentinel", "timeout" if res is None else "provider_error", None
             )
             verdict = _unverified()
-            # Persist the honest "did not complete" verdict too — the Receipts must be able to say
-            # "claims are unverified" from a durable record, not infer it from a missing artifact.
-            # completed=False marks it as a non-completion so the Receipts don't read this
-            # placeholder as a genuine, passed review.
+            # completed=False so the Receipts don't read this placeholder as a genuine, passed review.
             out_ref = await self._save_critique(verdict, completed=False)
             await self._emit(
                 "step_completed",
@@ -1367,8 +1306,7 @@ class Supervisor:
         parsed = res.parsed or {}
         issues = [i for i in (parsed.get("issues") or []) if isinstance(i, dict)]
         verdict = CritiqueResult(ok=bool(parsed.get("ok", True)), issues=issues)
-        # The Sentinel's verdict becomes a REAL artifact (it used to be a dangling placeholder ref):
-        # the Receipts join each challenged claim to its problem from this durable record.
+        # A REAL artifact: the Receipts join each challenged claim to its problem from this record.
         out_ref = await self._save_critique(verdict)
         await self._emit(
             "step_completed",
@@ -1385,10 +1323,8 @@ class Supervisor:
     async def _save_critique(self, verdict: CritiqueResult, *, completed: bool = True) -> str:
         """Persist the Sentinel's verdict as an artifact (kind='critique') and return its id.
 
-        `completed` records whether the Sentinel actually finished reviewing: False on the
-        timeout/faulted path (the `_unverified()` verdict) so the Receipts can honestly say
-        "verification did not run" from a durable record instead of reading a persisted
-        placeholder as a genuine pass."""
+        `completed` is False on the timeout/faulted path so the Receipts can honestly say
+        "verification did not run" instead of reading a placeholder as a genuine pass."""
         out_ref = new_artifact_id()
         await self._repo.save_artifact(
             out_ref,
@@ -1407,20 +1343,18 @@ class Supervisor:
         ruling: StandoffOutcome | None = None,
     ) -> Merged:
         """Give Sentinel's verdict TEETH: deterministically drop the flagged claims from the merge
-        before it reaches the draft. Pure, no model call — Sentinel's own bar is 'every claim carries
-        a real, supporting source', so enforcing it in code is honest and can never invent a fact.
-        Without this the verdict was theatre: a flagged claim shipped to the brief unchanged.
+        before it reaches the draft. Pure, no model call. Without this the verdict was theatre — a
+        flagged claim shipped to the brief unchanged.
 
-        When Alpha adjudicated a standoff (`ruling`), its call is HONORED: a `keep`/`qualify` verdict
-        exempts the challenged claim from the drop (Alpha overruled Sentinel with a real ruling); a
-        `drop`/`unresolved`/no-ruling leaves Sentinel's deterministic removal in force.
+        When Alpha adjudicated a standoff (`ruling`), a `keep`/`qualify` verdict exempts the
+        challenged claim from the drop; `drop`/`unresolved`/no-ruling leaves Sentinel's removal in force.
 
         Never empties a non-empty brief — if every claim is flagged, keep the sourced ones (or the
         single strongest) so a thin-but-real hunt still drafts instead of collapsing to nothing."""
         if verdict.ok or not verdict.issues or not merged.claims:
             return merged
-        # The flagged claim STRINGS (skip empty ones — a "verification didn't complete" verdict flags
-        # state with an empty claim and must not nuke the whole brief).
+        # Skip empty claim strings — a "verification didn't complete" verdict flags state with an
+        # empty claim and must not nuke the whole brief.
         flagged = [str(i.get("claim") or "").strip() for i in verdict.issues]
         flagged = [c for c in flagged if c]
         if not flagged:
@@ -1463,10 +1397,8 @@ class Supervisor:
 
     def standoff_evidence(self, merged: Merged, issue: dict) -> str:
         """Ground the standoff in the ACTUAL flagged claim + its backing sources + the numbered source
-        registry — so every debater presses/answers/judges a concrete claim ("X, cited to [2]") with
-        the real sources in front of it, not an abstract "a claim needs a source." Matches the flagged
-        claim to the merge (token-overlap, paraphrase-tolerant) so the real source numbers ride along;
-        falls back to the issue's own text when no match is found."""
+        registry — so every debater presses/answers/judges a concrete claim, not an abstract "a claim
+        needs a source." Falls back to the issue's own text when no match is found."""
         flagged = str(issue.get("claim") or "").strip()
         task_stop = _content_tokens(self.task)
         claim_line = f"The claim under challenge: {flagged}" if flagged else ""
@@ -1493,10 +1425,9 @@ class Supervisor:
         claim: str | None = None,
     ) -> StandoffOutcome:
         """A real, bounded debate over a weak claim: the challenger presses it, the defendant
-        answers, Alpha adjudicates — each a model call, each boundary-gated. `evidence`, when given,
-        grounds the challenger in the specific flagged claim + its sources (see standoff_evidence).
-        Returns Alpha's RULING (keep/drop/qualify) so it actually decides the claim's fate — not just
-        narration. `claim` is the challenged claim text, threaded to apply_critique's keep-exemption."""
+        answers, Alpha adjudicates — each a model call, each boundary-gated. Returns Alpha's RULING
+        (keep/drop/qualify) so it actually decides the claim's fate, not just narration. `claim` is
+        threaded to apply_critique's keep-exemption."""
         sid = new_standoff_id()
         await self._repo.set_hunt_state(self._hunt_id, "standoff")
         await self._emit(
@@ -1510,8 +1441,7 @@ class Supervisor:
             },
         )
 
-        # Turn 1 — the challenger states why the claim doesn't yet stand. Ground it in the specific
-        # flagged claim + its sources when the strategy passed evidence; else fall back to rationale.
+        # Turn 1 — the challenger states why the claim doesn't yet stand.
         chal_text = rationale
         chal_wolf = self._wolves.get(challenger)
         if chal_wolf is not None:
@@ -1563,10 +1493,9 @@ class Supervisor:
             {"standoff_id": sid, "turn_no": 2, "argument_summary": def_text[:140]},
         )
 
-        # Alpha adjudicates — with the evidence, the challenge, and the defense — and returns a
-        # STRUCTURED keep/drop/qualify verdict so the ruling is load-bearing (apply_critique honors it)
-        # instead of being prose the engine ignores. `judged` stays False unless Alpha actually ruled
-        # (a timeout/faulted/relieved call leaves no real verdict → "unresolved", never a fake alpha_call).
+        # Alpha adjudicates and returns a STRUCTURED verdict so the ruling is load-bearing. `judged`
+        # stays False unless Alpha actually ruled — a timeout/faulted/relieved call leaves no real
+        # verdict → "unresolved", never a fake alpha_call.
         rationale_out = "Keep the claim only once a second source backs it."
         judged = False
         verdict_out: str | None = None
@@ -1601,8 +1530,8 @@ class Supervisor:
         if judged:
             outcome, rationale = "alpha_call", rationale_out
         else:
-            # Alpha never actually ruled — say so honestly and treat the claim as unverified rather
-            # than rendering a debate that looks adjudicated. (apply_critique still drops it.)
+            # Alpha never actually ruled — say so honestly rather than rendering a debate that looks
+            # adjudicated. apply_critique still drops the claim.
             outcome = "unresolved"
             rationale = "Standoff could not be adjudicated — the claim is treated as unverified."
             await self._stray_event("alpha", "timeout", None)
@@ -1644,7 +1573,7 @@ class Supervisor:
         """Howler writes the final briefing from the merged claims and the chosen decision. With NO
         sources there is no traceable ground — we don't ask Howler to write (it would only refuse);
         we return an honest notice instead."""
-        await self._absorb_inputs()  # A7: last chance to fold in mid-hunt input before drafting
+        await self._absorb_inputs()  # last chance to fold in mid-hunt input before drafting
         if not self._dedupe_sources(merged.sources):
             self._no_sources = True
             unavailable = self._search_attempts > 0 and self._search_ok == 0
@@ -1707,8 +1636,8 @@ class Supervisor:
         await self._show_role_contributors(
             "howler", "writing", "Shaping sections alongside the lead"
         )
-        # Drafting the whole brief is the other heavy synthesis call — give it the same generous
-        # budget + one retry as the merge, so a slow draft doesn't collapse to the bare merge summary.
+        # The other heavy synthesis call — same generous budget + one retry as merge, so a slow draft
+        # doesn't collapse to the bare merge summary.
         res = None
         for attempt in range(settings.synthesis_retries + 1):
             try:
@@ -1762,10 +1691,9 @@ class Supervisor:
         return "\n\n".join(b["text"] for b in self._blocks) or res.text or merged.summary
 
     def _blocks_from_claims(self, merged: Merged) -> list[dict]:
-        """The honest fallback when Howler's OWN draft call times out: merge already succeeded, so
-        `merged.claims`/`claims_src` are fully populated — reuse them (cited) instead of collapsing to
-        one uncited summary blob. Falls back to the bare summary only when there are no claims either
-        (mirrors `_blocks_from_sources`'s no-claims contract)."""
+        """The honest fallback when Howler's OWN draft call times out: reuse the merge's already-
+        populated claims/claims_src (cited) instead of collapsing to one uncited summary blob. Falls
+        back to the bare summary only when there are no claims either."""
         if not merged.claims:
             return [{"text": merged.summary, "source_ids": []}]
         src = merged.claims_src or [[] for _ in merged.claims]
@@ -1778,8 +1706,8 @@ class Supervisor:
         self, res: CompletionResult, sources: list[dict], merged: Merged
     ) -> list[dict]:
         """Normalize Howler's tagged output into [{text, source_ids}] blocks. Falls back to the merge's
-        own cited claims (mirroring `_blocks_from_sources`'s honesty) when Howler returned no real body
-        blocks, or — only if there are no claims either — to wrapping whatever free text came back."""
+        own cited claims when Howler returned no real body blocks, or — only if there are no claims
+        either — to wrapping whatever free text came back."""
         parsed = res.parsed or {}
         out: list[dict] = []
         title = str(parsed.get("title") or "").strip()
@@ -1794,10 +1722,9 @@ class Supervisor:
             ids = prompt_context.coerce_source_ids(b.get("source_ids"), len(sources))
             out.append({"text": text, "source_ids": ids})
         if not any(b["text"] and not b["text"].startswith("# ") for b in out):
-            # No real body blocks came back. Prefer the merge's own cited claims (honest, per-claim
-            # attribution) over blanket-crediting every source to one blob — and never append an
-            # empty-text blob (e.g. a breaker-open `_faulted_result`'s text="") that would still
-            # register as a real provenance entry in finish()'s span map.
+            # No real body blocks came back. Prefer the merge's own cited claims over blanket-
+            # crediting every source to one blob, and never append an empty-text blob (e.g. a
+            # breaker-open `_faulted_result`'s text="") that would register in finish()'s span map.
             if merged.claims:
                 src = merged.claims_src or [[] for _ in merged.claims]
                 out.extend(
@@ -1819,8 +1746,7 @@ class Supervisor:
         sources = [{k: v for k, v in s.items() if k != "text"} for s in deduped]
         blocks = self._blocks or [{"text": draft_text, "source_ids": []}]
 
-        # v3 — a BLOCK-LEVEL provenance map: each block → its exact sources (the click-any-line
-        # → source gate). Replaces the coarse claim map.
+        # A BLOCK-LEVEL provenance map: each block → its exact sources (the click-any-line → source gate).
         spanmap_ref: str | None = None
         if any(b.get("source_ids") for b in blocks):
             spanmap_ref = new_artifact_id()
@@ -1847,12 +1773,11 @@ class Supervisor:
             "howler",
             {
                 "text": draft_text,
-                "blocks": blocks,  # v3: tagged blocks for click-any-line → source
+                "blocks": blocks,  # tagged blocks for click-any-line → source
                 "claims": merged.claims,
-                # v-fix: persist per-claim citation ids alongside the claims — the Receipts join
-                # reads these BY POSITION (claims[i] ↔ claims_src[i]), so it never has to re-derive
-                # a claim's sources by matching text (which collapses duplicate-text claims onto the
-                # first occurrence and mis-credits the wrong source/wolf). Parallel to `claims`.
+                # Per-claim citation ids alongside the claims — the Receipts join reads these BY
+                # POSITION (claims[i] ↔ claims_src[i]) instead of re-deriving sources by matching
+                # text, which collapses duplicate-text claims onto the first occurrence.
                 "claims_src": list(merged.claims_src),
                 "sources": sources,
                 "span_map_ref": spanmap_ref,
@@ -1870,13 +1795,13 @@ class Supervisor:
             },
         )
 
-        # v3 — the Forge: render the brief into real files (the "making the file" phase). Skipped when
-        # there's no real brief (no sources). Best-effort: a render failure never blocks completion.
+        # The Forge: render the brief into real files. Skipped when there's no real brief (no sources).
+        # Best-effort: a render failure never blocks completion.
         if blocks and not (self._no_sources or not sources):
             await self.progress("howler", "forge", "Making your files")
             await self._emit("forge_started", "howler", {"formats": list(MIME)})
             forged_ids: list[str] = []
-            for fmt, data in forge(blocks, sources).items():  # v-fix: exports carry their Sources
+            for fmt, data in forge(blocks, sources).items():  # exports carry their Sources
                 fid = new_artifact_id()
                 mime = MIME.get(fmt, "application/octet-stream")
                 # Offload the bytes to the artifact store (Alibaba OSS in prod, disk offline).
@@ -1892,9 +1817,8 @@ class Supervisor:
                 "forge_completed", "howler", {"formats": list(MIME), "artifact_ids": forged_ids}
             )
 
-        # REAL measured runtime (wall clock), not the plan's est_time guess: monotonic elapsed since
-        # the pack started working. Falls back to 0 only if the anchor was never set (defensive — the
-        # hunt cannot complete without having gone through _approve/resume, which set it).
+        # REAL measured runtime (wall clock), not the plan's est_time guess. Falls back to 0 only if
+        # the anchor was never set (defensive — the hunt can't complete without _approve/resume).
         elapsed_s = (
             time.monotonic() - self._run_started_monotonic
             if self._run_started_monotonic is not None
@@ -1918,11 +1842,9 @@ class Supervisor:
             },
         )
         self._lead_closed = True
-        # The Elder distills ONE durable, typed lesson for next time. This is a real Elder model call
-        # (its prompt drives the lesson), run UNGATED — like recall, it sits outside the hunt Boundary
-        # so the pack always learns something, even on a hunt that spent its budget. Best-effort: any
-        # failure (offline quirk, empty parse, model error) degrades to a deterministic template so a
-        # broken memory step can never sink a completed hunt.
+        # The Elder distills ONE durable lesson, run UNGATED (outside the hunt Boundary) so the pack
+        # always learns something, even on a hunt that spent its budget. Best-effort — degrades to a
+        # deterministic template so a broken memory step can never sink a completed hunt.
         await self._distill_and_remember(merged, len(sources))
         await self._emit(
             "hunt_completed", "engine", {"final_artifact_id": artifact_id, "totals": totals}
@@ -1932,13 +1854,12 @@ class Supervisor:
     async def _distill_and_remember(self, merged: Merged, source_count: int) -> None:
         """The Elder's end-of-hunt memory write: a real (ungated, best-effort) model call that distills
         ONE typed lesson, persisted for the next hunt. The Elder's node lights up a second time here so
-        the memory bank has visible presence at BOTH ends of the hunt (recall at the start, this now).
+        the memory bank has visible presence at both ends of the hunt.
 
-        Never raises: a distill failure falls back to the legacy deterministic template so the lesson
-        is always written and a completed hunt is never sunk by the memory step."""
+        Never raises: a distill failure falls back to the deterministic template so a completed hunt
+        is never sunk by the memory step."""
         strategy = self._plan.get("strategy", "orchestrate")
         scout_n = sum(1 for w in self._wolves.values() if w.role == "scout")
-        # Deterministic fallback — the old templated takeaway, kept as the safety net.
         got = 0 if self._no_sources else source_count
         outcome = f"{got} sources" if got else "no sourced ground"
         fallback = f"Topic '{self.task}': {strategy} strategy, {scout_n} scouts, {outcome}."
@@ -1996,17 +1917,16 @@ class Supervisor:
 
         Check-and-reserve are atomic under _dispatch_lock so parallel scouts (asyncio.gather in
         strategies) cannot all clear the gate against the same stale cumulative_usd. wolf.think()
-        runs OUTSIDE the lock so scouts genuinely execute in parallel. Reconcile to actual spend
-        under the lock after think() returns. Halt/resume loop replaces the old recursion.
+        runs OUTSIDE the lock so scouts genuinely execute in parallel; reconcile to actual spend
+        under the lock after it returns.
         """
         # A wolf already relieved (it blew its own cap at the floor tier) makes no further calls.
         if wolf.wolf_id in self._relieved:
             return self._relieved_result(wolf)
 
         while True:
-            # Check + reserve atomically so parallel scouts can't clear the gate against a stale
-            # cumulative_usd. The DECISION is a pure, unit-tested function (app/engine/dispatch_gate);
-            # the Supervisor performs the I/O (emits, halt/resume) after the lock is released.
+            # The DECISION is a pure, unit-tested function (app/engine/dispatch_gate); the Supervisor
+            # performs the I/O (emits, halt/resume) after the lock is released.
             async with self._dispatch_lock:
                 decision = decide_and_reserve(
                     wolf,
@@ -2081,10 +2001,8 @@ class Supervisor:
                     on_delta=on_delta,
                 )
             except Exception as exc:  # noqa: BLE001 — breaker/oversize/provider/parse/any model error
-                # ANY failed model call (not just breaker/oversize) is refunded and routed down this
-                # wolf's Stray path instead of crashing the whole hunt. This is what keeps a bigger
-                # formation from failing: when one wolf's call errors (e.g. tracker/sentinel/howler on
-                # a large findings context), the pack degrades gracefully and still brings a brief home.
+                # ANY failed model call is refunded and routed down this wolf's Stray path instead of
+                # crashing the whole hunt — the pack degrades gracefully and still brings a brief home.
                 # (CancelledError is a BaseException — not caught here — so cancellation still propagates.)
                 async with self._dispatch_lock:
                     self._boundary.cumulative_usd -= est
@@ -2095,11 +2013,9 @@ class Supervisor:
                     pattern = "provider_error"
                 else:
                     # Anything else — KeyError, AttributeError, a bug in our own parsing — is NOT a
-                    # provider failure. The wire-level `stray_detected.pattern` enum is frozen and has
-                    # no room for a 6th value, so it still rides the closest-fit "provider_error" bucket
-                    # on the wire, but we log it LOUD (exception, not warning) and distinctly, so a real
-                    # defect is never indistinguishable from "DashScope hiccuped" when someone's reading
-                    # logs or triaging a Warden reroute.
+                    # provider failure. The wire-level `stray_detected.pattern` enum is frozen with no
+                    # room for a 6th value, so it still rides "provider_error" on the wire, but log it
+                    # LOUD so a real defect isn't indistinguishable from "DashScope hiccuped".
                     pattern = "provider_error"
                     logging.getLogger("pack").exception(
                         "dispatch for %s hit an UNEXPECTED (non-provider) error — likely a real bug, "
@@ -2134,8 +2050,7 @@ class Supervisor:
             return result
 
     def _relieved_result(self, wolf: Wolf) -> CompletionResult:
-        """An empty result for a wolf relieved at its budget cap — no spend, no model call. Callers
-        fall back to their defaults, so a relieved wolf simply contributes nothing further."""
+        """An empty result for a wolf relieved at its budget cap — no spend, no model call."""
         return CompletionResult(
             text="",
             model="(relieved)",
@@ -2148,8 +2063,7 @@ class Supervisor:
 
     def _faulted_result(self, wolf: Wolf) -> CompletionResult:
         """An empty result after the client rejected a call outright (breaker open / oversized
-        request) — no spend, no model call. Same shape as `_relieved_result`; callers already
-        treat an empty/low-confidence result as "this wolf came back with nothing"."""
+        request) — no spend, no model call. Same shape as `_relieved_result`."""
         return CompletionResult(
             text="",
             model="(faulted)",
@@ -2203,13 +2117,12 @@ class Supervisor:
         tool events. Returns (hits, ok, artifact_ref, stray_pattern-or-None).
 
         If the scout's own angle comes back DRY, walk a bounded 3-step ladder (broaden, then a real
-        facet angle) before giving up — this keeps every scout productive instead of the pack
-        collapsing onto one, and exhausting it cleanly hands an empty result to the honest-empty guard.
+        facet angle) before giving up — keeps every scout productive instead of the pack collapsing
+        onto one, and exhausting it hands an empty result to the honest-empty guard.
         """
         hits, ok, ref, stray = await self._one_search(wolf, query)
-        # Bounded fallback ladder (deterministic, capped): each rung fires only if every prior rung
-        # returned nothing, and only if it differs from what we've already tried. This scout's OWN
-        # index picks a distinct facet so parallel scouts fan to different angles.
+        # Each rung fires only if every prior rung returned nothing and differs from what we've
+        # already tried. This scout's own index picks a distinct facet so parallel scouts fan out.
         tried = {plain_query(query).lower()}
         m = re.search(r"(\d+)$", wolf.wolf_id)
         scout_idx = int(m.group(1)) - 1 if m else 0
@@ -2226,8 +2139,8 @@ class Supervisor:
             ref = ref2 or ref
             stray = stray2 or stray
 
-        # A4 — deep-read the top FEW hits (in parallel) so findings rest on full pages, not just the
-        # #1 snippet. Reading only one hit left most sources unverified and made briefs thin.
+        # Deep-read the top FEW hits (in parallel) so findings rest on full pages, not just the #1
+        # snippet — reading only one hit left most sources unverified and made briefs thin.
         to_read = [h for h in hits[: settings.scout_deep_reads] if h.get("url")]
         if to_read:
             for h in to_read:
@@ -2259,7 +2172,7 @@ class Supervisor:
                     },
                 )
 
-        # Provenance tags (B3): which scout brought it back, whether we actually read the page, and
+        # Provenance tags: which scout brought it back, whether we actually read the page, and
         # whether it came from the offline CannedProvider (so it's never cited in a live brief).
         for h in hits:
             h["by"] = wolf.wolf_id
@@ -2388,8 +2301,7 @@ class Supervisor:
     def _blocks_from_sources(self, merged: Merged) -> list[dict]:
         """An honest, cited source-list brief for when the merge produced no claims but we DID gather
         sources — numbered identically to `finish`'s span map. When the merge stalled/faulted,
-        `stalled_findings` carries each scout's real read summary (not a bare snippet) — use that; a
-        source-only fallback (no timeout, just an empty-claims merge) falls back to the raw snippets."""
+        `stalled_findings` carries each scout's real read summary; otherwise falls back to raw snippets."""
         blocks: list[dict] = [
             {
                 "text": f"# {self.task}: sources gathered (the merge was incomplete)",

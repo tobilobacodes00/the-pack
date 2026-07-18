@@ -5,10 +5,9 @@ ask side-chat (grounded only once a final brief existed), and a separate refine 
 prompted WITHOUT the hunt's live state, so intake kept re-asking "what's your focus?" after a hunt had
 already started, and a post-delivery "nice" was answered as if no hunt had ever run.
 
-The fix every serious product uses (OpenAI background-mode, Deep Research's gated triage, Perplexity
-threads): it's ONE agent with a live state feed, not three agents. This module builds that feed — a
-compact state header + a brief summary — and assembles the single system prompt that intake and ask
-both use. The agent identity is continuous because the CONTEXT is continuous.
+The fix: ONE agent with a live state feed, not three agents. This module builds that feed — a compact
+state header + a brief summary — and assembles the single system prompt that intake and ask both use.
+The agent identity is continuous because the CONTEXT is continuous.
 """
 
 from __future__ import annotations
@@ -39,12 +38,10 @@ _STATE_PHASE: dict[str, str] = {
 
 
 def _brief_summary(content: Any, *, budget: int = 900) -> str:
-    """A COMPACT summary of the delivered brief for the state header — title, the section headings, a
-    couple of opening claims, and the source count. Not the full 3000-word brief: injecting the whole
-    thing on every 'thanks' turn is wasteful. The full text is hydrated only on a refine turn, where
-    the exact wording is needed to re-angle it (see the ask path)."""
-    # The pool's jsonb codec hands `content` back as a dict; be defensive if a raw string ever slips
-    # through (a legacy row, a caller without the codec) so the state header never crashes the chat.
+    """A COMPACT summary of the delivered brief for the state header — section headings, a couple of
+    opening claims, and the source count. Not the full brief: injecting it on every 'thanks' turn is
+    wasteful. Full text is hydrated only on a refine turn (see the ask path)."""
+    # Be defensive if a raw string ever slips through (a legacy row, a caller without the jsonb codec).
     if isinstance(content, str):
         try:
             content = json.loads(content)
@@ -57,7 +54,7 @@ def _brief_summary(content: Any, *, budget: int = 900) -> str:
     sources = content.get("sources") or []
     lines: list[str] = []
 
-    # Prefer the tagged blocks (they carry the real section structure); fall back to the flat text.
+    # Prefer tagged blocks (real section structure) over the flat text.
     if blocks:
         heads = [
             str(b.get("text") or "").strip().splitlines()[0][:100]
@@ -77,8 +74,7 @@ async def hunt_state_header(repo: Repo, hunt_id: str | None) -> tuple[str, str]:
     """Build the live `[HUNT STATE]` block for Alpha's prompt, plus a coarse lifecycle bucket
     ('none' | 'active' | 'delivered' | 'dead') the caller uses to gate routing.
 
-    Returns (header_text, bucket). `header_text` is empty only when there is genuinely no hunt.
-    """
+    Returns (header_text, bucket); header_text is empty only when there is genuinely no hunt."""
     if not hunt_id:
         return (
             "[NO ACTIVE HUNT] You are at the front door. Converse; when the Packmaster gives a "
@@ -152,8 +148,8 @@ async def alpha_system(
     task_gate: str = "",
 ) -> tuple[str, str]:
     """Assemble Alpha's full system prompt for a conversational turn, grounded in the real date and the
-    live hunt state. `task_gate` is the mode-specific instruction block (the intake launch-gate rules,
-    or the ask/answer rules) appended after the shared persona + state header.
+    live hunt state. `task_gate` is the mode-specific instruction block (intake launch-gate rules, or
+    the ask/answer rules) appended after the shared persona + state header.
 
     Returns (system_prompt, lifecycle_bucket).
     """
@@ -165,10 +161,9 @@ async def alpha_system(
 
 
 # --- intent router ---------------------------------------------------------------------------------
-# What a mid-conversation message IS, so a delivered-brief chat does the right thing instead of
-# re-answering as a question or blindly relaunching. The same words route differently by lifecycle
-# state (see the ask path) — "add a pricing section" is a follow-up sub-hunt when a brief exists but a
-# brand-new hunt when none does. State disambiguates; the router classifies.
+# The same words route differently by lifecycle state — "add a pricing section" is a follow-up
+# sub-hunt when a brief exists but a brand-new hunt when none does. State disambiguates; the router
+# classifies.
 ROUTE_SCHEMA: dict = {
     "type": "object",
     "required": ["route", "confidence"],
@@ -225,7 +220,7 @@ async def route_intent(
     history: list[dict],
 ) -> dict:
     """Classify the latest message against the live hunt state. Returns {route, confidence,
-    requires_clarification}. On ANY fault it falls back to a safe route ('question_about_brief' when a
+    requires_clarification}. On any fault, falls back to a safe route ('question_about_brief' when a
     brief exists, else 'chatter') so the conversation never blocks on the router."""
     header, bucket = await hunt_state_header(repo, hunt_id)
     safe = "question_about_brief" if bucket == "delivered" else "chatter"
@@ -236,7 +231,7 @@ async def route_intent(
             CallSpec(
                 hunt_id=hunt_id,
                 wolf_id="alpha",
-                tier="flash",  # a cheap, fast classification — v0's "quick" tier for routing
+                tier="flash",  # cheap, fast classification
                 intent="route_intent",
                 response_schema=ROUTE_SCHEMA,
                 messages=[

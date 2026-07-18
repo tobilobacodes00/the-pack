@@ -4,10 +4,9 @@
 returns them. `safe_fetch` then:
   * re-validates on EVERY redirect hop, so a 302 to 169.254.169.254 can't sneak past the first check
     (the classic redirect bypass); and
-  * PINS the connection to the IP it just validated — it dials that exact address while sending the
-    original Host header and setting the TLS `sni_hostname` to the original host, so cert verification
-    still checks the hostname. This closes the DNS-rebinding TOCTOU: httpx never gets to re-resolve
-    the name to a private address between validation and connect.
+  * PINS the connection to the IP it just validated — dials that exact address while sending the
+    original Host header and TLS `sni_hostname`, so cert verification still checks the hostname. This
+    closes the DNS-rebinding TOCTOU: httpx never re-resolves the name between validation and connect.
 """
 
 from __future__ import annotations
@@ -53,12 +52,18 @@ async def assert_public_url(url: str) -> list[str]:
         infos = await asyncio.get_event_loop().getaddrinfo(host, None)
     except socket.gaierror as exc:
         raise ValueError(f"could not resolve host: {exc}") from exc
+    # getaddrinfo returns one entry per socket type (Linux gives 3 for the same IP), so dedupe
+    # while keeping order — every distinct IP is still blocklist-checked.
     ips: list[str] = []
+    seen: set[str] = set()
     for info in infos:
         ip = ipaddress.ip_address(info[4][0])
         if _is_blocked(ip):
             raise ValueError("URL resolves to a non-public address")
-        ips.append(str(ip))
+        s = str(ip)
+        if s not in seen:
+            seen.add(s)
+            ips.append(s)
     if not ips:
         raise ValueError("host did not resolve to any address")
     return ips
@@ -66,7 +71,7 @@ async def assert_public_url(url: str) -> list[str]:
 
 async def _pinned_get(url: str, ip: str, headers: dict, timeout: float) -> httpx.Response:
     """GET `url` but dial the pre-validated `ip`, preserving Host + TLS server name for the original
-    host. This is the pin that defeats DNS rebinding — the name is never re-resolved for the connect."""
+    host — the pin that defeats DNS rebinding."""
     parsed = urlparse(url)
     host = parsed.hostname or ""
     host_header = host if parsed.port is None else f"{host}:{parsed.port}"

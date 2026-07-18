@@ -2,9 +2,8 @@ import { useCallback, useEffect, useState } from 'react'
 import { useHuntStore } from '@/store/hunt-store'
 
 /**
- * Owns the Reward modal's open state. The result now lives IN-CHAT (CompletionCards); the full reading
- * view opens ON DEMAND — from the result card's "Open the full reading view" link and the gift button —
- * rather than auto-popping the modal on completion.
+ * Owns the Reward modal's open state. Result lives in-chat (CompletionCards); this modal opens on
+ * demand, not auto-popped on completion.
  */
 export function useReward(huntId: string | null) {
   const status = useHuntStore((s) => s.state.status)

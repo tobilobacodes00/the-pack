@@ -40,7 +40,9 @@ def _app() -> types.SimpleNamespace:
 
 
 async def test_stale_hunt_is_reaped_as_failed() -> None:
-    repo = _FakeRepo([{"hunt_id": "hunt_stale", "state": "running", "last_event_age_s": _REAP_GRACE_S + 60}])
+    repo = _FakeRepo(
+        [{"hunt_id": "hunt_stale", "state": "running", "last_event_age_s": _REAP_GRACE_S + 60}]
+    )
     await recover_stranded_hunts(_app(), repo)  # type: ignore[arg-type]
     assert repo.failed == ["hunt_stale"]
     assert repo.appended == [{"hunt_id": "hunt_stale", "type": "hunt_failed"}]

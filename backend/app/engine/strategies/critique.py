@@ -29,9 +29,8 @@ class CritiqueStrategy(Strategy):
         merged = await engine.merge(keep_findings(findings))
 
         # The critique core: Sentinel challenges the weakest claim in a grounded standoff, then the
-        # verdict is ENFORCED — apply_critique deterministically drops the flagged claims so a claim
-        # Sentinel couldn't stand up never reaches the brief (the old re-merge ran on identical
-        # findings and changed nothing — the verify stage was theatre).
+        # verdict is ENFORCED — apply_critique drops the flagged claims so a claim Sentinel couldn't
+        # stand up never reaches the brief (the old re-merge changed nothing — verify was theatre).
         verdict = await engine.critique(merged)
         ruling = None
         if not verdict.ok and verdict.issues:

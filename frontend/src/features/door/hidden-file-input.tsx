@@ -1,7 +1,5 @@
-// The hidden file `<input>` behind the composer's `+` button. Rendered ONCE in a stable parent that
-// survives the door→territory morph (DoorPage / RightPanel) — NOT inside ChatColumn, which unmounts
-// and remounts at the morph and would detach the ref, silently breaking the `+`. `pickFiles`
-// (use-intake.ts) clicks this via the shared `fileInputRef`.
+// Rendered once in a stable parent that survives the door→territory morph — not inside ChatColumn,
+// which remounts at the morph and would detach the ref, silently breaking the `+`.
 
 /** The file types the pack can absorb — docs for research context, audio for transcription. */
 const ACCEPT = '.pdf,.csv,.txt,.md,.docx,.mp3,.wav,.ogg,.aac,.flac,.m4a'

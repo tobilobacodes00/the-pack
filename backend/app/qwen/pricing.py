@@ -1,4 +1,4 @@
-"""Token → USD pricing (Doc 04 §04).
+"""Token → USD pricing.
 
 The Boundary enforces a *dollar* budget, so every call's token usage must become a cost.
 Rates are per-tier, per 1M tokens, sourced from config (env-overridable) — never hard-coded,

@@ -29,8 +29,7 @@ function EditorCanvas({ plan, onSave, onCancel }: Props) {
 
   return (
     <div className="formation-editor" style={{ position: 'absolute', inset: 0, background: color.canvas }}>
-      {/* Nodes are `selectable` so they receive clicks (add/remove/note); we draw our own selection
-          ring, so hide ReactFlow's default selection box and keep node pointer-events on. */}
+      {/* We draw our own selection ring — hide ReactFlow's default selection box. */}
       <style>{`
         .formation-editor .react-flow__node { pointer-events: all; }
         .formation-editor .react-flow__node.selected,

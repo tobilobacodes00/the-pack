@@ -4,7 +4,7 @@
  * Prefer the Tailwind utilities (`bg-surface`, `text-dim`, `border-border`…) in JSX className.
  */
 export const color = {
-  canvas: '#FDFCF8', // cream paper
+  canvas: '#F5F5F5', // neutral grey paper
   surface: '#FFFFFF', // cards / panels
   raised: '#F2F2F0', // raised / hover fill
   border: '#DCDCD8', // neutral hairline
@@ -29,7 +29,7 @@ export const radius = { sm: 4, md: 8, lg: 12, xl: 16, panel: 16, pill: 20 } as c
  * tokens in `index.css`; keep in sync.
  */
 export const warm = {
-  cream: '#FDFCF8',
+  cream: '#F5F5F5',
   cream100: '#F6F5F1',
   cream200: '#EBEAE6',
   brand: '#262626', // brand-500 (charcoal — mono, no hue)

@@ -1,4 +1,4 @@
-"""The asyncpg connection pool — owned by the app lifespan (Doc 04 §5).
+"""The asyncpg connection pool — owned by the app lifespan.
 
 One pool per process. Created on startup (the schema is applied by app.db.migrate.run_migrations),
 closed on shutdown. A jsonb codec is installed so `payload` round-trips as a dict, not a string.

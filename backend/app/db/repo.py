@@ -1,12 +1,11 @@
-"""The repository — every Postgres read and write the engine needs (Doc 04 §5).
+"""The repository — every Postgres read and write the engine needs.
 
 This is the only module that speaks SQL. The Emitter (app/engine/core.py) calls
 `append_event`; the outbox relay (app/engine/relay.py) calls `fetch_unrelayed` +
 `mark_relayed`; the REST layer calls the hunt/instinct/artifact helpers.
 
 `append_event` writes the event AND fires `pg_notify('pack_events', hunt_id)` in the SAME
-transaction. The notify reaches the relay only on commit, so the relay is woken precisely
-when there is a durably-committed event to publish — the heart of the outbox pattern.
+transaction, so the relay wakes only once there's a durably-committed event — the outbox pattern.
 """
 
 from __future__ import annotations
@@ -88,10 +87,9 @@ class Repo:
         project_id: str | None = None,
         cursor: str | None = None,
     ) -> list[dict[str, Any]]:
-        """Most-recent, non-archived hunts first — powers the Den (Past Hunts). Optionally scoped
-        to one project; `cursor` is a composite "{iso_ts}|{hunt_id}" string for stable keyset
-        pagination (avoids skipping rows when two hunts share the same microsecond timestamp).
-        Fetch one extra row so the caller can detect a next page."""
+        """Most-recent, non-archived hunts first — powers the Den (Past Hunts). `cursor` is a
+        composite "{iso_ts}|{hunt_id}" string for stable keyset pagination (avoids skipping rows
+        when two hunts share the same microsecond timestamp)."""
         cursor_ts: str | None = None
         cursor_id: str | None = None
         if cursor:
@@ -327,14 +325,12 @@ class Repo:
         return -1 if val is None else int(val)
 
     async def list_unfinished_hunts(self) -> list[dict[str, Any]]:
-        """Hunts in a non-terminal state — used on startup to reconcile any orphaned by a prior stop
-        (their in-memory Supervisor is gone). `last_event_age_s` is how long ago this hunt's most
-        recent event was written; the recovery pass uses it as a grace window so a hunt that was
-        still flushing events when a (graceful, fast) reload bounced isn't declared dead a heartbeat
-        too early — a genuinely crashed hunt is stale by seconds, so it's reaped as before."""
-        # NOTE: events.ts is stored as ISO-8601 TEXT while hunts.created_at is timestamptz — cast the
-        # event timestamp before MAX/COALESCE or Postgres raises a datatype mismatch (and the recovery
-        # pass, wrapped in try/except, would silently stop reaping). Verified against the live DB.
+        """Hunts in a non-terminal state — used on startup to reconcile any orphaned by a prior stop.
+        `last_event_age_s` is how long ago this hunt's most recent event was written; the recovery
+        pass uses it as a grace window so a hunt still flushing events when a fast reload bounced
+        isn't declared dead a heartbeat too early."""
+        # events.ts is stored as ISO-8601 TEXT while hunts.created_at is timestamptz — cast the event
+        # timestamp before MAX/COALESCE or Postgres raises a datatype mismatch.
         rows = await self._pool.fetch(
             """
             SELECT h.hunt_id,
@@ -382,11 +378,11 @@ class Repo:
     async def fetch_unrelayed_locked(
         self, conn: asyncpg.Connection, limit: int = 100
     ) -> list[Event]:
-        """Fetch unrelayed events with FOR UPDATE SKIP LOCKED using a caller-supplied connection.
+        """Fetch unrelayed events with FOR UPDATE SKIP LOCKED on a caller-supplied connection.
 
-        The caller MUST hold an open transaction on `conn` — the lock is held for the duration
-        of that transaction so the relay can XADD and then mark relayed in the same txn.
-        Two relay workers running concurrently will skip each other's locked rows.
+        Caller MUST hold an open transaction on `conn` — the lock lasts for that transaction so the
+        relay can XADD and mark relayed in the same txn. Concurrent relay workers skip each other's
+        locked rows.
         """
         rows = await conn.fetch(
             """
@@ -523,7 +519,7 @@ class Repo:
         }
 
     async def list_artifacts(self, hunt_id: str) -> list[dict[str, Any]]:
-        """All artifacts for a hunt (id + kind) — the Reward's format tabs (v3)."""
+        """All artifacts for a hunt (id + kind) — the Reward's format tabs."""
         rows = await self._pool.fetch(
             "SELECT artifact_id, kind FROM artifacts WHERE hunt_id = $1 ORDER BY created_at",
             hunt_id,
@@ -600,7 +596,7 @@ class Repo:
         )
         return row is not None
 
-    # --- memory (v2): what the pack learned across hunts (local-only) ------------------
+    # --- memory: what the pack learned across hunts (local-only) ------------------------
 
     async def save_memory(self, hunt_id: str | None, kind: str, text: str) -> None:
         await self._pool.execute(
@@ -650,7 +646,7 @@ class Repo:
         result = await self._pool.execute("DELETE FROM memory WHERE id = $1", memory_id)
         return result.endswith("1")
 
-    # --- knowledge base (your documents, v4.2) -----------------------------------------
+    # --- knowledge base (your documents) ------------------------------------------------
 
     async def save_document(self, name: str, kind: str, text: str) -> int:
         row = await self._pool.fetchrow(
@@ -668,9 +664,8 @@ class Repo:
         return [dict(r) for r in rows]
 
     async def get_document(self, doc_id: int) -> dict[str, Any] | None:
-        # NB: do NOT select created_at here — the router returns this dict via a plain JSONResponse,
-        # which can't serialize a raw datetime (it 500s). Nothing consumes created_at anyway; the
-        # response model (DocumentDetailResponse) only declares id/name/kind/chars/text.
+        # Do NOT select created_at — a plain JSONResponse can't serialize a raw datetime (500s), and
+        # DocumentDetailResponse doesn't declare it anyway.
         row = await self._pool.fetchrow(
             "SELECT id, name, kind, text, chars FROM documents WHERE id = $1", doc_id
         )
@@ -685,11 +680,11 @@ class Repo:
     async def clear_memory(self) -> None:
         await self._pool.execute("DELETE FROM memory")
 
-    # --- spend (v5.4): real cost per hunt, read from the hunt_completed totals ----------
+    # --- spend: real cost per hunt, read from the hunt_completed totals ------------------
 
     async def spend_summary(self) -> list[dict[str, Any]]:
         """Per-hunt cost + title in ONE pass — a LATERAL join to each hunt's terminal totals event
-        (uses the partial idx_events_completed index), replacing the old two-full-scan N+1."""
+        (uses the partial idx_events_completed index)."""
         rows = await self._pool.fetch(
             """
             SELECT h.hunt_id,

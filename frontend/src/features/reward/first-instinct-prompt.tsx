@@ -2,8 +2,7 @@ import { useState } from 'react'
 import { Bookmark, X } from 'lucide-react'
 import { color } from '@/lib/theme'
 
-// One-time flag: once the Packmaster has seen (saved or dismissed) the first-completion instinct
-// nudge, never show it again. Kept in localStorage so it's per-browser and survives refresh.
+// Once seen (saved or dismissed), never show again — localStorage so it survives refresh.
 const SEEN_KEY = 'pack:seen-first-instinct-prompt'
 
 export function hasSeenFirstInstinctPrompt(): boolean {
@@ -31,10 +30,8 @@ interface Props {
 }
 
 /**
- * A gentle, one-time nudge shown the FIRST time a reward completes: save this hunt as an Instinct so
- * it can be re-run in one click later. "Save as Instinct" already exists buried in the ⋮ menu — most
- * people never find it, so this surfaces it exactly when its value is obvious (a brief just landed).
- * Dismissible; shows once ever (localStorage-gated by the caller).
+ * One-time nudge on the first completed reward: save this hunt as an Instinct. Surfaces what's
+ * otherwise buried in the ⋮ menu at the moment its value is obvious.
  */
 export function FirstInstinctPrompt({ defaultName, saving, onSave, onDismiss }: Props) {
   const [name, setName] = useState(defaultName)

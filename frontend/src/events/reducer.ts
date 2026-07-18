@@ -52,9 +52,8 @@ function setWolf(state: HuntState, wolf_id: string, patch: Partial<WolfState>): 
   }
 }
 
-/** Settle the roster when a hunt ends: no wolf should still read as "working". A wolf that was mid-
- *  flight becomes 'done'; the standing Warden (and any idle node) goes dormant. Faulted wolves keep
- *  their honest 'strayed'/'error' state. Replay-safe (pure function of the current statuses). */
+/** Settle the roster when a hunt ends: mid-flight wolves become 'done', the standing Warden goes
+ *  dormant, faulted wolves keep 'strayed'/'error'. Replay-safe. */
 function settleWolves(state: HuntState): HuntState {
   const wolves: HuntState['wolves'] = {}
   for (const [id, w] of Object.entries(state.wolves)) {
@@ -70,8 +69,7 @@ function settleWolves(state: HuntState): HuntState {
 function pushPhase(state: HuntState, wolf_id: string, phase: string): HuntState {
   const w = state.wolves[wolf_id]
   if (!w || !phase) return state
-  // Tolerate a wolf that predates this field (an older cached/rehydrated store entry) — never assume
-  // phaseHistory exists, or reading .length throws and takes down the whole reducer mid-hunt.
+  // A cached/rehydrated wolf may predate this field — assuming it exists would throw mid-hunt.
   const hist = w.phaseHistory ?? []
   const nextHist = hist[hist.length - 1] === phase ? hist : [...hist, phase]
   return setWolf(state, wolf_id, { phase, phaseHistory: nextHist })
@@ -111,8 +109,7 @@ export function huntReducer(state: HuntState, event: HuntEvent): HuntState {
       }
 
     case 'plan_edited': {
-      // Reflect the user's edits (team/queries/assumptions) onto the plan so the canvas + roster +
-      // plan card update. Same shape the optimistic local edit produces, so the two are idempotent.
+      // Same shape the optimistic local edit produces, so the two are idempotent.
       if (!next.plan) return next
       const diff = event.payload.diff as Record<string, unknown>
       const plan = { ...next.plan }
@@ -130,13 +127,9 @@ export function huntReducer(state: HuntState, event: HuntEvent): HuntState {
       return {
         ...next,
         status: 'running',
-        // C7 residual (documented, not faked): after a Boundary halt→resume the backend re-anchors
-        // its measured clock, but no dedicated resume event is emitted, so `started_at` isn't re-set.
-        // The live running-phase clock therefore over-reads by the halt gap until completion, when it
-        // snaps to the correct measured totals.time_s. Mitigated: the clock FREEZES during the halt
-        // (halted_boundary excluded from spend-timer's RUNNING). A full fix needs a resume event.
-        // Anchor the live spend/time clock to the server ts of the moment the hunt starts running.
-        // Derived from event data (pure), replay-safe, and matches the backend's measured time_s.
+        // Known residual: after a Boundary halt→resume no resume event re-anchors this, so the live
+        // clock over-reads by the halt gap until completion snaps it to the true totals.time_s.
+        // Mitigated by freezing the clock during halted_boundary; full fix needs a resume event.
         started_at: event.ts,
         boundary: {
           ...next.boundary,
@@ -156,8 +149,7 @@ export function huntReducer(state: HuntState, event: HuntEvent): HuntState {
             thinking: event.payload.thinking,
             phase: null,
             last_text: null,
-            // The Warden is a STANDING medic — it just sits there, dormant, until a wolf faults; it
-            // only lights up ('healing') while tending one. Every other wolf starts working ('active').
+            // The Warden is a standing medic, dormant until a wolf faults; every other wolf starts 'active'.
             status: event.payload.role === 'warden' ? 'idle' : 'active',
             cost_usd: 0,
             parent_wolf_id: event.payload.parent_wolf_id ?? null,
@@ -206,19 +198,14 @@ export function huntReducer(state: HuntState, event: HuntEvent): HuntState {
       })
 
     case 'tokens_spent': {
-      // SET the hunt total from the event's authoritative cumulative_usd — never add the incremental
-      // cost_usd. The backend Boundary owns the running total (and *decrements* it on a refund when a
-      // wolf's call fails); the additive model can't follow a refund and, worse, drifts on any stream
-      // gap/reconnect and then JUMPS when boundary_warning snaps to the absolute truth. SET makes this
-      // idempotent (replay-safe) and exact, and boundary_warning already sets the same absolute field,
-      // so the two now agree instead of fighting.
+      // SET (not add) from the authoritative cumulative_usd — the backend Boundary owns the running
+      // total and can *decrement* it on a refund, which an additive model can't follow and would
+      // drift on any stream gap/reconnect. Matches boundary_warning's same absolute field.
       const spent = event.payload.cumulative_usd
       const pct = next.boundary.budget_usd > 0 ? spent / next.boundary.budget_usd : 0
-      // Per-wolf display cost stays additive: the payload carries no PER-WOLF cumulative to SET from.
-      // Honest caveat — this IS replay-unsafe: a full stream replay (fresh mount / Den return) doubles
-      // each wolf's cost_usd. It's tolerated ONLY because WolfState.cost_usd is not displayed anywhere
-      // today (verified: all shown costs read hunt-row/scorecard totals, not this per-wolf field). If
-      // a per-wolf cost is ever surfaced, switch this to SET from a per-wolf cumulative in the payload.
+      // Per-wolf cost stays additive (payload has no per-wolf cumulative) — replay-unsafe, but
+      // tolerated since WolfState.cost_usd isn't displayed anywhere (shown costs read hunt/scorecard
+      // totals). Switch to SET if a per-wolf cost is ever surfaced.
       const cost = event.payload.cost_usd
       const wolf = next.wolves[event.payload.wolf_id]
       return {
@@ -230,8 +217,7 @@ export function huntReducer(state: HuntState, event: HuntEvent): HuntState {
               [event.payload.wolf_id]: {
                 ...wolf,
                 cost_usd: wolf.cost_usd + cost,
-                // Last model-call latency (last-write-wins → replay-safe); toolCalls is additive so
-                // (like cost_usd) it's live-only, never trusted after a replay.
+                // toolCalls is additive, like cost_usd — live-only, never trusted after a replay.
                 lastLatencyMs: event.payload.latency_ms ?? wolf.lastLatencyMs ?? null,
                 toolCalls: (wolf.toolCalls ?? 0) + 1,
               },
@@ -309,8 +295,7 @@ export function huntReducer(state: HuntState, event: HuntEvent): HuntState {
       )
 
     case 'doctor_dispatched': {
-      // The roaming healer (Warden) is dispatched to a patient: mark the patient 'healing' and record
-      // healer→patient so the canvas can glide the transient healer node beside its patient.
+      // Record healer→patient so the canvas can glide the transient healer node beside its patient.
       const healed = setWolf(next, event.payload.target_wolf_id, { status: 'healing' })
       return {
         ...healed,
@@ -319,9 +304,7 @@ export function huntReducer(state: HuntState, event: HuntEvent): HuntState {
     }
 
     case 'doctor_healed': {
-      // Patient recovers and the healer stands down. The STANDING Warden (bare id "warden") goes back
-      // to dormant/idle, ready for the next fault; a transient CLONE (warden-2, …) spun up just for this
-      // heal is finished ('done', dimmed) and drops out of the active-heal map.
+      // Standing Warden ("warden") goes back to idle; a transient clone (warden-2, …) finishes 'done'.
       const { [event.payload.doctor_id]: _done, ...healers } = next.healers
       const healer = next.wolves[event.payload.doctor_id]
       const healerRests: WolfState['status'] =

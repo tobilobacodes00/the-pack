@@ -1,6 +1,6 @@
 import * as RadixDialog from '@radix-ui/react-dialog'
 import { AnimatePresence, motion } from 'framer-motion'
-import type { ReactNode } from 'react'
+import type { ReactNode, Ref } from 'react'
 
 const EASE = [0.4, 0, 0.2, 1] as const
 
@@ -12,10 +12,14 @@ interface Props {
   drawer?: ReactNode
   /** Overlay pinned absolute against the body row (e.g. Refine card). */
   overlay?: ReactNode
+  /** Controls pinned absolute against the body row (e.g. the bottom-left reading rail). */
+  controls?: ReactNode
+  /** Ref to the scrollable content column, so callers can drive scroll (top/bottom). */
+  scrollRef?: Ref<HTMLDivElement>
 }
 
-// Radix Dialog + framer-motion, warm palette. Portals to body to escape Territory's z-40 stack; ui/dialog.tsx wrappers deliberately not reused (wrong palette + dead anim classes).
-export function RewardShell({ open, onClose, header, children, drawer, overlay }: Props) {
+// Portals to body to escape Territory's z-40 stack; ui/dialog.tsx wrappers deliberately not reused (wrong palette + dead anim classes).
+export function RewardShell({ open, onClose, header, children, drawer, overlay, controls, scrollRef }: Props) {
   return (
     <RadixDialog.Root
       open={open}
@@ -41,15 +45,15 @@ export function RewardShell({ open, onClose, header, children, drawer, overlay }
                 animate={{ opacity: 1, scale: 1, y: 0 }}
                 exit={{ opacity: 0, scale: 0.98, y: 10 }}
                 transition={{ duration: 0.28, ease: EASE }}
-                // Mobile: full-screen. Desktop: a centered card.
                 className="fixed inset-0 z-50 flex h-dvh w-full flex-col overflow-hidden border-border bg-white shadow-soft sm:left-1/2 sm:top-1/2 sm:inset-auto sm:h-[min(88vh,880px)] sm:w-[min(1040px,94vw)] sm:-translate-x-1/2 sm:-translate-y-1/2 sm:rounded-2xl sm:border"
               >
                 <RadixDialog.Title className="sr-only">The Reward</RadixDialog.Title>
                 {header}
                 <div className="relative flex min-h-0 flex-1">
-                  <div className="min-h-0 flex-1 overflow-y-auto">{children}</div>
+                  <div ref={scrollRef} className="min-h-0 flex-1 overflow-y-auto">{children}</div>
                   {drawer}
                   {overlay}
+                  {controls}
                 </div>
               </motion.div>
             </RadixDialog.Content>

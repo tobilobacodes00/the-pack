@@ -46,11 +46,11 @@ const PlanProposed = base.extend({
     assumptions: z.array(z.string()).default([]),
     est_cost: z.number(),
     est_time: z.number(),
-    // v6: entries are rehearsed for the actual team and additionally carry the call count.
+    // Rehearsed for the actual team; each entry also carries the call count.
     est_by_depth: z
       .record(z.string(), z.object({ cost: z.number(), time: z.number(), calls: z.number().optional() }))
       .optional(),
-    // v6: rehearsal detail — what was priced (scout count) + any team warnings, for the plan card.
+    // Rehearsal detail — what was priced (scout count) + any team warnings, for the plan card.
     est_detail: z
       .object({ scouts: z.number(), warnings: z.array(z.string()).default([]) })
       .optional(),
@@ -403,16 +403,14 @@ export type WolfState = {
   status: 'idle' | 'active' | 'done' | 'error' | 'strayed' | 'healing'
   cost_usd: number
   parent_wolf_id: string | null
-  /** The ordered phases/tools this wolf has passed through (consecutive dupes collapsed), so the
-   *  inspector can draw a "searched → read → summarizing" timeline. Rebuilt from the stream, so a
-   *  full replay reconstructs the identical sequence (replay-safe). */
+  /** Ordered phases/tools this wolf passed through (consecutive dupes collapsed), for the
+   *  inspector's timeline. Rebuilt from the stream, so a full replay is deterministic. */
   phaseHistory: string[]
   /** Last tool call's outcome + wall-clock, from `tool_result` (last-write-wins → replay-safe). */
   lastTool: { tool: string; ok: boolean; latency_ms: number } | null
   /** Last model-call latency (ms) from `tokens_spent` (last-write-wins → replay-safe). */
   lastLatencyMs: number | null
-  /** Running count of tool calls + model calls this wolf made — a cheap "how busy" signal. Additive,
-   *  so like cost_usd it is NOT replay-safe; only surfaced live in the inspector (never persisted). */
+  /** Running tool+model call count — additive, so NOT replay-safe; live-only, never persisted. */
   toolCalls: number
 }
 
@@ -454,19 +452,18 @@ export type PlanState = {
   assumptions: string[]
   est_cost: number
   est_time: number
-  /** v3: per-depth {cost,time} estimates so the plan card shows the true figure for the selected
-   *  depth (not just Beta's proposed one). Keyed brief|standard|deep. v6: rehearsed for the actual
-   *  team, each entry additionally carrying the model-call count it priced. */
+  /** Per-depth {cost,time} estimates so the plan card shows the true figure for the selected depth
+   *  (not just Beta's proposed one). Keyed brief|standard|deep, rehearsed for the actual team. */
   est_by_depth?: Record<string, { cost: number; time: number; calls?: number }>
-  /** v6: rehearsal detail — the scout count that was priced + any team warnings. */
+  /** Rehearsal detail — the scout count that was priced + any team warnings. */
   est_detail?: { scouts: number; warnings: string[] }
   queries?: string[]
   strategy?: string
-  /** v3: adaptive research depth Beta proposed / the user chose (drives the plan-card toggle). */
+  /** Adaptive research depth Beta proposed / the user chose (drives the plan-card toggle). */
   depth?: PlanDepth
 }
 
-/** v3: how comprehensive the brief should be — scaled to the task. */
+/** How comprehensive the brief should be — scaled to the task. */
 export type PlanDepth = 'brief' | 'standard' | 'deep'
 
 export type ArtifactRef = {
@@ -503,16 +500,13 @@ export type HuntState = {
   final_artifact_id: string | null
   scorecard: { lone_wolf: unknown; pack: unknown } | null
   totals: Record<string, unknown> | null
-  /** Wall-clock (ISO) when the hunt started *running* — the `plan_approved` event's server `ts`.
-   *  This is the live spend/time counter's anchor: it matches the backend's measured `totals.time_s`
-   *  window (both begin at approval, excluding the human approval-wait), it's derived from event data
-   *  so the reducer stays pure, and it's identical across every client and across a stream reconnect
-   *  (replaying `plan_approved` re-sets the same value). Null before the plan is approved. */
+  /** Wall-clock (ISO) when the hunt started running — the `plan_approved` event's server `ts`. Anchors
+   *  the live spend/time counter to match backend's `totals.time_s` window; replay-safe and identical
+   *  across clients/reconnects. Null before approval. */
   started_at: string | null
-  /** Wall-clock (ISO) when the hunt reached a terminal state (`hunt_completed`/`_failed`/`_stopped`'s
-   *  server `ts`). The elapsed-time ceiling for a done hunt with no measured `totals.time_s` (failed/
-   *  stopped never set totals) — without it, a client computing "now - started_at" on a page loaded
-   *  long after the hunt ended would read the WHOLE wall-clock gap as runtime. Null until terminal. */
+  /** Wall-clock (ISO) when the hunt reached a terminal state. Caps elapsed-time for a done hunt with
+   *  no measured `totals.time_s` (failed/stopped never set totals) — without it, "now - started_at"
+   *  on a page loaded long after the hunt ended would read the whole gap as runtime. Null until terminal. */
   ended_at: string | null
   /** Live log of the pack's beats (step summaries + handoffs), rendered as inline chat replies. */
   activity: ActivityItem[]

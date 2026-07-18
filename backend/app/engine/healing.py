@@ -6,9 +6,9 @@ once (capped at 3). This class owns only the healing bookkeeping — which wolve
 Wardens exist. It emits through the Supervisor's single Emitter and spawns through the Supervisor's
 spawn primitive (both injected), so seq assignment and the roster stay in one place.
 
-Wire note: the events stay `doctor_dispatched` / `doctor_healed` with a `doctor_id` payload key — the
-event schema is FROZEN, and the actor/id is a free string, so the Warden rides the existing types.
-The `doctor_id` field simply carries the Warden's id (`warden`, `warden-2`, …).
+Wire note: events stay `doctor_dispatched` / `doctor_healed` with a `doctor_id` payload key — the
+event schema is FROZEN, so the Warden rides the existing types; `doctor_id` carries the Warden's id
+(`warden`, `warden-2`, …).
 """
 
 from __future__ import annotations
@@ -20,9 +20,8 @@ SpawnFn = Callable[..., Awaitable[str]]  # (role, *, parent=None) -> wolf_id
 
 
 class Healer:
-    # The Warden is a STANDING pack member spawned by the roster at hunt start (roster.FIXED_ROLES),
-    # so the first healer already exists on the canvas — the Healer ADOPTS it (`warden`) rather than
-    # spawning a duplicate. Only OVERFLOW wardens (for simultaneous faults) are spawned as clones.
+    # The Warden is a STANDING pack member spawned by the roster at hunt start — the Healer ADOPTS it
+    # (`warden`) rather than spawning a duplicate. Only OVERFLOW wardens are spawned as clones.
     _STANDING_WARDEN = "warden"
 
     def __init__(self, emit: EmitFn, spawn_wolf: SpawnFn) -> None:
@@ -35,9 +34,8 @@ class Healer:
 
     async def _ensure_warden(self) -> str:
         """A Warden roams to heal a fault; it clones itself to tend several at once (capped). The
-        first Warden is the STANDING one already on the canvas (adopted, not re-spawned); overflow
-        Wardens for simultaneous faults are spawned as clones. Returns the Warden handling the latest
-        fault."""
+        first Warden is the STANDING one already on the canvas (adopted, not re-spawned). Returns
+        the Warden handling the latest fault."""
         need = max(1, min(len(self._faulted), 3))
         if not self._wardens:
             # Adopt the standing Warden the roster already spawned — it's the one that roams to heal.
@@ -49,7 +47,7 @@ class Healer:
     async def heal_with_warden(self, target_wolf_id: str, pattern: str) -> None:
         """The Warden is dispatched to a faulted wolf and heals it (reroute). Layered on top of the
         Stray path — the Stray still fires; the Warden is the visible healer. Emitted on the frozen
-        `doctor_*` event types (see module docstring), with `doctor_id` carrying the Warden's id."""
+        `doctor_*` event types, with `doctor_id` carrying the Warden's id."""
         self._faulted.add(target_wolf_id)
         warden_id = await self._ensure_warden()
         await self._emit(
@@ -87,8 +85,6 @@ class Healer:
             },
         )
         await self.heal_with_warden(wolf_id, pattern)  # the Warden roams in to heal the fault
-        # The Warden is the healer — credit it here too, matching heal_with_warden's notes above.
-        # (Earlier copy credited "Alpha"; the Warden is the entity actually dispatched to the fault.)
         note = {
             "repeat_fail": f"{wolf_id} kept hitting dead ends — the Warden rerouted it.",
             "loop": f"{wolf_id} was circling the same ground — the Warden reset its angle.",

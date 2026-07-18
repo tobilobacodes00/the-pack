@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useRef, useState } from 'react'
 import { Share2 } from 'lucide-react'
 import {
   useHuntBrief,
@@ -21,6 +21,7 @@ import { toast } from '@/store/toast-store'
 import { RewardShell } from './reward-shell'
 import { RewardHeader } from './reward-header'
 import { ReadingView } from './reading-view'
+import { ReadingControls } from './reading-controls'
 import { RewardEmpty } from './reward-empty'
 import { MoreMenu } from './more-menu'
 import { DownloadMenu } from './download-menu'
@@ -43,12 +44,23 @@ interface Props {
   onClose: () => void
 }
 
+const ZOOM = { min: 0.85, max: 1.5, step: 0.15 }
+
 export function RewardModal({ huntId, open, onClose }: Props) {
   const [panel, setPanel] = useState<'reading' | 'scorecard' | 'receipts'>('reading')
   const [drawerOpen, setDrawerOpen] = useState(false)
   const [refineOpen, setRefineOpen] = useState(false)
-  // The first-completion Instinct nudge: shown once ever (localStorage-gated), the moment the very
-  // first brief is in hand. "Save as Instinct" is otherwise buried in the ⋮ menu and rarely found.
+  // Zoom scales the brief font; arrows nudge the column, driven by the right-side ReadingControls rail.
+  const [zoom, setZoom] = useState(1)
+  const scrollRef = useRef<HTMLDivElement>(null)
+  const clampZoom = (z: number) => Math.min(ZOOM.max, Math.max(ZOOM.min, Math.round(z * 100) / 100))
+  // ~⅔ of a screenful per click — small, repeatable steps.
+  const stepScroll = (dir: 1 | -1) => {
+    const el = scrollRef.current
+    if (!el) return
+    el.scrollBy({ top: dir * Math.round(el.clientHeight * 0.66), behavior: 'smooth' })
+  }
+  // Shown once ever (localStorage-gated) — "Save as Instinct" is otherwise buried in the ⋮ menu.
   const [showFirstInstinct, setShowFirstInstinct] = useState(() => !hasSeenFirstInstinctPrompt())
 
   const plan = useHuntStore((s) => s.state.plan)
@@ -58,9 +70,8 @@ export function RewardModal({ huntId, open, onClose }: Props) {
   const brief = useHuntBrief(huntId, open)
   const snap = useHuntSnapshot(huntId, open)
   const artifacts = useHuntArtifacts(huntId, open)
-  // After the user launches a benchmark, poll for the scorecard until it lands — the live stream
-  // normally delivers benchmark_completed first (liveScorecard below); polling is the safety net
-  // for a reopened page whose socket isn't tailing this hunt.
+  // Polling is the safety net for a reopened page whose socket isn't tailing this hunt; the live
+  // stream normally delivers benchmark_completed first (liveScorecard below).
   const runBenchmark = useRunBenchmark(huntId)
   const scorecardQuery = useHuntScorecard(
     huntId,
@@ -77,9 +88,8 @@ export function RewardModal({ huntId, open, onClose }: Props) {
 
   const projects = useProjects(open && !!snap.data?.project_id)
   const prompt = snap.data?.task ?? ''
-  // A hunt that died (or was stopped) never produced a brief. Distinguish that terminal case from a
-  // hunt still in flight, so the empty state reads honestly ("ended") instead of the optimistic
-  // "still bringing this hunt home" — the #1 thing that made a reaped hunt look broken.
+  // Distinguish a dead/stopped hunt from one still in flight, so the empty state reads honestly
+  // ("ended") instead of the optimistic "still bringing this hunt home".
   const huntEnded = snap.data?.state === 'failed' || snap.data?.state === 'stopped_by_user'
   const dateISO = snap.data?.updated_at ?? snap.data?.created_at ?? null
   const projectName =
@@ -91,8 +101,8 @@ export function RewardModal({ huntId, open, onClose }: Props) {
     setPanel('reading')
     setDrawerOpen(false)
     setRefineOpen(false)
-    // Clear the benchmark mutation so reopening the Scorecard for this hunt doesn't resurrect a
-    // stale success/failure state (isSuccess/isError otherwise stick for the mounted lifetime).
+    setZoom(1)
+    // Reset so reopening the Scorecard doesn't resurrect a stale success/failure state.
     runBenchmark.reset()
     onClose()
   }
@@ -171,10 +181,28 @@ export function RewardModal({ huntId, open, onClose }: Props) {
     </>
   )
 
+  // The bottom-left reading rail: only meaningful on the reading panel with a real brief in view.
+  const showReadingControls =
+    panel === 'reading' && !brief.isLoading && !brief.isError && !!brief.data?.content
+
   return (
     <RewardShell
       open={open}
       onClose={close}
+      scrollRef={scrollRef}
+      controls={
+        showReadingControls ? (
+          <ReadingControls
+            zoom={zoom}
+            minZoom={ZOOM.min}
+            maxZoom={ZOOM.max}
+            onZoomIn={() => setZoom((z) => clampZoom(z + ZOOM.step))}
+            onZoomOut={() => setZoom((z) => clampZoom(z - ZOOM.step))}
+            onStepUp={() => stepScroll(-1)}
+            onStepDown={() => stepScroll(1)}
+          />
+        ) : undefined
+      }
       header={<RewardHeader prompt={prompt} actions={actions} onClose={close} />}
       drawer={
         <TracksDrawer
@@ -200,8 +228,7 @@ export function RewardModal({ huntId, open, onClose }: Props) {
         <ScorecardPanel
           scorecard={scorecard}
           loading={scorecardQuery.isLoading && !scorecard}
-          // running: from the moment the POST is accepted until the scorecard lands (stream or poll)
-          // — but stop once the poll budget is spent, so a benchmark that died in the background
+          // Stop once the poll budget is spent, so a benchmark that died in the background
           // surfaces as "failed" instead of spinning forever.
           running={
             (runBenchmark.isPending ||
@@ -233,7 +260,9 @@ export function RewardModal({ huntId, open, onClose }: Props) {
               onDismiss={dismissFirstInstinct}
             />
           )}
-          <ReadingView brief={brief.data} dateISO={dateISO} projectName={projectName} />
+          <div style={{ zoom }}>
+            <ReadingView brief={brief.data} dateISO={dateISO} projectName={projectName} />
+          </div>
         </>
       )}
     </RewardShell>

@@ -70,8 +70,7 @@ export function useFormationEditor(plan: PlanState | null) {
       return {
         ...n,
         type: 'editableAgent',
-        // Selectable so ReactFlow keeps pointer-events on the node — otherwise clicks never land, so
-        // you can't select an agent to add/remove it or write its note. Dragging stays off.
+        // Selectable so ReactFlow keeps pointer-events on the node — otherwise clicks never land.
         selectable: true,
         draggable: false,
         data: {
@@ -99,8 +98,6 @@ export function useFormationEditor(plan: PlanState | null) {
       role,
       added: !!a,
       note: notes[selected] ?? '',
-      // What this wolf will do: its role contribution, plus — for a scout — its assigned search angle
-      // from the plan (so the Packmaster sees the real work before approving, not a generic blurb).
       desc: ROLE_DESC[role] ?? '',
       query: scoutQuery(plan, selected),
     }
@@ -117,9 +114,8 @@ export function useFormationEditor(plan: PlanState | null) {
   )
 
   const savePayload = useCallback((): PendingEdits => {
-    // Keep notes for EVERY wolf that still exists in the edited team (not just user-added extras) — the
-    // backend `_apply_edits` honors a handler note on any wolf_id and injects it into that wolf's prompt.
-    // Scope to live ids so a note left on a role whose count was later reduced doesn't ride along orphaned.
+    // Keep notes for every wolf still in the edited team — scoped to live ids so a note left on a
+    // role whose count was later reduced doesn't ride along orphaned.
     const liveIds = new Set<string>()
     for (const t of editedTeam) for (const id of wolfIds(t.role, t.count)) liveIds.add(id)
     const cleanNotes: Record<string, string> = {}

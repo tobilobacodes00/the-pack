@@ -8,9 +8,8 @@ import { color } from '@/lib/theme'
 
 type ApproveFn = ReturnType<typeof useApprovePlan>['mutate']
 
-// The Boundary the hunt authorizes: a floor of $1 (headroom for the largest default formation), else
-// 2× the estimate (est_cost runs low). The backend re-clamps to first_hunt_cap_usd, so this is a
-// request, not the enforced ceiling — no phantom fixed cap that diverges from the .env-tunable cap.
+// Floor of $1 (headroom for the largest default formation), else 2× the estimate. The backend
+// re-clamps to first_hunt_cap_usd — this is a request, not the enforced ceiling.
 const BOUNDARY_FLOOR = 1.0
 
 const DEPTHS: { id: PlanDepth; label: string; hint: string }[] = [
@@ -37,13 +36,10 @@ export function PlanCard({ huntId, plan, onApprove, onEdit, onEditFormation, app
   const pendingEdits = useHuntStore((s) => s.pendingEdits)
   // Seed from Beta's proposal; the user can dial it up or down before approving.
   const [depth, setDepth] = useState<PlanDepth>(plan.depth ?? 'standard')
-  // The estimate must track the SELECTED depth, not stay frozen on Beta's proposed one. The backend
-  // sends the full per-depth table (est_by_depth), rehearsed for the proposed team; fall back to the
-  // flat est_cost/est_time for older events that predate it.
+  // Backend sends the full per-depth table; fall back to flat est_cost/est_time for older events.
   const est = plan.est_by_depth?.[depth]
-  // The Estimate must also track the EDITED formation: when the user reshaped the pack in the
-  // editor, re-rehearse that exact team live (pure server-side estimator — instant, no spend) so
-  // the price on the card is always for the pack that will actually run.
+  // Re-rehearse the edited team live (pure server-side estimator, instant, no spend) so the price
+  // is always for the pack that will actually run.
   const editedTeam = pendingEdits?.team
   const rehearsal = useRehearse(
     huntId,
@@ -61,8 +57,7 @@ export function PlanCard({ huntId, plan, onApprove, onEdit, onEditFormation, app
     onApprove({
       mode: 'wild',
       boundary_usd: boundary,
-      depth, // v3: the user's depth choice reaches the running Supervisor
-      // Carry the formation edits (extra agents + per-agent notes) saved in the editor.
+      depth,
       edits: pendingEdits ? { team: pendingEdits.team, notes: pendingEdits.notes } : undefined,
     })
   }
@@ -138,9 +133,7 @@ export function PlanCard({ huntId, plan, onApprove, onEdit, onEditFormation, app
         </span>
       </div>
 
-      {/* The Estimate's receipt line: what the rehearsal actually priced — this formation, this many
-          model calls — so the figure above is checkable, not asserted. Re-prices live for an edited
-          formation. Hidden for legacy plans that predate the rehearsed table. */}
+      {/* What the rehearsal actually priced, so the figure above is checkable, not asserted. */}
       {estCalls != null && estScouts != null && (
         <p style={{ margin: '6px 0 0', fontSize: 11.5, color: color.faint, lineHeight: 1.5 }}>
           Rehearsed for {rehearsed ? 'your edited formation' : 'this formation'}: {estScouts}{' '}

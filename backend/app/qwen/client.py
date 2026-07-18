@@ -1,16 +1,15 @@
-"""The Qwen client — the single chokepoint every model call passes through (Doc 04 §04).
+"""The Qwen client — the single chokepoint every model call passes through.
 
 One place, so every call gets: tier resolution, per-call thinking mode, real token
 accounting, retries + backoff, a circuit breaker, and structured output. We point the
 OpenAI Python SDK at Qwen's OpenAI-compatible base URL.
 
-THE OFFLINE SWITCH: if there is no `QWEN_API_KEY`, the client routes every call to the
-deterministic `FakeQwen` instead of the network. The whole system runs without a key today;
-the moment the key lands the client uses the real model — **zero change** to the Supervisor
-or the event stream.
+OFFLINE SWITCH: if there is no `QWEN_API_KEY`, the client routes every call to the
+deterministic `FakeQwen` instead of the network — zero change to the Supervisor or the
+event stream once a real key lands.
 
-THE GOTCHA, baked in: turning thinking ON requires streaming. A non-streamed thinking call
-FAILS on Qwen. So thinking-mode wolves stream — which also yields live token counts.
+THE GOTCHA: turning thinking ON requires streaming — a non-streamed thinking call FAILS on
+Qwen. So thinking-mode wolves stream, which also yields live token counts.
 
 The client RETURNS a `CompletionResult` (text + usage + cost). It never emits events itself
 — the Supervisor turns the result into a `tokens_spent` event through the one Emitter, so
@@ -46,12 +45,10 @@ _TRANSIENT = (APIConnectionError, APITimeoutError, RateLimitError, InternalServe
 
 
 def is_transient_provider_error(exc: BaseException) -> bool:
-    """True for an exception shape that genuinely came from the model provider (a retry-exhausted
-    transient failure, or the circuit breaker refusing to call at all) — False for anything else
-    (a KeyError/AttributeError from a code defect, a schema-parse bug, etc.). The Supervisor uses
-    this to stop silently bucketing real bugs into the same 'provider_error' Stray pattern as an
-    actual DashScope outage — the two need to be told apart in logs even though the wire-level
-    `stray_detected.pattern` enum (frozen) only has room for one shared value."""
+    """True only for a genuine provider failure (retry-exhausted transient error, or the breaker
+    refusing to call) — False for a code defect (KeyError, schema-parse bug, etc). Lets the
+    Supervisor tell real bugs apart from an actual DashScope outage in logs, even though the wire
+    `stray_detected.pattern` enum only has room for one shared 'provider_error' value."""
     return isinstance(exc, (*_TRANSIENT, CircuitOpenError))
 
 
@@ -66,14 +63,13 @@ OnPayload = Callable[[dict], "dict | None"]
 
 
 def _loads_lenient(text: str, require: Callable[[dict], bool] | None = None) -> dict | None:
-    """Parse a model's structured-output JSON, tolerating the two things models do that strict
-    json.loads rejects: real newlines/control chars inside string values (strict=False), and a
-    stray ```fence or prose around the object. Returns None only if there's no usable object.
+    """Parse a model's structured-output JSON, tolerating what strict json.loads rejects: real
+    newlines/control chars inside string values (strict=False), and a stray ```fence or prose
+    around the object. Returns None only if there's no usable object.
 
-    `require`, if given, is an extra acceptance predicate on the parsed dict — the first candidate
-    that both parses AND satisfies it wins (a candidate that parses but fails the predicate is skipped,
-    not returned). This is the ONE lenient-model-output parser; `app.core.intake.parse_intake` reuses
-    it with `require=lambda o: "ready" in o` rather than reimplementing the same fence/brace loop."""
+    `require`, if given, is an extra acceptance predicate — the first candidate that both parses
+    AND satisfies it wins. The ONE lenient-model-output parser; `app.core.intake.parse_intake`
+    reuses it rather than reimplementing the same fence/brace loop."""
     if not text:
         return None
     stripped = text.strip()
@@ -93,19 +89,17 @@ def _loads_lenient(text: str, require: Callable[[dict], bool] | None = None) -> 
 
 
 def _cached_tokens(usage: object) -> int:
-    """Extract `prompt_tokens_details.cached_tokens` off an OpenAI-SDK usage object, tolerating a
-    provider that omits the field entirely (older DashScope responses, or caching genuinely
-    inactive for this call) — never raises, degrades to 0 (means "unknown/none served from cache")."""
+    """Extract `prompt_tokens_details.cached_tokens` off an OpenAI-SDK usage object. Never raises;
+    degrades to 0 ("unknown/none served from cache") if the provider omits the field."""
     details = getattr(usage, "prompt_tokens_details", None)
     cached = getattr(details, "cached_tokens", None) if details is not None else None
     return cached if isinstance(cached, int) else 0
 
 
 def _retry_after_seconds(exc: BaseException) -> float | None:
-    """Parse a `Retry-After` header off a provider error, per RFC 9110 §10.2.3 — either a delay in
-    seconds ("30") or an HTTP-date ("Wed, 21 Oct 2026 07:28:00 GMT"). Returns the delay in seconds
-    (clamped ≥0), or None when there's no honorable hint (no response, absent/unparsable header). A
-    429/503 that names its own cooldown should be honored rather than guessed at with blind backoff."""
+    """Parse a `Retry-After` header off a provider error (RFC 9110 §10.2.3) — delay-seconds or an
+    HTTP-date. Returns seconds (clamped ≥0), or None with no honorable hint. A 429/503 naming its
+    own cooldown should be honored rather than guessed at with blind backoff."""
     response = getattr(exc, "response", None)
     headers = getattr(response, "headers", None)
     if headers is None:
@@ -116,13 +110,13 @@ def _retry_after_seconds(exc: BaseException) -> float | None:
     raw = raw.strip()
     if raw.isdigit():  # delay-seconds form
         return float(raw)
-    try:  # HTTP-date form → seconds from now
+    try:  # HTTP-date form
         when = parsedate_to_datetime(raw)
     except (TypeError, ValueError):
         return None
     if when is None:
         return None
-    if when.tzinfo is None:  # an HTTP-date is GMT; treat a naive parse as UTC
+    if when.tzinfo is None:  # HTTP-date is GMT; treat a naive parse as UTC
         when = when.replace(tzinfo=UTC)
     return max(0.0, (when - datetime.now(UTC)).total_seconds())
 
@@ -159,7 +153,7 @@ class _Breaker:
 
     def is_idle(self) -> bool:
         """True once this breaker has no failures on record and isn't (or is no longer) open — safe
-        to evict and let a fresh breaker take its place next time this hunt (if ever) dispatches."""
+        to evict."""
         if self._opened_at is not None:
             return time.monotonic() - self._opened_at >= self._cooldown_s
         return self._failures == 0
@@ -169,26 +163,20 @@ class QwenClient:
     def __init__(self, on_payload: OnPayload | None = None) -> None:
         self.offline = not settings.qwen_api_key
         self._fake = FakeQwen()
-        # Optional wire-payload interceptor (see OnPayload) — the ONE seam over the request dict for
-        # both the streaming and non-streaming paths. Left None by default; a caller can supply one
-        # (e.g. request logging, header/param injection) without editing the two create() call sites.
+        # The ONE seam over the request dict for both streaming and non-streaming paths — a caller can
+        # supply request logging / header injection without editing the two create() call sites.
         self._on_payload = on_payload
-        # One breaker PER HUNT, not one shared breaker on the client singleton. The client is
-        # constructed once at app startup (main.py) and shared by every concurrent hunt; a single
-        # process-global breaker meant one hunt's 5 consecutive transient failures (its own bad luck,
-        # or a request that happens to hit an overloaded shard) fail-fast every OTHER concurrent hunt's
-        # calls for the full cooldown, even though the endpoint may be fine for them. Breakers are
-        # evicted after their cooldown elapses with no further failures, so this dict never grows
-        # unbounded across a long-running process.
+        # One breaker PER HUNT, not a shared singleton — otherwise one hunt's 5 consecutive transient
+        # failures would fail-fast every OTHER concurrent hunt for the full cooldown. Evicted once idle
+        # so this dict never grows unbounded.
         self._breakers: dict[str, _Breaker] = {}
         self._client: AsyncOpenAI | None = None
         if not self.offline:
             self._client = AsyncOpenAI(
                 api_key=settings.qwen_api_key,
                 base_url=settings.qwen_base_url,
-                # The SDK's own default retries (2, hidden backoff) would silently absorb
-                # transient failures before our _TRANSIENT retry loop / breaker ever see them —
-                # discovered by the wire-level tests below. We own retries end to end instead.
+                # The SDK's own default retries would silently absorb transient failures before our
+                # _TRANSIENT retry loop / breaker ever see them — we own retries end to end instead.
                 max_retries=0,
             )
 
@@ -199,8 +187,8 @@ class QwenClient:
             raise ValueError(f"unknown model tier: {tier!r}") from exc
 
     def _breaker_for(self, hunt_id: str) -> _Breaker:
-        """Fetch (or create) this hunt's breaker, evicting any OTHER hunt's breaker whose cooldown has
-        fully elapsed with no further failures — keeps the dict bounded without a background sweep."""
+        """Fetch (or create) this hunt's breaker, evicting any idle OTHER hunt's breaker — keeps the
+        dict bounded without a background sweep."""
         for key in [k for k, b in self._breakers.items() if k != hunt_id and b.is_idle()]:
             del self._breakers[key]
         breaker = self._breakers.get(hunt_id)
@@ -220,8 +208,8 @@ class QwenClient:
         return await self._complete_real(spec, on_delta)
 
     def _check_request_size(self, messages: list[dict]) -> None:
-        """Reject an oversized request before it reaches the network. A retry can't fix a payload
-        that's too big — this is a ValueError, not one of the _TRANSIENT retry-worthy errors."""
+        """Reject an oversized request before it reaches the network — a ValueError, not one of the
+        _TRANSIENT retry-worthy errors, since a retry can't fix a payload that's too big."""
         size = len(json.dumps(messages).encode("utf-8"))
         if size > settings.qwen_max_request_bytes:
             raise ValueError(
@@ -261,15 +249,12 @@ class QwenClient:
                 last_exc = exc
                 breaker.on_failure()
                 if attempt < settings.qwen_max_retries:
-                    # Jittered exponential backoff — bare 2**attempt would let every wolf retrying
-                    # the same transient outage wake up in lockstep and thundering-herd the
-                    # endpoint right when it's already struggling.
+                    # Jittered exponential backoff — bare 2**attempt would let every wolf retrying the
+                    # same outage wake up in lockstep and thundering-herd the endpoint.
                     backoff = settings.qwen_backoff_base_s * (2**attempt)
                     backoff += random.uniform(0, settings.qwen_backoff_base_s)
-                    # If the provider named its own cooldown (429/503 Retry-After), never retry SOONER
-                    # than it asked — honor the larger of the server hint and our computed backoff, so
-                    # a "wait 30s" isn't undercut by a sub-second exponential step (which just earns
-                    # another 429). Add a little jitter on top so honoring wolves still don't sync up.
+                    # Never retry sooner than a provider-named cooldown (429/503 Retry-After); jitter
+                    # on top so honoring wolves still don't sync up.
                     retry_after = _retry_after_seconds(exc)
                     if retry_after is not None:
                         backoff = max(
@@ -281,10 +266,9 @@ class QwenClient:
         raise last_exc
 
     def _response_format(self, spec: CallSpec) -> dict | None:
-        # THE THINKING FIX. Real DashScope 400s on a response_format while enable_thinking is on;
-        # offline FakeQwen ignores response_format, which hid it. So thinking wolves send NO
-        # response_format and rely on their "ONLY JSON" prompt + the lenient parse in _account.
-        # Non-thinking structured calls use json_object (broadly supported; json_schema is spotty).
+        # THE THINKING FIX: DashScope 400s on a response_format while enable_thinking is on. Thinking
+        # wolves send NO response_format and rely on their "ONLY JSON" prompt + the lenient parse in
+        # _account. Non-thinking structured calls use json_object (json_schema support is spotty).
         if spec.response_schema is None or spec.thinking:
             return None
         return {"type": "json_object"}
@@ -298,12 +282,10 @@ class QwenClient:
         *,
         stream: bool,
     ) -> dict:
-        """Assemble the exact kwargs handed to `chat.completions.create` — the ONE place both the
-        non-streaming (`_once`) and streaming (`_stream`) paths build their wire payload, so any
-        cross-cutting concern (a payload observer/mutator, request logging, header injection) has a
-        single seam instead of two divergent inline call sites. `on_payload`, if configured, runs on
-        the assembled dict right before it's unpacked into `create(**payload)` and may return a new
-        dict to send instead (pure dict-in/dict-out; a hook returning None leaves the payload as-is)."""
+        """Assemble the exact kwargs handed to `chat.completions.create` — the ONE place both
+        `_once` and `_stream` build their wire payload, so a cross-cutting concern has a single seam
+        instead of two divergent call sites. `on_payload`, if configured, runs on the assembled dict
+        and may return a replacement (None leaves the payload as-is)."""
         payload: dict = {
             "model": model,
             "messages": spec.messages or [],

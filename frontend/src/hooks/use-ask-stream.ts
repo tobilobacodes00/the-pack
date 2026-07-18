@@ -26,10 +26,8 @@ const MAX_QUESTION = 10_000
 interface UseAskStreamResult {
   answer: string
   streaming: boolean
-  /** Stream Alpha's answer for `question`. `history` is the full conversation so far (ending with
-   *  the question itself) so Alpha keeps the context of everything discussed; `onToken` fires per
-   *  chunk (so callers can render it into their own chat bubble); resolves with the full reply
-   *  text ('' if it errored/aborted). */
+  /** Stream Alpha's answer for `question`. `history` gives full conversation context; `onToken`
+   *  fires per chunk; resolves with the full reply text ('' if errored/aborted). */
   ask: (
     huntId: string,
     question: string,
@@ -50,9 +48,7 @@ export function useAskStream(): UseAskStreamResult {
     setStreaming(false)
   }, [])
 
-  // Abort an in-flight ask if the consumer unmounts (navigating away mid-stream) — otherwise the
-  // fetch/reader keeps pulling tokens nobody will render, and the hunt's ask/stream call runs to
-  // completion for no reason.
+  // Abort on unmount — otherwise the fetch/reader keeps pulling tokens nobody will render.
   useEffect(() => () => abortRef.current?.abort(), [])
 
   const ask = useCallback(async (
@@ -116,8 +112,6 @@ export function useAskStream(): UseAskStreamResult {
               onToken?.(msg.text)
               setAnswer((prev) => prev + msg.text)
             } else if (msg.type === 'done') {
-              // The dispatcher tells us what it did (refined the brief, spawned a follow-up hunt, …)
-              // and, if it launched one, that hunt's id — so the caller can refresh/track it.
               action = msg.action ?? 'answer'
               newHuntId = msg.hunt_id ?? null
               if (!full && msg.reply) full = msg.reply

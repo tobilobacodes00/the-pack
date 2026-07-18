@@ -128,10 +128,7 @@ export default function InstinctsPage() {
           <div className="mt-1 flex flex-col divide-y" style={{ borderColor: color.borderSubtle }}>
             {BUILTINS.map((b) => (
               <div key={b.id} className="flex flex-col gap-3 py-5" style={{ borderColor: color.borderSubtle }}>
-                <div className="flex items-start justify-between gap-4">
-                  <h3 className="text-[15px] font-semibold text-text">{b.title}</h3>
-                  <UseThis onClick={() => applyBuiltin(b)} />
-                </div>
+                <h3 className="text-[15px] font-semibold text-text">{b.title}</h3>
                 <p className="text-[13.5px] leading-relaxed text-ink-500">{b.desc}</p>
                 <div className="flex items-center justify-between gap-4">
                   <div className="flex items-center gap-2">
@@ -142,6 +139,10 @@ export default function InstinctsPage() {
                     <span className="text-[11px] uppercase tracking-wide text-text-faint">Out</span>
                     <Chips items={b.out} />
                   </div>
+                </div>
+                {/* "Use This" sits at the bottom of the card (vertical), not up in the title row. */}
+                <div className="flex justify-end">
+                  <UseThis onClick={() => applyBuiltin(b)} />
                 </div>
               </div>
             ))}
@@ -160,18 +161,19 @@ export default function InstinctsPage() {
                 <div key={it.instinct_id} className="relative flex flex-col gap-2 py-5" style={{ borderColor: color.borderSubtle }}>
                   <div className="flex items-start justify-between gap-4">
                     <h3 className="min-w-0 flex-1 truncate text-[15px] font-semibold text-text">{it.label}</h3>
-                    <div className="flex items-center gap-2">
-                      <UseThis onClick={() => applyInstinct(it)} />
-                      <button
-                        onClick={() => setMenuId(menuId === it.instinct_id ? null : it.instinct_id)}
-                        className="p-1 text-muted hover:text-ink-900"
-                        aria-label="More"
-                      >
-                        <MoreVertical size={18} />
-                      </button>
-                    </div>
+                    <button
+                      onClick={() => setMenuId(menuId === it.instinct_id ? null : it.instinct_id)}
+                      className="p-1 text-muted hover:text-ink-900"
+                      aria-label="More"
+                    >
+                      <MoreVertical size={18} />
+                    </button>
                   </div>
                   {task && <p className="text-[13.5px] leading-relaxed text-ink-500">{task}</p>}
+                  {/* "Use This" sits at the bottom of the card (vertical), not up in the title row. */}
+                  <div className="flex justify-end">
+                    <UseThis onClick={() => applyInstinct(it)} />
+                  </div>
                   {menuId === it.instinct_id && (
                     <>
                       <div className="fixed inset-0 z-40" onClick={() => setMenuId(null)} />

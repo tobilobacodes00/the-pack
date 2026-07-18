@@ -94,11 +94,7 @@ function SourceLine({ s }: { s: Receipts['claims'][number]['sources'][number] })
   )
 }
 
-/**
- * The Receipts — the brief's per-claim audit trail: every claim, its sources (who found each,
- * was the page actually read), the Sentinel's challenges, and what got dropped. The whole point:
- * an answer you can hand to someone with its proof attached.
- */
+/** The brief's per-claim audit trail: sources, Sentinel challenges, and what got dropped. */
 export function ReceiptsPanel({ receipts, loading, onCancel }: Props) {
   if (loading) {
     return (
@@ -151,7 +147,6 @@ export function ReceiptsPanel({ receipts, loading, onCancel }: Props) {
             </div>
           </div>
 
-          {/* Honest state: the Sentinel never completed its review — say so plainly, with the reason. */}
           {!receipts.critique_ran && (
             <div className="mt-4 flex items-start gap-2 rounded-lg border border-amber-500/30 bg-amber-500/10 px-3 py-2.5 text-[12.5px] text-amber-700">
               <AlertTriangle size={15} className="mt-0.5 shrink-0" />
@@ -163,7 +158,6 @@ export function ReceiptsPanel({ receipts, loading, onCancel }: Props) {
             </div>
           )}
 
-          {/* Per-claim rows */}
           <ul className="mt-6 flex flex-col divide-y divide-border border-y border-border">
             {receipts.claims.map((c, i) => (
               <li key={i} className="py-3.5">
@@ -192,7 +186,6 @@ export function ReceiptsPanel({ receipts, loading, onCancel }: Props) {
             ))}
           </ul>
 
-          {/* Enforcement on display — what did NOT make the brief. */}
           {receipts.dropped.length > 0 && (
             <div className="mt-6">
               <p className="flex items-center gap-1.5 text-[13px] font-semibold text-text">
