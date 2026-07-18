@@ -60,7 +60,7 @@
     {from:'E',to:'S',lab:'approve'},
     {from:'S',to:'Q',lab:'run the pack  ·  every call checks the Boundary first'},
     {from:'Q',to:'S',lab:'findings and a draft',dash:true},
-    {from:'S',to:'DB',lab:'emit  spawned · tool_used · artifact_created · hunt_completed'},
+    {from:'S',to:'DB',lab:'emit  wolf_spawned · tool_called · tool_result · artifact_created · hunt_completed'},
     {from:'B',to:'E',lab:'GET /artifact'},
     {from:'E',to:'B',lab:'the final brief',dash:true},
     {note:1,span:['B','S'],lab:'<b>The chat side-channel.</b> Ask Alpha a question mid-hunt and the answer streams back token by token over SSE, straight from the engine, never through the gateway. Different shape of data, different door.'}

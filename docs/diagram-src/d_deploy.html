@@ -1,114 +1,178 @@
 <!doctype html><html lang="en"><head><meta charset="utf-8"/>
-<title>The Pack — Deployment</title>
+<title>The Pack — Deployment on Alibaba Cloud</title>
 <style>
   @font-face{font-family:'Poppins';font-weight:400;src:url('fonts/poppins-400.woff2') format('woff2');}
   @font-face{font-family:'Poppins';font-weight:500;src:url('fonts/poppins-500.woff2') format('woff2');}
   @font-face{font-family:'Poppins';font-weight:600;src:url('fonts/poppins-600.woff2') format('woff2');}
   @font-face{font-family:'Poppins';font-weight:700;src:url('fonts/poppins-700.woff2') format('woff2');}
   @font-face{font-family:'Poppins';font-weight:800;src:url('fonts/poppins-800.woff2') format('woff2');}
-  :root{--ink:#15171c;--ink2:#5c636e;--ink3:#9aa0aa;--hair:#e4e6ea;}
+  :root{--ink:#15171c;--ink2:#5c636e;--ink3:#9aa0aa;--hair:#e4e6ea;--cloud:#f5f6f8;}
   *{margin:0;padding:0;box-sizing:border-box;}
-  html,body{width:1620px;}
-  body{font-family:'Poppins',Arial,sans-serif;background:#fff;color:var(--ink);-webkit-font-smoothing:antialiased;padding:52px 60px 44px;}
+  html,body{width:1760px;}
+  body{font-family:'Poppins',Arial,sans-serif;background:#fff;color:var(--ink);-webkit-font-smoothing:antialiased;padding:52px 64px 46px;}
   .kick{font-size:13px;font-weight:700;letter-spacing:5px;text-transform:uppercase;color:var(--ink3);}
-  h1{font-size:40px;font-weight:800;letter-spacing:-1px;margin:10px 0 8px;}
-  .sub{font-size:17px;font-weight:400;color:var(--ink2);line-height:1.5;max-width:1040px;}
-  .rule{height:1.6px;background:var(--hair);margin:24px 0 30px;}
+  h1{font-size:42px;font-weight:800;letter-spacing:-1px;margin:10px 0 8px;}
+  .sub{font-size:17px;font-weight:400;color:var(--ink2);line-height:1.5;max-width:1180px;}
+  .sub b{color:var(--ink);font-weight:600;}
+  .rule{height:1.6px;background:var(--hair);margin:22px 0 26px;}
 
-  .canvas{position:relative;height:560px;}
-  svg.wires{position:absolute;inset:0;z-index:0;}
+  .canvas{position:relative;height:764px;}
+  svg.wires{position:absolute;inset:0;z-index:0;overflow:visible;}
 
-  /* A node = a titled box, exactly like the ERD entity. */
-  .node{background:#fff;border:1.7px solid var(--ink);border-radius:15px;overflow:hidden;z-index:1;}
-  .abs{position:absolute;}
-  .node h3{font-size:18px;font-weight:700;padding:12px 17px;border-bottom:1.5px solid var(--hair);letter-spacing:.2px;
-           display:flex;align-items:baseline;gap:9px;}
-  .node h3 .tech{font-weight:400;font-size:12px;color:var(--ink3);}
-  .node .b{padding:12px 17px 14px;font-size:13.5px;font-weight:400;color:var(--ink2);line-height:1.46;}
-  .node .b .cap{display:block;font-size:10.5px;font-weight:700;letter-spacing:1.3px;text-transform:uppercase;color:var(--ink3);margin-bottom:6px;}
+  /* Node = titled box (ERD entity vocabulary). */
+  .node{position:absolute;background:#fff;border:1.7px solid var(--ink);border-radius:14px;overflow:hidden;z-index:2;}
+  .node h3{font-size:16.5px;font-weight:700;padding:10px 15px;border-bottom:1.4px solid var(--hair);letter-spacing:.2px;
+           display:flex;align-items:baseline;gap:8px;}
+  .node h3 .port{margin-left:auto;font-weight:700;font-size:11px;color:var(--ink3);letter-spacing:.5px;font-variant-numeric:tabular-nums;}
+  .node h3 .tech{font-weight:400;font-size:11.5px;color:var(--ink3);}
+  .node .b{padding:10px 15px 12px;font-size:12.5px;font-weight:400;color:var(--ink2);line-height:1.4;}
 
-  /* The one element that carries the requirement inverts to solid ink — the ERD's "spine" move. */
-  .node.spine{border-width:2.4px;}
-  .node.spine > h3{background:var(--ink);color:#fff;border-bottom-color:var(--ink);}
-  .node.spine > h3 .tech{color:#c3c8d0;}
+  /* The three ALIBABA touchpoints invert to solid ink — a judge sees "Alibaba is used HERE, HERE, HERE". */
+  .node.ali{border-width:2.2px;}
+  .node.ali > h3{background:var(--ink);color:#fff;border-bottom-color:var(--ink);}
+  .node.ali > h3 .tech,.node.ali > h3 .port{color:#c3c8d0;}
+  .node.ali .b{color:var(--ink2);}
 
-  /* Managed services sit in a dashed group, like the ERD's "children / global" clusters. */
-  .group{position:absolute;border:1.6px dashed var(--hair);border-radius:18px;z-index:1;padding:28px 20px 20px;}
-  .glab{position:absolute;top:-11px;left:20px;background:#fff;padding:0 11px;font-size:12px;font-weight:700;
-        letter-spacing:1.6px;text-transform:uppercase;color:var(--ink3);}
+  /* External/managed but non-Alibaba: softer. */
+  .node.soft{border-color:var(--ink3);}
+  .node.soft h3{border-bottom-color:var(--hair);}
 
-  /* The Alibaba compute boundary — a solid-ink labelled frame around the two containers. */
-  .zone{position:absolute;border:2px solid var(--ink);border-radius:20px;z-index:1;padding:30px 20px 22px;background:#fff;}
-  .zlab{position:absolute;top:-13px;left:22px;background:var(--ink);color:#fff;padding:5px 14px;border-radius:999px;
-        font-size:12.5px;font-weight:700;letter-spacing:1px;text-transform:uppercase;}
-  .zfoot{position:absolute;bottom:9px;left:24px;font-size:11px;font-weight:600;color:var(--ink3);letter-spacing:.4px;
-         font-variant-numeric:tabular-nums;}
+  /* The ECS boundary: a solid frame with a black tab, wrapping the three containers. */
+  .zone{position:absolute;border:2.2px solid var(--ink);border-radius:20px;z-index:1;background:var(--cloud);}
+  .zlab{position:absolute;top:-14px;left:24px;background:var(--ink);color:#fff;padding:6px 15px;border-radius:999px;
+        font-size:12.5px;font-weight:700;letter-spacing:1px;text-transform:uppercase;z-index:3;}
+  .zfoot{position:absolute;bottom:11px;left:24px;font-size:11px;font-weight:600;color:var(--ink3);letter-spacing:.4px;font-variant-numeric:tabular-nums;}
 
-  /* Pill connector labels, straight from the ERD. */
-  .clab{position:absolute;z-index:3;background:#fff;padding:3px 12px;font-size:12.5px;font-weight:600;color:var(--ink);
+  /* A dashed frame groups the external data services. */
+  .group{position:absolute;border:1.6px dashed var(--hair);border-radius:18px;z-index:1;}
+  .glab{position:absolute;top:-11px;left:22px;background:#fff;padding:0 11px;font-size:11.5px;font-weight:700;letter-spacing:1.6px;text-transform:uppercase;color:var(--ink3);}
+
+  /* Connector pill labels (ERD). */
+  .clab{position:absolute;z-index:4;background:#fff;padding:3px 11px;font-size:12px;font-weight:600;color:var(--ink);
         border:1.4px solid var(--hair);border-radius:999px;transform:translate(-50%,-50%);white-space:nowrap;}
+  .clab.tls{color:#1a8a4a;border-color:#cfe3d6;}
 
-  .why{position:absolute;padding:10px 0 10px 18px;border-left:3px solid var(--ink);font-size:15px;color:var(--ink2);line-height:1.5;z-index:1;}
+  .legend{display:flex;gap:28px;align-items:center;margin:18px auto 0;font-size:13.5px;color:var(--ink2);}
+  .legend .li{display:flex;gap:9px;align-items:center;}
+  .legend .sw{width:16px;height:16px;border-radius:4px;}
+  .sw.ali{background:var(--ink);}
+  .sw.ours{background:#fff;border:1.7px solid var(--ink);}
+  .sw.ext{background:#fff;border:1.7px solid var(--ink3);}
+  .legend .swl{width:26px;height:0;border-top:1.8px solid var(--ink);}
+
+  .why{margin:22px 0 0;padding:10px 0 10px 18px;border-left:3px solid var(--ink);font-size:15px;color:var(--ink2);line-height:1.5;max-width:1400px;}
   .why b{color:var(--ink);font-weight:600;}
 </style></head>
 <body>
-  <div class="kick">The Pack &nbsp;·&nbsp; Deployment</div>
-  <h1>Running live on Alibaba Cloud</h1>
-  <div class="sub">You ask a question in the browser. A team of AI agents on an <b style="color:var(--ink)">Alibaba Cloud</b> server researches it, and streams the answer back to your screen, step by step. The AI brain is <b style="color:var(--ink)">Qwen</b>; the data lives on managed Neon and Upstash.</div>
+  <div class="kick">The Pack &nbsp;·&nbsp; Deployment on Alibaba Cloud</div>
+  <h1>How it runs, and where Alibaba does the work</h1>
+  <div class="sub">The compute runs on one <b>Alibaba Cloud ECS</b> server (three Docker containers behind HTTPS). Every agent's reasoning is a <b>Qwen</b> call to <b>Alibaba Model Studio</b>, and every generated file is stored in <b>Alibaba Cloud OSS</b> — three Alibaba touchpoints, marked in black below. Postgres and Redis are managed elsewhere.</div>
   <div class="rule"></div>
 
   <div class="canvas">
-    <svg class="wires" viewBox="0 0 1500 560" preserveAspectRatio="none">
-      <!-- browser -> server -->
-      <line x1="250" y1="180" x2="366" y2="180" stroke="#15171c" stroke-width="1.8"/>
-      <path d="M359,173 L369,180 L359,187" fill="none" stroke="#15171c" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
-      <!-- server -> services group -->
-      <line x1="980" y1="180" x2="1096" y2="180" stroke="#15171c" stroke-width="1.8"/>
-      <path d="M1089,173 L1099,180 L1089,187" fill="none" stroke="#15171c" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
+    <svg class="wires" viewBox="0 0 1632 764" preserveAspectRatio="none">
+      <defs>
+        <marker id="a" markerWidth="10" markerHeight="10" refX="7.5" refY="5" orient="auto">
+          <path d="M1,1 L8,5 L1,9" fill="none" stroke="#15171c" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/>
+        </marker>
+        <marker id="ag" markerWidth="10" markerHeight="10" refX="7.5" refY="5" orient="auto">
+          <path d="M1,1 L8,5 L1,9" fill="none" stroke="#1a8a4a" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/>
+        </marker>
+      </defs>
+
+      <!-- browser -> cloudflare -->
+      <line x1="214" y1="124" x2="300" y2="124" stroke="#15171c" stroke-width="1.8" marker-end="url(#a)"/>
+      <!-- cloudflare -> nginx (into ECS) -->
+      <line x1="486" y1="124" x2="556" y2="124" stroke="#15171c" stroke-width="1.8" marker-end="url(#a)"/>
+      <!-- nginx -> engine (/api) -->
+      <path d="M750,170 C750,180 750,182 750,190" fill="none" stroke="#15171c" stroke-width="1.8" marker-end="url(#a)"/>
+      <!-- nginx -> gateway (/ws) -->
+      <path d="M660,170 C540,230 540,356 578,356" fill="none" stroke="#15171c" stroke-width="1.8" marker-end="url(#a)"/>
+      <!-- engine -> Qwen -->
+      <line x1="922" y1="228" x2="1134" y2="228" stroke="#15171c" stroke-width="1.8" marker-end="url(#a)"/>
+      <!-- engine -> OSS -->
+      <path d="M922,262 C1000,320 1060,360 1134,360" fill="none" stroke="#15171c" stroke-width="1.8" marker-end="url(#a)"/>
+      <!-- engine -> Postgres (write, green/tls) -->
+      <path d="M922,206 C1030,206 1010,516 1114,516" fill="none" stroke="#1a8a4a" stroke-width="1.8" marker-end="url(#ag)"/>
+      <!-- engine -> Redis (outbox relay, tls) -->
+      <path d="M922,278 C1060,300 1010,618 1114,618" fill="none" stroke="#1a8a4a" stroke-width="1.8" marker-end="url(#ag)"/>
+      <!-- Redis -> gateway (tail, tls) : back to the gateway -->
+      <path d="M1114,650 C700,712 560,470 578,382" fill="none" stroke="#1a8a4a" stroke-width="1.8" marker-end="url(#ag)"/>
     </svg>
 
     <!-- 1 · BROWSER -->
-    <div class="node abs" style="top:108px;left:20px;width:230px;height:150px;">
-      <h3>Browser</h3>
-      <div class="b"><span class="cap">You</span>The web app you open and type your question into.</div>
+    <div class="node soft" style="top:78px;left:20px;width:194px;height:96px;">
+      <h3>Browser <span class="tech">· React</span></h3>
+      <div class="b">The app; renders only from the event stream.</div>
     </div>
 
-    <!-- 2 · ALIBABA CLOUD SERVER — a boundary frame; the two containers are absolutely placed inside. -->
-    <div class="zone abs" style="top:46px;left:368px;width:612px;height:272px;">
-      <span class="zlab">Alibaba Cloud server</span>
-      <div class="node abs spine" style="top:34px;left:22px;width:270px;height:176px;">
-        <h3>Engine <span class="tech">· Python</span></h3>
-        <div class="b">Runs the AI agents, does the research, and records every step.</div>
-      </div>
-      <div class="node abs" style="top:34px;left:314px;width:270px;height:176px;">
-        <h3>Live stream <span class="tech">· Rust</span></h3>
-        <div class="b">Pushes each step back to your screen the moment it happens.</div>
-      </div>
-      <span class="zfoot">1 server · Singapore · Docker · behind HTTPS</span>
+    <!-- 2 · CLOUDFLARE -->
+    <div class="node soft" style="top:78px;left:300px;width:186px;height:96px;">
+      <h3>Cloudflare</h3>
+      <div class="b">Public HTTPS edge → the ECS box.</div>
     </div>
 
-    <!-- 3 · MANAGED SERVICES — dashed group; three boxes absolutely placed. -->
-    <div class="group abs" style="top:46px;left:1098px;width:462px;height:272px;">
-      <span class="glab">Managed services · secured</span>
-      <div class="node abs" style="top:32px;left:22px;width:418px;height:96px;">
-        <h3>Qwen AI <span class="tech">· Alibaba Model Studio</span></h3>
-        <div class="b">The brain. Every agent does its thinking here.</div>
+    <!-- 3 · ALIBABA ECS ZONE with its 3 containers -->
+    <div class="zone" style="top:44px;left:556px;width:388px;height:466px;">
+      <span class="zlab">Alibaba Cloud ECS · Singapore</span>
+      <div class="zfoot">1 server · Ubuntu 24.04 · Docker · 2 vCPU · 4 GB</div>
+    </div>
+    <!-- nginx (container 1) -->
+    <div class="node ali" style="top:78px;left:580px;width:340px;height:92px;">
+      <h3>nginx <span class="tech">· web</span><span class="port">:80</span></h3>
+      <div class="b">Serves the app; reverse-proxies /api and /ws.</div>
+    </div>
+    <!-- engine (container 2) -->
+    <div class="node" style="top:190px;left:580px;width:340px;height:100px;">
+      <h3>Engine <span class="tech">· Python / FastAPI</span><span class="port">:8000</span></h3>
+      <div class="b">The Supervisor + the wolf pack. Owns every write.</div>
+    </div>
+    <!-- gateway (container 3) -->
+    <div class="node" style="top:310px;left:580px;width:340px;height:92px;">
+      <h3>Gateway <span class="tech">· Rust</span><span class="port">:8080</span></h3>
+      <div class="b">Read-only WebSocket fan-out. Never writes.</div>
+    </div>
+
+    <!-- 4 · ALIBABA MANAGED (Qwen + OSS) -->
+    <div class="node ali" style="top:190px;left:1136px;width:340px;height:92px;">
+      <h3>Qwen <span class="tech">· Alibaba Model Studio</span></h3>
+      <div class="b">Every agent's reasoning — max · plus · flash tiers.</div>
+    </div>
+    <div class="node ali" style="top:322px;left:1136px;width:340px;height:86px;">
+      <h3>Alibaba OSS</h3>
+      <div class="b">Object storage for every forged file (oss2 SDK).</div>
+    </div>
+
+    <!-- 5 · EXTERNAL DATA (dashed group) -->
+    <div class="group" style="top:452px;left:1116px;width:380px;height:236px;">
+      <span class="glab">Managed data · TLS</span>
+      <div class="node soft" style="top:24px;left:20px;width:340px;height:88px;">
+        <h3>Neon <span class="tech">· Postgres</span></h3>
+        <div class="b">Source of truth — append-only event log.</div>
       </div>
-      <div class="node abs" style="top:142px;left:22px;width:200px;height:96px;">
-        <h3 style="font-size:16px;">Database <span class="tech">· Neon</span></h3>
-        <div class="b" style="padding:11px 15px 13px;">Stores every step.</div>
-      </div>
-      <div class="node abs" style="top:142px;left:240px;width:200px;height:96px;">
-        <h3 style="font-size:16px;">Stream <span class="tech">· Upstash</span></h3>
-        <div class="b" style="padding:11px 15px 13px;">Real-time relay.</div>
+      <div class="node soft" style="top:126px;left:20px;width:340px;height:88px;">
+        <h3>Upstash <span class="tech">· Redis</span></h3>
+        <div class="b">Stream — the outbox relay projects events here.</div>
       </div>
     </div>
 
     <!-- connector pill labels -->
-    <div class="clab" style="left:309px;top:180px;">your question · https</div>
-    <div class="clab" style="left:1039px;top:180px;">calls out to</div>
-
-    <!-- why -->
-    <div class="why" style="top:400px;left:20px;width:1180px;"><b>Why this shape.</b> Your browser only ever shows what the server actually did — every step is recorded first, then streamed back live, so nothing happens off-screen. Both the AI (Qwen) and the server run on <b>Alibaba Cloud</b>.</div>
+    <div class="clab" style="left:257px;top:124px;">https</div>
+    <div class="clab" style="left:521px;top:124px;">https</div>
+    <div class="clab" style="left:1028px;top:222px;">model calls</div>
+    <div class="clab" style="left:1030px;top:352px;">put / get files</div>
+    <div class="clab tls" style="left:1000px;top:470px;">write events</div>
+    <div class="clab tls" style="left:1004px;top:600px;">relay → publish</div>
+    <div class="clab tls" style="left:640px;top:600px;">tail → stream</div>
   </div>
+
+  <div class="legend">
+    <div class="li"><span class="sw ali"></span> Alibaba Cloud (used in 3 places)</div>
+    <div class="li"><span class="sw ours"></span> our container on ECS</div>
+    <div class="li"><span class="sw ext"></span> external managed service</div>
+    <div class="li"><span class="swl"></span> request / write path</div>
+    <div class="li"><span class="swl" style="border-top-color:#1a8a4a;"></span> the event, over TLS</div>
+  </div>
+
+  <div class="why"><b>Where Alibaba does the work:</b> the server is <b>Alibaba Cloud ECS</b>; every wolf's thinking is a <b>Qwen</b> call to <b>Alibaba Model Studio</b>; every generated file lands in <b>Alibaba OSS</b>. The event spine (write to Postgres → relay to Redis → the Rust gateway streams it back) is what lets the browser rebuild the whole hunt from events alone.</div>
 </body></html>
