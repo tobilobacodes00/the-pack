@@ -37,7 +37,7 @@ dev = [
     # declared so CI randomizes too; the suite is order-independent today (the Elder/Warden sweep fixed
     # the historical leaks), and CI pins --randomly-seed=0 for a reproducible order (see backend.yml).
     "pytest-randomly>=3.15",
-    "ruff==0.15.20",  # pinned == the pre-commit rev (.pre-commit-config.yaml) so hook and CI can't drift
+    "ruff==0.15.22",  # pinned == the pre-commit rev (.pre-commit-config.yaml) so hook and CI can't drift
     "respx>=0.21",
     "mypy>=1.11",
     "pip-audit>=2.7",
