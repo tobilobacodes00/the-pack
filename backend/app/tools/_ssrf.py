@@ -52,12 +52,18 @@ async def assert_public_url(url: str) -> list[str]:
         infos = await asyncio.get_event_loop().getaddrinfo(host, None)
     except socket.gaierror as exc:
         raise ValueError(f"could not resolve host: {exc}") from exc
+    # getaddrinfo returns one entry per socket type (Linux gives 3 for the same IP), so dedupe
+    # while keeping order — every distinct IP is still blocklist-checked.
     ips: list[str] = []
+    seen: set[str] = set()
     for info in infos:
         ip = ipaddress.ip_address(info[4][0])
         if _is_blocked(ip):
             raise ValueError("URL resolves to a non-public address")
-        ips.append(str(ip))
+        s = str(ip)
+        if s not in seen:
+            seen.add(s)
+            ips.append(s)
     if not ips:
         raise ValueError("host did not resolve to any address")
     return ips
