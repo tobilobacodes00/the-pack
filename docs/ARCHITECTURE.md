@@ -7,9 +7,7 @@ dashed lines are the asynchronous read / projection path; an inverted (black) no
 of truth. The one exception is the deployment board, where black marks the three places **Alibaba
 Cloud** does the work.
 
-Each diagram is a high-resolution PNG rendered from a self-contained HTML source in
-[`diagram-src/`](diagram-src/) (edit the `.html`, re-render — see the bottom of this file). The narrated
-walkthrough in plain words is [`The-Pack-Architecture.pdf`](The-Pack-Architecture.pdf).
+The narrated walkthrough in plain words is [`The-Pack-Architecture.pdf`](The-Pack-Architecture.pdf).
 
 ## 1. Deployment — running on Alibaba Cloud
 Where it actually runs. The compute is one **Alibaba Cloud ECS** server holding three Docker containers
@@ -55,22 +53,3 @@ A hunt end to end: create, subscribe, the projection loop, plan (`plan_proposed`
 artifact — plus the SSE chat side-channel that streams straight from the engine and skips the gateway.
 
 ![Sequence](sequence.png)
-
----
-
-### Regenerating a diagram
-Every PNG is rendered from its HTML source in `diagram-src/` with headless Chrome. No build step and no
-network: Poppins is bundled in `diagram-src/fonts/`, and the sources are pure HTML and CSS (the sequence
-board builds its arrows from a small inline script).
-
-```bash
-# 1. render tall, then 2. crop to content with the included helper
-chrome --headless --hide-scrollbars --force-device-scale-factor=2.5 \
-  --screenshot=raw.png --window-size=1700,2200 "file:///abs/path/diagram-src/d_backend.html"
-pwsh diagram-src/crop.ps1 -in raw.png -out backend.png -margin 52
-```
-
-Sources → outputs: `d_deploy.html` → `deployment.png`, `d_overview.html` → `pack-architecture.png`,
-`d_backend.html` → `backend.png`, `d_frontend.html` → `frontend.png`, `d_erd.html` → `erd.png`,
-`d_sequence.html` → `sequence.png`. Tune `--window-size` to the board and `--force-device-scale-factor`
-for resolution (2.5 is sharp; 3 is sharper).
