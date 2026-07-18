@@ -16,7 +16,7 @@ jobs:
     name: engine image builds + imports
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - name: Build the engine image
         run: docker build -f deploy/engine.Dockerfile -t pack-engine:ci .
       - name: Every runtime dep imports inside the image
