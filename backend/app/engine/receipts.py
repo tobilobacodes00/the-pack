@@ -27,7 +27,8 @@ from __future__ import annotations
 from typing import Any
 
 from app.db.repo import Repo
-from app.engine.supervisor import _claim_matches, _content_tokens
+from app.engine.claim_match import claim_matches as _claim_matches
+from app.engine.claim_match import content_tokens as _content_tokens
 
 # Synthetic source schemes: library documents (tools/knowledge.py) and the pack's recalled
 # lessons (tools/memory.py). The receipt labels both — neither is a navigable web page.
