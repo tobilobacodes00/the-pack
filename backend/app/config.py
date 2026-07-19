@@ -149,13 +149,14 @@ class Settings(BaseSettings):
     # One of: orchestrate | deep_dive | critique.
     default_strategy: str = "orchestrate"
 
-    # Pricing — USD per 1M tokens (input, output) per tier. Placeholders in the right ballpark
-    # for Qwen on Model Studio; confirm real numbers when the key lands and override via env.
+    # Pricing — USD per 1M tokens (input, output) per tier. Entry-tier rates from Alibaba Cloud Model
+    # Studio, international/Singapore endpoint (the deploy region). Long-prompt tiers cost more; these
+    # are the conservative floor the Boundary projects against. Override via env if rates change.
     price_max_in_per_m: float = 1.60
     price_max_out_per_m: float = 6.40
     price_plus_in_per_m: float = 0.40
     price_plus_out_per_m: float = 1.20
-    price_flash_in_per_m: float = 0.10
+    price_flash_in_per_m: float = 0.05
     price_flash_out_per_m: float = 0.40
 
     # LLM client resilience.

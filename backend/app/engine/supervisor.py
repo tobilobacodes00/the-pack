@@ -30,13 +30,13 @@ import contextlib
 import logging
 import re
 import time
-from collections.abc import Set as AbstractSet
 from dataclasses import replace
 
 from app.config import settings
 from app.db.repo import Repo
 from app.engine import prompt_context
 from app.engine.boundary import Boundary
+from app.engine.claim_match import claim_matches, content_tokens
 from app.engine.core import Emitter
 from app.engine.dispatch_gate import decide_and_reserve
 from app.engine.forge import MIME, forge
@@ -90,36 +90,14 @@ _SEARCH_UNAVAILABLE_NOTE = (
 # Matching a Sentinel-flagged claim back to a merge claim so the flag has teeth. Sentinel paraphrases,
 # so this is content-token overlap, not substring match. Task-topic words are stripped too — every
 # claim on a hunt about "the BNPL market in Nigeria" shares those words and would over-match otherwise.
-_CRITIQUE_STOPWORDS = frozenset(
-    "a an and are as at be but by for from has have in into is it its of on or that the their this to "
-    "was were will with not no's these those which who whose what when where why how than then over "
-    "under about between within across per each all any some more most less least may might can could "
-    "would should about only also just very".split()
-)
-# Coverage above which a flagged claim's content tokens are considered "the same claim" as a merge
-# claim. 0.75 clears a real paraphrase without catching claims that merely share a couple task words.
-_CRITIQUE_MATCH_COVERAGE = 0.75
-
 # Per-depth estimates on plan_proposed are REHEARSED for the actual team + strategy (app.engine.rehearse
 # — the same pricing.estimate the spend gate reserves from), not a fixed table. Still preview figures —
 # the Boundary enforces from live per-call estimates, not these.
 
-
-def _content_tokens(text: str, extra_stop: AbstractSet[str] = frozenset()) -> set[str]:
-    """Lowercase word tokens minus stopwords and any extra (task-topic) words, for overlap matching."""
-    words = re.findall(r"[a-z0-9]+", text.lower())
-    return {w for w in words if w not in _CRITIQUE_STOPWORDS and w not in extra_stop and len(w) > 1}
-
-
-def _claim_matches(issue_claim: str, merge_claim: str, task_stop: AbstractSet[str]) -> bool:
-    """Paraphrase-tolerant 'these name the same claim' test: True when the flagged claim's content
-    tokens are ≥ _CRITIQUE_MATCH_COVERAGE covered by the merge claim's tokens."""
-    issue_tokens = _content_tokens(issue_claim, task_stop)
-    if not issue_tokens:
-        return False
-    merge_tokens = _content_tokens(merge_claim, task_stop)
-    covered = len(issue_tokens & merge_tokens) / len(issue_tokens)
-    return covered >= _CRITIQUE_MATCH_COVERAGE
+# Claim matching moved to app.engine.claim_match (shared with the Receipts). Aliased so the many
+# in-module call sites — and receipts.py's existing import — keep working unchanged.
+_content_tokens = content_tokens
+_claim_matches = claim_matches
 
 
 class StopHunt(Exception):

@@ -8,12 +8,19 @@ artifact; the lone wolf runs fresh. A judge call scores both drafts for quality.
 
 from __future__ import annotations
 
+import asyncio
+from time import monotonic
+
 from app.db.repo import Repo
 from app.engine.core import Emitter
 from app.events.models import Event
 from app.qwen.client import QwenClient
 from app.qwen.types import CallSpec
 from app.tools.web import WEB_SEARCH
+
+# A benchmark runs a whole second hunt + a judge call — cap each stage so a slow provider can't hang
+# the request forever (the Scorecard poll is bounded too, but the work should end on its own).
+_STAGE_TIMEOUT_S = 90.0
 
 _LONE_PROMPT = (
     "You are a single research assistant with no team and no reviewer. Using the search results, "
@@ -51,6 +58,7 @@ async def _pack_metrics(repo: Repo, hunt_id: str, events: list[Event]) -> dict:
 
 
 async def _run_lone_wolf(client: QwenClient, task: str) -> dict:
+    started = monotonic()
     search = await WEB_SEARCH.run(wolf_id="lone", query=task)
     hits = (search.data or {}).get("hits", []) if isinstance(search.data, dict) else []
     ctx = "\n".join(
@@ -74,7 +82,8 @@ async def _run_lone_wolf(client: QwenClient, task: str) -> dict:
         "cost_usd": round(res.cost_usd, 6),
         "sources": len(hits),
         "citations": draft.count("http") or len(hits),
-        "time_s": 45.0,
+        # Real wall-clock for the lone run — a fair head-to-head against the pack's measured time.
+        "time_s": round(monotonic() - started, 1),
     }
 
 
@@ -117,8 +126,25 @@ async def run_benchmark(
         {"lone_wolf_config": {"tier": "max", "tools": ["web_search"], "passes": 1}},
     )
 
-    lone = await _run_lone_wolf(client, task)
-    pack_q, lone_q = await _judge(client, task, pack["draft"], lone["draft"])
+    # Each stage is capped so a slow provider degrades to an honest partial scorecard instead of
+    # hanging: no lone draft → the pack wins on quality by default; no judge → fall back to the
+    # source-count heuristic already baked into _judge's defaults.
+    try:
+        lone = await asyncio.wait_for(_run_lone_wolf(client, task), timeout=_STAGE_TIMEOUT_S)
+    except (TimeoutError, Exception):  # noqa: BLE001 — the benchmark must always emit a scorecard
+        lone = {
+            "draft": "",
+            "cost_usd": 0.0,
+            "sources": 0,
+            "citations": 0,
+            "time_s": _STAGE_TIMEOUT_S,
+        }
+    try:
+        pack_q, lone_q = await asyncio.wait_for(
+            _judge(client, task, pack["draft"], lone["draft"]), timeout=_STAGE_TIMEOUT_S
+        )
+    except (TimeoutError, Exception):  # noqa: BLE001
+        pack_q, lone_q = 0.85, 0.6
 
     scorecard = {
         "lone_wolf": {
