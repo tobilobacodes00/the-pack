@@ -29,7 +29,7 @@ const SUBMISSION = {
   repo: REPO,
   figma: 'https://www.figma.com/design/agn6RMQxQX6xn1OfYQNkTr/Qwen-Hackathon?node-id=0-1&p=f&t=dqn6oIL32hRo6FpG-0',
   architecture: `${REPO}/blob/main/docs/ARCHITECTURE.md`,
-  demoVideo: '',
+  demoVideo: 'https://youtu.be/MeKEBFDTc4U',
 }
 
 // The submission deliverables, in order.
