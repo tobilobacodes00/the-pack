@@ -14,6 +14,37 @@ carrying a receipt, and the price shown before a cent is spent.
 
 ---
 
+## 🏁 For judges
+
+**Track:** Agent Society
+
+| | |
+|---|---|
+| 🎥 **Demo video** (< 3 min) | **[▶ Watch the pack hunt](https://youtu.be/MeKEBFDTc4U)** |
+| 🌐 **Live app** | **[http://47.237.4.147](http://47.237.4.147)** — running on Alibaba Cloud ECS, no login needed |
+| 🏗️ **Architecture diagram** | [`docs/pack-architecture.png`](docs/pack-architecture.png) · [full write-up](docs/ARCHITECTURE.md) |
+
+**Proof the backend runs on Alibaba Cloud** — the code, not just a claim:
+
+| Alibaba Cloud service | Where it's used |
+|---|---|
+| **Qwen / Model Studio (DashScope)** — all LLM inference | [`backend/app/qwen/client.py`](backend/app/qwen/client.py) · endpoint pinned at [`config.py:17`](backend/app/config.py#L17) (`dashscope-intl.aliyuncs.com`), model tiers at [`config.py:20`](backend/app/config.py#L20) |
+| **Alibaba Cloud OSS** — artifact object storage | [`backend/app/storage/oss.py:108-128`](backend/app/storage/oss.py#L108-L128) — official [`oss2`](backend/pyproject.toml#L27) SDK (`Auth` / `Bucket` / `put_object`) |
+| **Alibaba Cloud ECS** — the deployed backend | [`deploy/ECS_DEPLOY_GUIDE.md`](deploy/ECS_DEPLOY_GUIDE.md) · [`deploy/docker-compose.prod.yml`](deploy/docker-compose.prod.yml) |
+
+> **Short on time?** The live app already has **completed hunts** you can open immediately — no
+> waiting for a run. Try the *"Map the BNPL market in Nigeria"* hunt to see a finished cited brief,
+> then click any claim to see its **receipt** (which wolf found it, which source, and whether the
+> Sentinel challenged it). Several claims there are marked `challenged_kept` — the Sentinel
+> contested them and they survived on evidence.
+
+> **Prefer to run it yourself?** `make install && make infra`, then `make backend` / `make gateway` /
+> `make frontend`. It boots with **no API key required** — the engine falls back to a deterministic
+> offline provider, so you can explore the full UI, canvas, and event stream for free. Add a
+> `QWEN_API_KEY` to switch to real Qwen inference with zero code change.
+
+---
+
 ## Why it's different
 
 Most "AI research" is a black box: one prompt in, one wall of text out, and no way to know whether
